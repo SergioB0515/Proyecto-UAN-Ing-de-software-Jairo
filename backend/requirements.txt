@@ -1,0 +1,24 @@
+# Backend - FastAPI + SQLModel + PostgreSQL
+# Ver documentacion/04-arquitectura.md para el detalle y las razones de cada eleccion.
+
+fastapi
+uvicorn[standard]
+sqlmodel
+psycopg2-binary
+python-dotenv          # carga backend/.env automaticamente (ver .env.example)
+
+# Autenticacion (JWT + hash de contrasenas)
+python-jose[cryptography]
+passlib[argon2]
+python-multipart      # necesario para OAuth2PasswordRequestForm y subida de archivos
+
+# Importacion y conciliacion de informacion exogena
+pandas
+openpyxl              # lectura del Excel de la DIAN y escritura de reportes de salida
+
+# Generacion de reportes en PDF
+reportlab
+
+# Testing
+pytest
+httpx                 # requerido por TestClient de FastAPI
