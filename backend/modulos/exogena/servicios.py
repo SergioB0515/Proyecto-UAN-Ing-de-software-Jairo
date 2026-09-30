@@ -8,7 +8,6 @@ from sqlmodel import Session, select
 
 from core.excepciones import (
     ArchivoExogenaInvalidoError,
-    ContribuyenteNoEncontradoError,
     PeriodoFiscalNoEncontradoError,
 )
 
@@ -83,10 +82,8 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
                 except (TypeError, ValueError):
                     valor_tope = 0.0
                 resultado.topes.append(
-                    TopeExogenaBase(
-                        etiqueta=detalle.replace(" ", ""), valor=valor_tope
-                    )
-                )
+                     TopeExogenaBase(etiqueta=detalle, valor=valor_tope)
+                  )
             continue
 
         try:
