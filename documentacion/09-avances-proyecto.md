@@ -10,7 +10,7 @@
 | Diagrama de flujo de uso | ✅ Completado |
 | Arquitectura y stack tecnológico | ✅ Completado e implementado |
 | Estructura de carpetas del proyecto | ✅ Completado e implementado |
-| Historias de usuario | ✅ Completado (18 historias en 5 épicas) |
+| Historias de usuario | ✅ Completado (24 historias en 7 épicas) |
 | Validación del formato real de la exógena | ✅ Completado — se analizó un archivo real (estructura de encabezado, bloque de Topes, columnas, códigos de concepto y renglones) y se generó un archivo de prueba sintético con la misma estructura para uso en `tests/` |
 | Prototipo de validación (parseo + conciliación) | ✅ Completado — prototipo interactivo funcional que valida, en el navegador, el parseo del Excel real y la lógica de cruce contra datos declarados de ejemplo. Sirvió para descubrir y corregir dos supuestos del diseño (ver nota abajo) |
 | Backend — Incremento 1 (HU-01 a HU-04) | ✅ Implementado y probado |
@@ -20,15 +20,18 @@
 | Backend — Incremento 5 (HU-15 a HU-18) | ✅ Implementado y probado |
 | Backend — HU-03 completa (activos y fuentes de ingreso por periodo) | ✅ Implementado y probado |
 | Edición y eliminación de contribuyentes, activos e ingresos | ✅ Implementado y probado (backend y frontend) |
+| Incremento 6 — Seguridad y trazabilidad (HU-19 a HU-21) | ✅ Implementado y probado (backend y frontend) |
+| Incremento 7 — Calidad de vida (HU-22 a HU-24) | ✅ Implementado y probado (backend y frontend) |
+| Integración continua (GitHub Actions) | ✅ Pruebas del backend con PostgreSQL y compilación del frontend en cada push |
 | Frontend (Vue 3 + Vite + Tailwind) — todas las historias | ✅ Implementado y verificado de punta a punta en el navegador |
 | Evidencias de funcionamiento | ✅ Capturas por historia de usuario ([10](10-evidencias-funcionamiento.md)) |
 
 ## Detalle
 
-El backend tiene implementados los cinco incrementos, con 135 pruebas
+El backend tiene implementados los cinco incrementos, con 152 pruebas
 automáticas que corren contra una base de datos PostgreSQL real (ver
 [backend/README.md](../backend/README.md) para los endpoints y cómo
-correrlas). El frontend cubre las 18 historias sobre esos endpoints (ver
+correrlas). El frontend cubre las 24 historias sobre esos endpoints (ver
 [frontend/README.md](../frontend/README.md)).
 
 Dos hallazgos del prototipo de validación cambiaron decisiones de diseño
@@ -92,6 +95,23 @@ Decisiones sobre la edición y eliminación:
 - Un contribuyente solo se elimina si no tiene años gravables ni
   inventario: borrar en cascada su información tributaria con un clic es
   demasiado riesgoso; la eliminación es para registros hechos por error.
+
+Decisiones del incremento 6 (seguridad):
+
+- El bloqueo es por email, no por IP, y aplica también a emails
+  inexistentes: así el 429 no revela qué cuentas existen. Los intentos
+  hechos durante el bloqueo se registran pero no lo extienden, para que un
+  atacante insistiendo no deje por fuera indefinidamente al contador.
+- La auditoría se registra en un middleware a partir del nombre del
+  endpoint, en vez de que cada servicio la llame. Una prueba falla si se
+  agrega un endpoint que modifica datos sin declararlo como auditable.
+- Las descargas de reportes también se auditan: son salida de información
+  tributaria de terceros.
+- El archivo de exógena se valida por tamaño (5 MB por defecto) y por su
+  firma real de Excel, no solo por la extensión.
+- Pendiente conocido: el token JWT se guarda en `localStorage`, expuesto si
+  la app tuviera una falla XSS. Moverlo a una cookie `HttpOnly` exige
+  protección CSRF; se deja documentado.
 
 ## Próximos pasos
 

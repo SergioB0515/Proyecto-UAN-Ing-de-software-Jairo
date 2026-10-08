@@ -4,6 +4,7 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { mensajeDeError } from '../api/cliente'
 import {
   actualizarActivo,
+  copiarActivosAnioAnterior,
   actualizarFuenteIngreso,
   crearActivo,
   crearFuenteIngreso,
@@ -19,7 +20,7 @@ import MensajeError from '../components/MensajeError.vue'
 import { useContribuyente } from '../contexto'
 import { ETIQUETAS_TIPO_ACTIVO, dinero } from '../formato'
 
-const { contribuyente, periodo } = useContribuyente()
+const { contribuyente, periodo, periodos } = useContribuyente()
 const cid = contribuyente.value.id
 const pid = periodo.value.id
 const cerrado = computed(() => periodo.value.estado === 'CERRADO')
@@ -108,6 +109,30 @@ async function eliminar(clase, item) {
   }
 }
 
+// Copiar activos del año anterior: solo si existe uno y este año está abierto.
+const anioAnterior = computed(() =>
+  periodos.value
+    .map((p) => p.anio_gravable)
+    .filter((a) => a < periodo.value.anio_gravable)
+    .reduce((max, a) => Math.max(max, a), 0) || null,
+)
+const copia = reactive({ copiando: false, mensaje: '', error: '' })
+
+async function copiarAnioAnterior() {
+  Object.assign(copia, { copiando: true, mensaje: '', error: '' })
+  try {
+    const creados = await copiarActivosAnioAnterior(cid, pid)
+    activos.value.push(...creados)
+    copia.mensaje = creados.length
+      ? `Se copiaron ${creados.length} activo(s) de ${anioAnterior.value}. Actualiza sus valores al 31 de diciembre de ${periodo.value.anio_gravable}.`
+      : `Los activos de ${anioAnterior.value} ya estaban en este año; no se copió nada.`
+  } catch (e) {
+    copia.error = mensajeDeError(e)
+  } finally {
+    copia.copiando = false
+  }
+}
+
 function vinculo(item) {
   if (item.vinculo_codigo_concepto) return `Concepto ${item.vinculo_codigo_concepto}`
   if (item.vinculo_palabra_clave) return `«${item.vinculo_palabra_clave}»`
@@ -142,10 +167,21 @@ onMounted(async () => {
           <h2>Activos al 31 de diciembre de {{ periodo.anio_gravable }}</h2>
           <p class="text-sm text-tinta-suave">Suman el patrimonio líquido del año.</p>
         </div>
-        <button v-if="!formActivo.abierto && !cerrado" type="button" class="boton" @click="abrirNuevo('activo')">
-          Agregar activo
-        </button>
+        <div v-if="!formActivo.abierto && !cerrado" class="flex flex-wrap gap-2">
+          <button
+            v-if="anioAnterior"
+            type="button"
+            class="boton-secundario"
+            :disabled="copia.copiando"
+            @click="copiarAnioAnterior"
+          >
+            Copiar activos de {{ anioAnterior }}
+          </button>
+          <button type="button" class="boton" @click="abrirNuevo('activo')">Agregar activo</button>
+        </div>
       </div>
+      <p v-if="copia.mensaje" class="rounded bg-libro-claro px-4 py-3 text-sm" role="status">{{ copia.mensaje }}</p>
+      <MensajeError :mensaje="copia.error" />
 
       <form v-if="formActivo.abierto" class="hoja space-y-4 p-5" @submit.prevent="guardar('activo')">
         <h3>{{ formActivo.editandoId ? 'Corregir activo' : 'Nuevo activo' }}</h3>

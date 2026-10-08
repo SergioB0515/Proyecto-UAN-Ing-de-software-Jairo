@@ -110,7 +110,7 @@ function cambiarModo() {
             :minlength="modo === 'registrarse' ? 8 : undefined"
             :autocomplete="modo === 'ingresar' ? 'current-password' : 'new-password'"
           />
-          <p v-if="modo === 'registrarse'" class="mt-1 text-xs text-tinta-tenue">Mínimo 8 caracteres.</p>
+          <p v-if="modo === 'registrarse'" class="mt-1 text-xs text-tinta-tenue">Mínimo 8 caracteres, con letras y números.</p>
         </div>
 
         <MensajeError :mensaje="error" />

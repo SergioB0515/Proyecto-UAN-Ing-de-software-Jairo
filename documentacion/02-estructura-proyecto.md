@@ -28,9 +28,12 @@ app_renta_contador/
 │   │   ├── cartera/              # Panel consolidado de todos los contribuyentes del contador
 │   │   ├── inventario/           # Producto, Categoria, MetodoCosteo
 │   │   ├── movimientos/          # Movimiento, Proveedor, DocumentoSoporte
-│   │   └── reportes/             # PeriodoFiscal, cierre, exportación
+│   │   ├── reportes/             # PeriodoFiscal, cierre, exportación
+│   │   └── auditoria/            # Registro de accesos, bloqueo por intentos fallidos, auditoría de acciones
 │   │
 │   └── tests/                    # Pruebas del backend (pytest + TestClient)
+│
+├── .github/workflows/ci.yml      # Integración continua: pruebas del backend y compilación del frontend
 │
 └── frontend/                     # SPA en Vue 3 + Vite + Tailwind CSS
     ├── package.json

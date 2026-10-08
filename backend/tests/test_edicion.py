@@ -183,3 +183,30 @@ def test_no_se_edita_fuente_de_periodo_cerrado(client):
     client.post(e.url(f"/periodos-fiscales/{e.pid}/cerrar"), headers=e.h)
     r = client.patch(e.url(f"/fuentes-ingreso/{fuente['id']}"), json={"valor_anual": 1}, headers=e.h)
     assert r.status_code == 409
+
+
+# ------------------------------------------------- Copiar activos del año anterior
+
+
+def test_copiar_activos_del_anio_anterior(client):
+    e = Escenario(client, "cp-1@example.com")  # 2025, MIXTO
+    e.activo(descripcion="Casa", tipo="INMUEBLE", valor=100, vinculo_codigo_concepto="1476")
+    e.activo(descripcion="Cuenta", tipo="CUENTA", valor=50)
+    client.post(e.url(f"/periodos-fiscales/{e.pid}/cerrar"), headers=e.h)  # crea Activo INVENTARIO
+    p2026 = client.post(e.url("/periodos-fiscales"), json={"anio_gravable": 2026}, headers=e.h).json()["id"]
+    url = e.url(f"/periodos-fiscales/{p2026}/copiar-activos")
+
+    creados = client.post(url, headers=e.h)
+    de_nuevo = client.post(url, headers=e.h)
+
+    assert creados.status_code == 201
+    assert sorted(a["descripcion"] for a in creados.json()) == ["Casa", "Cuenta"]  # sin el inventario
+    assert all(a["periodo_fiscal_id"] == p2026 for a in creados.json())
+    assert next(a for a in creados.json() if a["descripcion"] == "Casa")["vinculo_codigo_concepto"] == "1476"
+    assert de_nuevo.json() == []  # no duplica
+    assert client.get(e.url(f"/patrimonio?periodo_fiscal_id={p2026}"), headers=e.h).json()["patrimonio_liquido"] == 150
+
+
+def test_copiar_activos_sin_anio_anterior_falla(client):
+    e = Escenario(client, "cp-2@example.com")
+    assert client.post(e.url(f"/periodos-fiscales/{e.pid}/copiar-activos"), headers=e.h).status_code == 409

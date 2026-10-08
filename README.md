@@ -9,13 +9,16 @@ declaración.
 
 ## Estado actual del proyecto
 
-**Backend**: los cinco incrementos implementados y probados (135 pruebas
+**Backend**: los cinco incrementos implementados y probados (152 pruebas
 automáticas contra PostgreSQL): autenticación, contribuyentes, patrimonio
 e ingresos por año gravable, importación de exógena, obligación de
 declarar, conciliación, borrador de renglones, inventario, movimientos y
 costo de ventas, cierre de periodo, reportes en Excel/PDF y panel de
 cartera.
-**Frontend**: SPA en Vue 3 que cubre las 18 historias de usuario,
+Además: seguridad (bloqueo por intentos fallidos, registro de accesos y de
+acciones, cambio de contraseña) y calidad de vida (corregir registros,
+copiar activos entre años, declarar desde la conciliación).
+**Frontend**: SPA en Vue 3 que cubre las 24 historias de usuario,
 verificada de punta a punta en el navegador (capturas en
 [10. Evidencias](documentacion/10-evidencias-funcionamiento.md)).
 
@@ -37,7 +40,7 @@ verificada de punta a punta en el navegador (capturas en
 | [03. Lógica del proyecto](documentacion/03-logica-proyecto.md) | Los once procesos que explican el funcionamiento del sistema |
 | [04. Arquitectura](documentacion/04-arquitectura.md) | Arquitectura propuesta y stack tecnológico |
 | [05. Modelo de desarrollo](documentacion/05-modelo-desarrollo.md) | Metodología (incremental) y plan de incrementos |
-| [06. Historias de usuario](documentacion/06-historias-usuario.md) | 18 historias de usuario en 5 épicas |
+| [06. Historias de usuario](documentacion/06-historias-usuario.md) | 24 historias de usuario en 7 épicas |
 | [07. Diagrama de clases](documentacion/07-diagrama-clases.md) | Modelo de datos del sistema |
 | [08. Diagrama de flujo](documentacion/08-diagrama-flujo.md) | Flujo de uso de la aplicación |
 | [09. Avances del proyecto](documentacion/09-avances-proyecto.md) | Estado de avance y hallazgos del prototipo de validación |

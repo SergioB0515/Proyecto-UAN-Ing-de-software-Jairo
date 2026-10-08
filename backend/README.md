@@ -4,7 +4,7 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**: los cinco incrementos implementados y probados: **135/135 pruebas**.
+**Estado**: los cinco incrementos implementados y probados: **152/152 pruebas**.
 
 | Incremento | Historias | Módulos |
 |---|---|---|
@@ -13,6 +13,8 @@ para las razones de cada elección técnica.
 | 3 | HU-08 a HU-10 | `conciliacion` |
 | 4 | HU-11 a HU-14 | `inventario`, `movimientos` |
 | 5 | HU-15 a HU-18 | `reportes`, `cartera` |
+| 6 | HU-19 a HU-21 | `auditoria`, `contadores` |
+| 7 | HU-22 a HU-24 | `contribuyentes` |
 
 ## Endpoints principales
 
@@ -40,6 +42,9 @@ y filtran por el contador del token.
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/kardex`, `GET .../reportes/{tipo}?formato=xlsx\|pdf` (`tipo`: `kardex`, `saldo-inventario`, `conciliacion`, `borrador-renglones`, `resumen`) | HU-16 |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/resumen` | HU-17 |
 | `GET /cartera?anio_gravable=&orden=alertas\|nombre` | HU-18 |
+| `PUT /contadores/yo/contrasena` | HU-20 |
+| `GET /auditoria?contribuyente_id=`, `GET /auditoria/accesos` | HU-19, HU-21 |
+| `POST /contribuyentes/{id}/periodos-fiscales/{pid}/copiar-activos` | HU-23 |
 
 Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el
 cuerpo (obligatorio) y se rechazan con 409 si ese periodo está cerrado. Sin
@@ -56,10 +61,23 @@ Edición y eliminación (para corregir errores de digitación):
   inventario (409 si no), y no se puede pasar a `ASALARIADO` si ya tiene
   inventario.
 
+Seguridad (`modulos/auditoria`):
+
+- **Bloqueo**: 5 intentos fallidos en 15 minutos devuelven 429 con
+  `Retry-After` hasta que el fallo más antiguo salga de la ventana.
+- **Auditoría**: `AuditoriaMiddleware` registra cada acción exitosa que
+  modifica datos o descarga un reporte (lista en `ACCIONES_AUDITADAS`).
+- **Archivo de exógena**: máximo `TAMANO_MAXIMO_EXOGENA_MB` (5 por defecto)
+  y firma real de Excel; 413 o 422 si no se cumple.
+- **CORS**: orígenes en `ORIGENES_PERMITIDOS` del `.env` (por defecto, el
+  Vite local). Cabeceras `X-Content-Type-Options`, `X-Frame-Options`,
+  `Referrer-Policy` y `Cache-Control: no-store` en toda respuesta.
+
 Códigos de error: `404` si el recurso no existe o es de otro contador
 (deliberadamente el mismo código en ambos casos), `409` para conflictos de
 negocio (duplicados, stock insuficiente, periodo cerrado, contribuyente
-asalariado en inventario) y `422` para datos inválidos.
+asalariado en inventario), `413` para un archivo demasiado grande, `422`
+para datos inválidos y `429` para una cuenta bloqueada.
 
 ## Requisitos
 
@@ -123,8 +141,13 @@ mocks): cada prueba abre una transacción y la revierte al terminar, así
 que no hace falta limpiar datos entre corridas. Si quieres apuntar las
 pruebas a otra base, define `TEST_DATABASE_URL` antes de correr `pytest`.
 
+**Integración continua**: `.github/workflows/ci.yml` corre estas mismas
+pruebas contra PostgreSQL en cada push a GitHub.
+
 **Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
-nuevas pero no altera las existentes. El único cambio a tablas existentes
+nuevas pero no altera las existentes. Las tablas del incremento 6
+(`intentos_acceso`, `eventos_auditoria`) son nuevas, así que se crean
+solas. El único cambio a tablas existentes
 (`periodo_fiscal_id` en `activos` y `fuentes_ingreso`, HU-03) lo aplica
 `_migrar_periodo_en_activos_y_fuentes` en `database.py` al arrancar: es
 idempotente y asigna los registros que ya existían al periodo más reciente

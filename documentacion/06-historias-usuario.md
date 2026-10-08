@@ -267,3 +267,81 @@ contribuyente.
   número de registros en estado `NO_DECLARADO`.
 - El panel permite ordenar por número de alertas, para priorizar los casos
   más urgentes.
+
+---
+
+## Épica 6 — Seguridad y trazabilidad (Incremento 6)
+
+### HU-19 — Proteger la cuenta contra intentos de acceso
+**Como** contador,
+**quiero** que mi cuenta se bloquee temporalmente tras varios intentos
+fallidos de inicio de sesión y poder ver los accesos a ella,
+**para** que nadie pueda adivinar mi contraseña probando muchas veces.
+
+**Criterios de aceptación:**
+- Con 5 intentos fallidos en 15 minutos el email queda bloqueado hasta que
+  el más antiguo de esos fallos salga de la ventana, aunque luego se use la
+  contraseña correcta.
+- El bloqueo aplica también a emails que no existen, para no revelar qué
+  cuentas están registradas.
+- Puedo ver mis últimos accesos (exitosos, fallidos y bloqueados) con su
+  dirección IP.
+
+### HU-20 — Cambiar mi contraseña
+**Como** contador,
+**quiero** cambiar mi contraseña indicando la actual,
+**para** proteger mi cuenta si sospecho que alguien la conoce.
+
+**Criterios de aceptación:**
+- Se exige la contraseña actual.
+- La nueva cumple la política: 8 caracteres o más, con letras y números
+  (la misma que al registrarse).
+
+### HU-21 — Consultar la actividad registrada
+**Como** contador,
+**quiero** ver qué cambios hice sobre los datos y qué reportes descargué,
+con fecha e IP, y filtrarlos por contribuyente,
+**para** tener trazabilidad sobre información tributaria sensible.
+
+**Criterios de aceptación:**
+- Toda acción que modifica datos o descarga un reporte queda registrada
+  automáticamente; las que fallan, no.
+- Cada contador ve solo su propia actividad.
+
+## Épica 7 — Calidad de vida (Incremento 7)
+
+### HU-22 — Corregir o eliminar registros
+**Como** contador,
+**quiero** editar o eliminar activos, ingresos y contribuyentes,
+**para** corregir errores de digitación.
+
+**Criterios de aceptación:**
+- Activos e ingresos solo se corrigen o eliminan con el periodo abierto.
+- El inventario que registra el cierre no se modifica a mano.
+- Un contribuyente solo se elimina si no tiene años gravables ni
+  inventario registrados.
+
+### HU-23 — Copiar los activos del año anterior
+**Como** contador,
+**quiero** traer a un año gravable nuevo los activos del año anterior,
+**para** no volver a digitar bienes que se mantienen (vivienda, vehículo,
+cuentas).
+
+**Criterios de aceptación:**
+- Se copian con su valor y su vínculo DIAN; el contador actualiza los
+  valores al 31 de diciembre.
+- No se copia el inventario del cierre ni se duplican activos ya
+  existentes.
+
+### HU-24 — Declarar desde la conciliación
+**Como** contador,
+**quiero** registrar con un clic un concepto que la exógena reporta y no
+está declarado,
+**para** corregir la diferencia sin volver a digitar valores.
+
+**Criterios de aceptación:**
+- El formulario llega prellenado con el detalle, el valor y el código de
+  concepto; puedo elegir si es un activo o un ingreso.
+- Al guardarlo, la conciliación se recalcula y el concepto deja de
+  aparecer como no declarado.
+

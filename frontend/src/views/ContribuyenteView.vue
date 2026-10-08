@@ -142,6 +142,9 @@ const pestanas = computed(() => [
             <button v-if="!edicion.abierta" type="button" class="underline hover:text-tinta" @click="abrirEdicion">
               Editar datos
             </button>
+            <RouterLink :to="{ name: 'actividad', query: { contribuyente: id } }" class="underline hover:text-tinta">
+              Ver actividad
+            </RouterLink>
           </p>
         </div>
 

@@ -33,6 +33,8 @@ const routes = [
     ],
   },
   { path: '/umbrales', name: 'umbrales', component: () => import('../views/UmbralesView.vue') },
+  { path: '/actividad', name: 'actividad', component: () => import('../views/ActividadView.vue') },
+  { path: '/cuenta', name: 'cuenta', component: () => import('../views/CuentaView.vue') },
   { path: '/:pathMatch(.*)*', redirect: { name: 'cartera' } },
 ]
 

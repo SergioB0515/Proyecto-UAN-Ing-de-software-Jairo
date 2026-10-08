@@ -16,6 +16,7 @@ def registrar_modelos() -> None:
     conozca. Se importan aquí (no arriba del todo) para no crear un import
     circular con los módulos que a su vez importan `database`. Lo usan
     crear_tablas y tests/conftest.py — un modelo nuevo se agrega solo aquí."""
+    from modulos.auditoria.modelos import EventoAuditoria, IntentoAcceso  # noqa: F401
     from modulos.contadores.modelos import Contador  # noqa: F401
     from modulos.contribuyentes.modelos import (  # noqa: F401
         Activo,

@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
@@ -13,6 +13,7 @@ from core.excepciones import (
     PeriodoFiscalCerradoError,
     PeriodoFiscalDuplicadoError,
     PeriodoFiscalNoEncontradoError,
+    SinPeriodoAnteriorError,
 )
 from database import obtener_sesion
 from modulos.contadores.modelos import Contador
@@ -42,7 +43,12 @@ _NO_ENCONTRADO = (
     ActivoNoEncontradoError,
     FuenteIngresoNoEncontradaError,
 )
-_CONFLICTO = (PeriodoFiscalCerradoError, ActivoDeCierreError, ContribuyenteConDatosError)
+_CONFLICTO = (
+    PeriodoFiscalCerradoError,
+    ActivoDeCierreError,
+    ContribuyenteConDatosError,
+    SinPeriodoAnteriorError,
+)
 
 
 def _traducir(exc: Exception) -> HTTPException:
@@ -62,11 +68,15 @@ def _conflicto(exc: Exception) -> HTTPException:
 )
 def crear(
     datos: ContribuyenteCrear,
+    request: Request,
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
     """HU-02."""
-    return servicios.crear_contribuyente(session, contador.id, datos)
+    creado = servicios.crear_contribuyente(session, contador.id, datos)
+    # El id no viene en la ruta: se le pasa a la auditoría por request.state.
+    request.state.auditoria_contribuyente_id = creado.id
+    return creado
 
 
 @router.get("", response_model=List[ContribuyenteLeer])
@@ -341,5 +351,27 @@ def eliminar_fuente_ingreso(
 ):
     try:
         servicios.eliminar_fuente_ingreso(session, contador.id, contribuyente_id, fuente_id)
+    except _NO_ENCONTRADO + _CONFLICTO as exc:
+        raise _traducir(exc) from exc
+
+
+@router.post(
+    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}/copiar-activos",
+    response_model=List[ActivoLeer],
+    status_code=status.HTTP_201_CREATED,
+)
+def copiar_activos(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Copia los activos del año anterior (sin el inventario ni duplicados).
+    Devuelve los creados. 409 si el periodo está cerrado o no hay año
+    anterior."""
+    try:
+        return servicios.copiar_activos_del_anio_anterior(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
     except _NO_ENCONTRADO + _CONFLICTO as exc:
         raise _traducir(exc) from exc

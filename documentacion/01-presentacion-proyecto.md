@@ -109,7 +109,7 @@ se mantiene, queda en un orden de prioridad posterior.
   contribuyente no tiene su propio inicio de sesión; todos los datos son
   cargados y gestionados por el contador. Ver nota de decisión en
   [04. Arquitectura](04-arquitectura.md).
-- Una capa de auditoría de seguridad (registro de accesos, cifrado en
-  reposo de los campos más sensibles) es deseable dado el tipo de datos que
-  maneja la aplicación, pero queda como extensión posible si el cronograma
-  del semestre lo permite — no es un incremento comprometido.
+- Cifrado en reposo de los campos más sensibles. La capa de auditoría
+  (registro de accesos, bloqueo por intentos fallidos y registro de
+  acciones) sí se implementó en el incremento 6; el cifrado de campos en
+  la base de datos queda como extensión posible.

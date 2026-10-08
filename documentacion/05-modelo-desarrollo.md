@@ -33,14 +33,16 @@ un orden de prioridad posterior.
 | **3** | Motor de conciliación y vista de resultado; borrador de valores sugeridos por renglón | Es el requisito explícito del profesor, y el borrador de renglones reutiliza el mismo parseo — ambos deben quedar demostrables antes que el resto |
 | **4** | Módulo de inventario: categorías, productos, movimientos (entradas/salidas), costeo PEPS/promedio ponderado | Se mantiene del alcance original, pero como segunda prioridad frente a la conciliación |
 | **5** | Cierre de periodo fiscal, reportes consolidados (kardex, saldo de inventario, resumen de patrimonio e ingresos, reporte de conciliación) y panel de cartera | Cierre del sistema; el panel de cartera integra la salida de todos los contribuyentes del contador, así que necesita que los incrementos anteriores ya existan para varios contribuyentes |
+| **6** | Seguridad y trazabilidad: bloqueo por intentos fallidos y registro de accesos, política y cambio de contraseña, auditoría de acciones, validación del archivo subido, cabeceras de seguridad HTTP | La app maneja información tributaria de terceros; con el alcance funcional completo, se aborda la capa de auditoría que el proyecto había dejado como extensión |
+| **7** | Calidad de vida: corrección y eliminación de registros, copia de activos entre años, declarar desde la conciliación | Reduce la digitación repetida y permite corregir errores, lo que más fricción genera en el uso diario |
 
 Si el cronograma se ajusta durante el semestre, el incremento 4
 (inventario) sigue siendo el candidato natural a recortar o dejar como
 alcance opcional — no es el requisito que motivó el replanteamiento del
 proyecto. La capa de auditoría/seguridad mencionada en
-[01. Presentación del proyecto](01-presentacion-proyecto.md) no está
-comprometida en ningún incremento; solo se aborda si sobra tiempo después
-del incremento 5.
+[01. Presentación del proyecto](01-presentacion-proyecto.md) se abordó en
+el incremento 6, una vez completo el alcance funcional (salvo el cifrado en
+reposo, que sigue fuera de alcance).
 
 Cada incremento corresponde, a grandes rasgos, a una o más [historias de
 usuario](06-historias-usuario.md), lo que permite verificar su cumplimiento

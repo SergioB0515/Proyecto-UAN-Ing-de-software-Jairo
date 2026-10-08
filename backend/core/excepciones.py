@@ -17,6 +17,22 @@ class CredencialesInvalidasError(ErrorAplicacion):
     """El email o la contraseña no corresponden a un contador registrado."""
 
 
+class CuentaBloqueadaError(ErrorAplicacion):
+    """Demasiados intentos fallidos de inicio de sesión con ese email."""
+
+    def __init__(self, mensaje: str, segundos: int):
+        super().__init__(mensaje)
+        self.segundos = segundos
+
+
+class ContrasenaActualIncorrectaError(ErrorAplicacion):
+    """Al cambiar la contraseña, la actual no coincide."""
+
+
+class ArchivoDemasiadoGrandeError(ErrorAplicacion):
+    """El archivo subido supera el tamaño máximo permitido."""
+
+
 class ContribuyenteNoEncontradoError(ErrorAplicacion):
     """El contribuyente no existe, o no pertenece al contador autenticado."""
 
@@ -24,6 +40,10 @@ class ContribuyenteNoEncontradoError(ErrorAplicacion):
 class ContribuyenteConDatosError(ErrorAplicacion):
     """No se puede eliminar un contribuyente que ya tiene periodos fiscales o
     inventario registrado, ni pasar a ASALARIADO uno que maneja inventario."""
+
+
+class SinPeriodoAnteriorError(ErrorAplicacion):
+    """No hay un año gravable anterior del que copiar activos."""
 
 
 class ActivoNoEncontradoError(ErrorAplicacion):

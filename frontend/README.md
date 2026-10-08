@@ -43,7 +43,7 @@ agrégalo allí.
 | `src/router/` | Rutas. Las de un contribuyente cuelgan de `/contribuyentes/:id/...` y el año gravable va en `?periodo=ID`, así cada pantalla se puede enlazar o recargar. |
 | `src/contexto.js` | `ContribuyenteView` carga el contribuyente y sus periodos una sola vez y los provee (`provide`) a sus pantallas hijas (`useContribuyente()`). |
 | `src/views/` | Una vista por pantalla (ver la tabla de abajo). |
-| `src/components/` | Piezas reutilizadas: `EstadoConciliacion` (color **y** forma, para no depender solo del color), `TablaObligacion`, `CamposVinculoDian` y los paneles de inventario. |
+| `src/components/` | Piezas reutilizadas: `EstadoConciliacion` (color **y** forma, para no depender solo del color), `TablaObligacion`, `CamposVinculoDian`, `AccionesFila` (editar y eliminar con confirmación en la fila), `DeclararDesdeExogena` y los paneles de inventario. |
 | `src/formato.js` | Pesos (COP), cantidades y fechas con formato `es-CO`. |
 
 | Vista | Historias |
@@ -59,6 +59,10 @@ agrégalo allí.
 | `InventarioView` + `components/inventario/` | HU-11 a HU-14 |
 | `CierreView` | HU-15, HU-16 |
 | `ResumenView` | HU-17 |
+| `CuentaView` | HU-19 (accesos), HU-20 |
+| `ActividadView` | HU-21 |
+| `PatrimonioView`, `ContribuyenteView` (editar y eliminar, copiar activos) | HU-22, HU-23 |
+| `ConciliacionView` + `components/DeclararDesdeExogena.vue` | HU-24 |
 
 ## Diseño
 

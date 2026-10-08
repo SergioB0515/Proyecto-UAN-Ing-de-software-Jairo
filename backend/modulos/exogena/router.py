@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
 from core.excepciones import (
+    ArchivoDemasiadoGrandeError,
     ArchivoExogenaInvalidoError,
     ContribuyenteNoEncontradoError,
     PeriodoFiscalCerradoError,
@@ -53,8 +54,8 @@ def importar_exogena(
 
     La respuesta incluye `errores`: las filas que no se pudieron
     interpretar, con su número de fila y el motivo."""
-    contenido = archivo.file.read()
     try:
+        contenido = servicios.leer_archivo_exogena(archivo.file, archivo.filename)
         return servicios.importar_reporte_exogena(
             session,
             contador.id,
@@ -65,6 +66,10 @@ def importar_exogena(
         )
     except _NO_ENCONTRADO as exc:
         raise _no_encontrado(exc) from exc
+    except ArchivoDemasiadoGrandeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_CONTENT_TOO_LARGE, detail=str(exc)
+        ) from exc
     except PeriodoFiscalCerradoError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)

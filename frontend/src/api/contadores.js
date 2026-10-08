@@ -13,3 +13,10 @@ export async function registrarContador(datos) {
 }
 
 export const obtenerContadorActual = () => obtener('/contadores/yo')
+
+export async function cambiarContrasena(contrasenaActual, contrasenaNueva) {
+  await cliente.put('/contadores/yo/contrasena', {
+    contrasena_actual: contrasenaActual,
+    contrasena_nueva: contrasenaNueva,
+  })
+}

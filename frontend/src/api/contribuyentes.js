@@ -33,3 +33,6 @@ export const eliminarActivo = (id, activoId) => cliente.delete(`${base(id)}/acti
 export const actualizarFuenteIngreso = (id, fuenteId, cambios) =>
   parchar(`${base(id)}/fuentes-ingreso/${fuenteId}`, cambios)
 export const eliminarFuenteIngreso = (id, fuenteId) => cliente.delete(`${base(id)}/fuentes-ingreso/${fuenteId}`)
+
+export const copiarActivosAnioAnterior = (id, periodoId) =>
+  enviar(`${base(id)}/periodos-fiscales/${periodoId}/copiar-activos`)

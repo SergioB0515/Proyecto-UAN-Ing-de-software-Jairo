@@ -4,7 +4,18 @@ contribuyentes. Ver documentacion/07-diagrama-clases.md.
 from datetime import datetime, timezone
 from typing import Optional
 
+from pydantic import field_validator
 from sqlmodel import Field, SQLModel
+
+
+def validar_contrasena(contrasena: str) -> str:
+    """Política mínima: 8 caracteres o más, con al menos una letra y un
+    número. Se aplica al registrarse y al cambiar la contraseña."""
+    if len(contrasena) < 8:
+        raise ValueError("La contraseña debe tener al menos 8 caracteres")
+    if not any(c.isalpha() for c in contrasena) or not any(c.isdigit() for c in contrasena):
+        raise ValueError("La contraseña debe tener al menos una letra y un número")
+    return contrasena
 
 
 class ContadorBase(SQLModel):
@@ -25,7 +36,12 @@ class Contador(ContadorBase, table=True):
 class ContadorCrear(ContadorBase):
     """Lo que llega en el body de POST /contadores/registro."""
 
-    contrasena: str = Field(min_length=8, max_length=128)
+    contrasena: str = Field(max_length=128)
+
+    @field_validator("contrasena")
+    @classmethod
+    def _politica(cls, contrasena: str) -> str:
+        return validar_contrasena(contrasena)
 
 
 class ContadorLeer(ContadorBase):
@@ -34,6 +50,16 @@ class ContadorLeer(ContadorBase):
 
     id: int
     creado_en: datetime
+
+
+class CambioContrasena(SQLModel):
+    contrasena_actual: str
+    contrasena_nueva: str = Field(max_length=128)
+
+    @field_validator("contrasena_nueva")
+    @classmethod
+    def _politica(cls, contrasena: str) -> str:
+        return validar_contrasena(contrasena)
 
 
 class ContadorLogin(SQLModel):

@@ -8,6 +8,7 @@ from core.excepciones import (
     ContribuyenteConDatosError,
     ContribuyenteNoEncontradoError,
     FuenteIngresoNoEncontradaError,
+    SinPeriodoAnteriorError,
     PeriodoFiscalCerradoError,
     PeriodoFiscalDuplicadoError,
     PeriodoFiscalNoEncontradoError,
@@ -263,6 +264,56 @@ def eliminar_fuente_ingreso(
     fuente = _fuente_editable(session, contador_id, contribuyente_id, fuente_id)
     session.delete(fuente)
     session.commit()
+
+
+def copiar_activos_del_anio_anterior(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> List[Activo]:
+    """Copia al periodo los activos del año gravable anterior más cercano
+    (casa, carro, cuentas: rara vez cambian de un año a otro), con su valor y
+    su vínculo DIAN, para que el contador solo actualice los valores.
+
+    - No copia el inventario del cierre: el del nuevo año lo calcula su
+      propio cierre.
+    - No duplica: se salta los que ya existen en el destino con la misma
+      descripción y tipo, así que se puede ejecutar más de una vez.
+    - El periodo destino debe estar abierto.
+
+    Devuelve solo los activos creados."""
+    destino = _periodo_abierto_para_registro(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    origen = session.exec(
+        select(PeriodoFiscal)
+        .where(
+            PeriodoFiscal.contribuyente_id == contribuyente_id,
+            PeriodoFiscal.anio_gravable < destino.anio_gravable,
+        )
+        .order_by(PeriodoFiscal.anio_gravable.desc())
+    ).first()
+    if origen is None:
+        raise SinPeriodoAnteriorError(
+            f"No hay un año gravable anterior a {destino.anio_gravable} del que copiar activos"
+        )
+
+    existentes = {
+        (a.descripcion.strip().lower(), a.tipo)
+        for a in listar_activos(session, contador_id, contribuyente_id, destino.id)
+    }
+    creados = []
+    for activo in listar_activos(session, contador_id, contribuyente_id, origen.id):
+        clave = (activo.descripcion.strip().lower(), activo.tipo)
+        if activo.tipo == TipoActivo.INVENTARIO or clave in existentes:
+            continue
+        copia = Activo(
+            **activo.model_dump(exclude={"id", "periodo_fiscal_id"}),
+            periodo_fiscal_id=destino.id,
+        )
+        session.add(copia)
+        creados.append(copia)
+        existentes.add(clave)
+    session.commit()
+    for copia in creados:
+        session.refresh(copia)
+    return creados
 
 
 def listar_activos(

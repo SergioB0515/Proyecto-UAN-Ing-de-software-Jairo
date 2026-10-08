@@ -41,6 +41,9 @@ export function mensajeDeError(error) {
     // 422 de validación de FastAPI: [{loc: [...], msg: '...'}]
     return detalle
       .map((d) => {
+        // Los validadores propios del backend ya traen un mensaje en español
+        // para el usuario ("Value error, ..."): se muestra tal cual.
+        if (d.msg?.startsWith('Value error, ')) return d.msg.slice('Value error, '.length)
         const campo = d.loc?.filter((p) => p !== 'body').join('.')
         return campo ? `${campo}: ${d.msg}` : d.msg
       })

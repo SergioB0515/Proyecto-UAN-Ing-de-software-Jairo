@@ -18,7 +18,7 @@ base de datos PostgreSQL vacía:
 6. Cierra el año, descarga reportes y revisa el panel de cartera con un
    segundo contribuyente asalariado sin exógena.
 
-Además del recorrido visual, el backend tiene **135 pruebas automáticas**
+Además del recorrido visual, el backend tiene **152 pruebas automáticas**
 contra PostgreSQL real (`cd backend && pytest`), que cubren los criterios
 de aceptación de cada historia.
 
@@ -144,3 +144,53 @@ periodo»).
 
 **Resultado:** la interfaz se adapta a pantallas pequeñas; las tablas
 anchas se desplazan horizontalmente dentro de su recuadro.
+
+## Incremento 6 — Seguridad y trazabilidad
+
+### HU-19 — Bloqueo por intentos fallidos
+![Cuenta bloqueada](evidencias/hu19-bloqueo-intentos.png)
+
+**Resultado:** al sexto intento con contraseñas equivocadas el login
+responde 429 y la pantalla indica cuánto esperar. El bloqueo aplica aunque
+el email no exista (en la captura, uno inexistente), para no revelar qué
+cuentas están registradas.
+
+### HU-19 y HU-20 — Accesos y cambio de contraseña
+![Mi cuenta](evidencias/hu19-hu20-mi-cuenta.png)
+
+**Resultado:** el cambio exige la contraseña actual (con una incorrecta
+responde «La contraseña actual no es correcta») y la nueva debe cumplir la
+política. La tabla muestra los accesos con su IP; si hubo intentos
+fallidos desde el último ingreso, se avisa.
+
+### HU-21 — Actividad registrada
+![Actividad](evidencias/hu21-actividad.png)
+
+**Resultado:** cada acción que modifica datos y cada reporte descargado
+quedan registrados con fecha, contribuyente e IP, sin que el contador haga
+nada. Se puede filtrar por contribuyente.
+
+## Incremento 7 — Calidad de vida
+
+### HU-22 — Corregir o eliminar registros
+![Editar y eliminar](evidencias/hu22-editar-eliminar.png)
+
+**Resultado:** cada activo e ingreso se edita en el mismo formulario y se
+elimina con confirmación en la fila. Con el año cerrado no aparecen las
+acciones. Un contribuyente con años gravables no se puede eliminar (la app
+explica por qué).
+
+### HU-23 — Copiar los activos del año anterior
+![Copiar activos](evidencias/hu23-copiar-activos.png)
+
+**Resultado:** al abrir 2025, «Copiar activos de 2024» trae el apartamento
+y la cuenta con su valor y vínculo DIAN; ejecutarlo de nuevo no duplica.
+
+### HU-24 — Declarar desde la conciliación
+![Declarar desde la conciliación](evidencias/hu24-declarar-desde-conciliacion.png)
+
+**Resultado:** en la venta reportada por la notaría (no declarada), el
+formulario llega con el concepto, los $50.000.000 y el código 1032, y
+sugiere «Ingreso» por el detalle. Al registrarlo, la conciliación se
+recalcula: pasa de 4 a 3 no declarados y de 0 a 1 coincidencia.
+

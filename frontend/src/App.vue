@@ -10,6 +10,8 @@ const navegacion = [
   { nombre: 'cartera', texto: 'Cartera' },
   { nombre: 'contribuyentes', texto: 'Contribuyentes' },
   { nombre: 'umbrales', texto: 'Umbrales UVT' },
+  { nombre: 'actividad', texto: 'Actividad' },
+  { nombre: 'cuenta', texto: 'Mi cuenta' },
 ]
 
 function salir() {

@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { mensajeDeError } from '../api/cliente'
 import { conciliar } from '../api/conciliacion'
 import Cargando from '../components/Cargando.vue'
+import DeclararDesdeExogena from '../components/DeclararDesdeExogena.vue'
 import EstadoConciliacion from '../components/EstadoConciliacion.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
 import MensajeError from '../components/MensajeError.vue'
@@ -12,6 +13,9 @@ import { dinero } from '../formato'
 
 const { contribuyente, periodo } = useContribuyente()
 const resultado = ref(null)
+const declarando = ref(null) // registro_exogena_id de la fila que se está declarando
+const avisoDeclarado = ref('')
+const puedeDeclarar = computed(() => periodo.value.estado !== 'CERRADO')
 const sinExogena = ref(false)
 const error = ref('')
 const filtro = ref(null)
@@ -42,14 +46,22 @@ const FONDO_FILA = {
   DISCREPANCIA: 'bg-estado-discrepancia-claro/60',
 }
 
-onMounted(async () => {
+async function cargar() {
   try {
     resultado.value = await conciliar(contribuyente.value.id, periodo.value.id)
   } catch (e) {
     if (e.response?.status === 404) sinExogena.value = true
     else error.value = mensajeDeError(e)
   }
-})
+}
+
+async function alDeclarar(item) {
+  declarando.value = null
+  await cargar()
+  avisoDeclarado.value = `«${item.concepto}» quedó registrado y la conciliación se recalculó.`
+}
+
+onMounted(cargar)
 </script>
 
 <template>
@@ -85,6 +97,7 @@ onMounted(async () => {
       </button>
     </div>
     <p v-if="filtro" class="text-sm text-tinta-suave">{{ EXPLICACION[filtro] }}</p>
+    <p v-if="avisoDeclarado" class="rounded bg-libro-claro px-4 py-3 text-sm" role="status">{{ avisoDeclarado }}</p>
 
     <!-- Libro de dos columnas: lo declarado frente a lo reportado por terceros. -->
     <div class="hoja overflow-x-auto">
@@ -97,13 +110,15 @@ onMounted(async () => {
             <th class="cifra">Exógena</th>
             <th class="cifra">Diferencia</th>
             <th>Estado</th>
+            <th v-if="puedeDeclarar"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!items.length">
-            <td colspan="6" class="py-6 text-center text-tinta-suave">Nada en este estado.</td>
+            <td :colspan="puedeDeclarar ? 7 : 6" class="py-6 text-center text-tinta-suave">Nada en este estado.</td>
           </tr>
-          <tr v-for="(item, i) in items" :key="i" :class="FONDO_FILA[item.estado]">
+          <template v-for="(item, i) in items" :key="i">
+          <tr :class="FONDO_FILA[item.estado]">
             <td>
               {{ item.concepto }}
               <p class="text-xs text-tinta-tenue">
@@ -124,7 +139,29 @@ onMounted(async () => {
               <template v-else>—</template>
             </td>
             <td><EstadoConciliacion :estado="item.estado" /></td>
+            <td v-if="puedeDeclarar" class="text-right">
+              <button
+                v-if="item.estado === 'NO_DECLARADO' && declarando !== item.registro_exogena_id"
+                type="button"
+                class="whitespace-nowrap text-sm font-medium text-libro underline"
+                @click="declarando = item.registro_exogena_id; avisoDeclarado = ''"
+              >
+                Declarar
+              </button>
+            </td>
           </tr>
+          <tr v-if="declarando === item.registro_exogena_id">
+            <td colspan="7" class="bg-papel-hondo/60">
+              <DeclararDesdeExogena
+                :item="item"
+                :contribuyente-id="contribuyente.id"
+                :periodo-id="periodo.id"
+                @declarado="alDeclarar(item)"
+                @cancelar="declarando = null"
+              />
+            </td>
+          </tr>
+          </template>
         </tbody>
       </table>
     </div>

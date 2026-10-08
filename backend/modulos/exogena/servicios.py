@@ -7,7 +7,9 @@ from typing import List, Optional
 import pandas as pd
 from sqlmodel import Session, select
 
+from core.config import TAMANO_MAXIMO_EXOGENA_MB
 from core.excepciones import (
+    ArchivoDemasiadoGrandeError,
     ArchivoExogenaInvalidoError,
     PeriodoFiscalCerradoError,
     ReporteExogenaNoEncontradoError,
@@ -32,6 +34,28 @@ PATRON_CONCEPTO = re.compile(r"\(Concepto:\s*(\d+)\)", re.IGNORECASE)
 PATRON_RENGLON = re.compile(r"\bR\d+\b")
 
 NIT_DIAN = "800197268"
+
+# Firmas de archivo: un .xlsx es un ZIP; un .xls antiguo, un documento OLE2.
+FIRMAS_EXCEL = (b"PK\x03\x04", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
+EXTENSIONES_EXCEL = (".xlsx", ".xls")
+
+
+def leer_archivo_exogena(flujo, nombre: Optional[str]) -> bytes:
+    """Lee el archivo subido validando, antes de pasarlo a pandas, que no
+    supere el tamaño máximo y que de verdad sea un Excel (por su firma, no
+    solo por la extensión, que el cliente puede falsear). Lee como máximo
+    un byte de más para no cargar en memoria un archivo enorme."""
+    limite = int(TAMANO_MAXIMO_EXOGENA_MB * 1024 * 1024)
+    contenido = flujo.read(limite + 1)
+    if len(contenido) > limite:
+        raise ArchivoDemasiadoGrandeError(
+            f"El archivo supera el máximo de {TAMANO_MAXIMO_EXOGENA_MB:g} MB"
+        )
+    if not (nombre or "").lower().endswith(EXTENSIONES_EXCEL) or not contenido.startswith(FIRMAS_EXCEL):
+        raise ArchivoExogenaInvalidoError(
+            "El archivo debe ser un Excel (.xlsx o .xls) descargado de la DIAN"
+        )
+    return contenido
 
 
 def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
