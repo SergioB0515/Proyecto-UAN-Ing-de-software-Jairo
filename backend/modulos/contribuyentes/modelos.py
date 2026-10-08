@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
+from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -88,12 +89,22 @@ class Activo(ActivoBase, table=True):
 
 
 class ActivoCrear(ActivoBase):
-    pass
+    @field_validator("tipo")
+    @classmethod
+    def _inventario_solo_por_cierre(cls, tipo: TipoActivo) -> TipoActivo:
+        if tipo == TipoActivo.INVENTARIO:
+            raise ValueError(
+                "Un activo INVENTARIO solo lo crea el cierre del periodo fiscal"
+            )
+        return tipo
 
 
 class ActivoLeer(ActivoBase):
     id: int
     contribuyente_id: int
+    # Sin gt=0: el Activo INVENTARIO de un cierre puede valer 0 si el
+    # negocio cerró el año sin mercancía.
+    valor: float
 
 
 # ------------------------------------------------------------- FuenteIngreso

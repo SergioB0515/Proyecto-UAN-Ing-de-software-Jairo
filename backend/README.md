@@ -4,7 +4,7 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**: incrementos 1 a 4 implementados y probados — **86/86 pruebas**.
+**Estado**: los cinco incrementos implementados y probados — **114/114 pruebas**.
 
 | Incremento | Historias | Módulos |
 |---|---|---|
@@ -12,7 +12,7 @@ para las razones de cada elección técnica.
 | 2 | HU-05 a HU-07 | `exogena`, `parametros` |
 | 3 | HU-08 a HU-10 | `conciliacion` |
 | 4 | HU-11 a HU-14 | `inventario`, `movimientos` |
-| 5 | HU-15 a HU-18 | `reportes`, `cartera` — pendiente |
+| 5 | HU-15 a HU-18 | `reportes`, `cartera` |
 
 ## Endpoints principales
 
@@ -36,6 +36,10 @@ y filtran por el contador del token.
 | `POST/GET /contribuyentes/{id}/documentos-soporte`, `POST/GET /contribuyentes/{id}/movimientos` | HU-12 |
 | `POST/GET /contribuyentes/{id}/proveedores` | HU-13 |
 | `GET /contribuyentes/{id}/productos/{prid}/kardex`, `GET /contribuyentes/{id}/periodos-fiscales/{pid}/costo-ventas` | HU-14 |
+| `POST /contribuyentes/{id}/periodos-fiscales/{pid}/cerrar`, `POST .../reabrir` | HU-15 |
+| `GET /contribuyentes/{id}/periodos-fiscales/{pid}/kardex`, `GET .../reportes/{tipo}?formato=xlsx\|pdf` (`tipo`: `kardex`, `saldo-inventario`, `conciliacion`, `borrador-renglones`, `resumen`) | HU-16 |
+| `GET /contribuyentes/{id}/periodos-fiscales/{pid}/resumen` | HU-17 |
+| `GET /cartera?anio_gravable=&orden=alertas\|nombre` | HU-18 |
 
 Códigos de error: `404` si el recurso no existe o es de otro contador
 (deliberadamente el mismo código en ambos casos), `409` para conflictos de
@@ -104,17 +108,15 @@ mocks): cada prueba abre una transacción y la revierte al terminar, así
 que no hace falta limpiar datos entre corridas. Si quieres apuntar las
 pruebas a otra base, define `TEST_DATABASE_URL` antes de correr `pytest`.
 
-## Qué falta (Incremento 5)
+## Pendientes conocidos
 
-`reportes` (cierre de `PeriodoFiscal`, kardex y reportes exportables en
-Excel/PDF) y `cartera` (panel consolidado) todavía son solo la carpeta y su
-`README.md`. Las piezas que necesitan ya existen: el costo de ventas expone
-`total_inventario_final` (el valor que el cierre llevará al patrimonio como
-`Activo` de tipo `INVENTARIO`), la conciliación expone `resumen.NO_DECLARADO`
-(las alertas del panel de cartera), y la importación de exógena y el
-registro de movimientos ya rechazan periodos `CERRADO`.
+- **HU-03**: cada `FuenteIngreso` (y cada `Activo`) todavía no se asocia a
+  un `PeriodoFiscal`; el resumen lo advierte en `avisos`. Requiere recrear
+  esas tablas, porque no hay migraciones.
+- **Frontend**: solo el esqueleto de carpetas.
 
 **Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
-nuevas pero no altera las existentes. Este incremento solo agrega tablas
-(`proveedores`, `documentos_soporte`, `movimientos`), así que una base de
-datos de desarrollo creada antes sigue funcionando sin recrearla.
+nuevas pero no altera las existentes. Los incrementos 4 y 5 solo agregan
+tablas (`proveedores`, `documentos_soporte`, `movimientos`,
+`cierres_periodo`), así que una base de datos de desarrollo creada antes
+sigue funcionando sin recrearla.

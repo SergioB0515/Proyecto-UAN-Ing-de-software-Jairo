@@ -17,13 +17,13 @@
 | Backend — Incremento 2 (HU-05 a HU-07) | ✅ Implementado y probado |
 | Backend — Incremento 3 (HU-08 a HU-10) | ✅ Implementado y probado |
 | Backend — Incremento 4 (HU-11 a HU-14) | ✅ Implementado y probado |
-| Backend — Incremento 5 (HU-15 a HU-18) | ⏳ Pendiente |
+| Backend — Incremento 5 (HU-15 a HU-18) | ✅ Implementado y probado |
 | Frontend | ⏳ Pendiente (solo esqueleto de carpetas) |
 | Evidencias de funcionamiento | ⏳ Pendiente (capturas por historia de usuario) |
 
 ## Detalle
 
-El backend tiene implementados los incrementos 1 a 4, con 86 pruebas
+El backend tiene implementados los cinco incrementos, con 114 pruebas
 automáticas que corren contra una base de datos PostgreSQL real (ver
 [backend/README.md](../backend/README.md) para los endpoints y cómo
 correrlas).
@@ -55,15 +55,23 @@ Decisiones tomadas durante el incremento 4:
 - El método de costeo de un producto queda bloqueado una vez tiene
   movimientos.
 
+Decisiones tomadas durante el incremento 5:
+
+- Los periodos se cierran en orden de año y solo se puede reabrir el
+  último cerrado, porque el saldo inicial de inventario de un año depende
+  del cierre del anterior.
+- El cierre registra el inventario final como `Activo` de tipo
+  `INVENTARIO`, y el patrimonio solo cuenta el del último cierre (el de
+  años anteriores ya está contenido en el saldo inicial del siguiente).
+  Ese tipo de activo ya no se puede registrar a mano.
+- Lo que hizo cada cierre se guarda en `CierrePeriodo`, para poder
+  deshacerlo al reabrir.
+
 ## Próximos pasos
 
-1. Incremento 5: cierre de `PeriodoFiscal` (lleva
-   `total_inventario_final` del costo de ventas al patrimonio como `Activo`
-   de tipo `INVENTARIO` y marca el periodo `CERRADO`), reportes exportables
-   (kardex, saldo de inventario, conciliación, borrador) y panel de
-   cartera (usa `resumen.NO_DECLARADO` de la conciliación).
-2. Asociar cada `FuenteIngreso` a un `PeriodoFiscal` (criterio de HU-03
-   aún no cubierto; requiere recrear la tabla al no haber migraciones).
-3. Frontend en Vue 3 sobre los endpoints ya disponibles.
-4. Registrar capturas y casos verificados en
+1. Asociar cada `FuenteIngreso` y `Activo` a un `PeriodoFiscal` (criterio
+   de HU-03 aún no cubierto; requiere recrear esas tablas al no haber
+   migraciones). Mientras tanto el resumen lo advierte en `avisos`.
+2. Frontend en Vue 3 sobre los endpoints ya disponibles.
+3. Registrar capturas y casos verificados en
    [10. Evidencias de funcionamiento](10-evidencias-funcionamiento.md).

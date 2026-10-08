@@ -33,6 +33,7 @@ def registrar_modelos() -> None:
         Proveedor,
     )
     from modulos.parametros.modelos import UmbralDeclaracion  # noqa: F401
+    from modulos.reportes.modelos import CierrePeriodo  # noqa: F401
 
 
 def crear_tablas() -> None:

@@ -27,6 +27,7 @@ from .modelos import (
     DocumentoSoporteCrear,
     DocumentoSoporteLeer,
     Kardex,
+    KardexProductoPeriodo,
     MovimientoCrear,
     MovimientoLeer,
     ProveedorCrear,
@@ -194,6 +195,26 @@ def kardex(
     try:
         return servicios.obtener_kardex(
             session, contador.id, contribuyente_id, producto_id
+        )
+    except _ERRORES as exc:
+        raise _traducir(exc) from exc
+
+
+@router.get(
+    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}/kardex",
+    response_model=List[KardexProductoPeriodo],
+)
+def kardex_del_periodo(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Kardex de todos los productos en el periodo, con saldo inicial y
+    final (HU-16)."""
+    try:
+        return servicios.kardex_por_periodo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
         )
     except _ERRORES as exc:
         raise _traducir(exc) from exc

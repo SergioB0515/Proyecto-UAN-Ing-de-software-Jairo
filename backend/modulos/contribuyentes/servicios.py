@@ -17,6 +17,7 @@ from .modelos import (
     FuenteIngresoCrear,
     PeriodoFiscal,
     PeriodoFiscalCrear,
+    TipoActivo,
 )
 
 
@@ -167,11 +168,28 @@ def listar_periodos_fiscales(
     )
 
 
+def activos_vigentes(
+    session: Session, contador_id: int, contribuyente_id: int
+) -> List[Activo]:
+    """Los activos que componen el patrimonio actual. Cada cierre de periodo
+    (Incremento 5) agrega un Activo INVENTARIO con el saldo de ese año;
+    solo cuenta el más reciente, porque el inventario de un año ya está
+    contenido en el saldo inicial del siguiente. Los cierres van en orden de
+    año, así que el de mayor id es el del último año cerrado."""
+    activos = listar_activos(session, contador_id, contribuyente_id)
+    inventarios = [a for a in activos if a.tipo == TipoActivo.INVENTARIO]
+    inventario_vigente = max(inventarios, key=lambda a: a.id, default=None)
+    return [
+        activo
+        for activo in activos
+        if activo.tipo != TipoActivo.INVENTARIO or activo is inventario_vigente
+    ]
+
+
 def calcular_patrimonio_liquido(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> float:
-    """HU-04: suma de todos los Activo del contribuyente. El inventario
-    (Incremento 4/5) se sumará aquí como un Activo de tipo INVENTARIO al
-    cerrar el periodo fiscal — no antes."""
-    activos = listar_activos(session, contador_id, contribuyente_id)
-    return sum(activo.valor for activo in activos)
+    """HU-04: suma de los activos vigentes del contribuyente."""
+    return sum(
+        activo.valor for activo in activos_vigentes(session, contador_id, contribuyente_id)
+    )

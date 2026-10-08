@@ -30,6 +30,7 @@ from .modelos import (
     DocumentoSoporte,
     DocumentoSoporteCrear,
     Kardex,
+    KardexProductoPeriodo,
     Movimiento,
     MovimientoCrear,
     Proveedor,
@@ -281,14 +282,13 @@ def obtener_kardex(
     )
 
 
-def calcular_costo_ventas(
+def kardex_por_periodo(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
-) -> CostoVentasPeriodo:
-    """HU-14: costo de ventas del periodo por producto, según el método de
-    costeo de cada uno. El kardex se reproduce desde el primer movimiento
-    histórico, así el saldo que viene de años anteriores se costea bien.
-    El inventario final valorizado es el que el cierre de periodo
-    (Incremento 5) llevará al patrimonio como Activo INVENTARIO."""
+) -> List[KardexProductoPeriodo]:
+    """Kardex de cada producto acotado al periodo. Se reproduce desde el
+    primer movimiento histórico (así el saldo que viene de años anteriores
+    se costea bien) y se cortan las líneas del periodo. Se omiten los
+    productos sin movimientos en el año y sin saldo."""
     obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
@@ -300,7 +300,7 @@ def calcular_costo_ventas(
         .order_by(Producto.codigo)
     ).all()
 
-    resultado: List[CostoVentasProducto] = []
+    resultado: List[KardexProductoPeriodo] = []
     for producto in productos:
         # Solo lo ocurrido hasta el final del año del periodo.
         movimientos = [
@@ -312,31 +312,56 @@ def calcular_costo_ventas(
             continue
 
         calculadas = costeo.calcular_kardex(producto.metodo_costeo, movimientos)
-        salidas_del_periodo = [
-            c.linea
-            for c in calculadas
-            if c.periodo_fiscal_id == periodo.id and c.linea.tipo == TipoMovimiento.SALIDA
-        ]
+        del_periodo = [c.linea for c in calculadas if c.periodo_fiscal_id == periodo.id]
+        anteriores = [c.linea for c in calculadas if c.periodo_fiscal_id != periodo.id]
         saldo_final = calculadas[-1].linea
-        if not salidas_del_periodo and saldo_final.saldo_cantidad == 0:
+        if not del_periodo and saldo_final.saldo_cantidad == 0:
             continue
 
-        ingresos = round(
-            sum(l.cantidad * (l.precio_venta_unitario or 0) for l in salidas_del_periodo), 2
-        )
-        costo = round(sum(l.costo_total for l in salidas_del_periodo), 2)
         resultado.append(
-            CostoVentasProducto(
+            KardexProductoPeriodo(
                 producto_id=producto.id,
                 codigo=producto.codigo,
                 nombre=producto.nombre,
                 metodo_costeo=producto.metodo_costeo,
-                cantidad_vendida=sum(l.cantidad for l in salidas_del_periodo),
+                saldo_inicial_cantidad=anteriores[-1].saldo_cantidad if anteriores else 0.0,
+                saldo_inicial_valor=anteriores[-1].saldo_valor if anteriores else 0.0,
+                lineas=del_periodo,
+                saldo_final_cantidad=saldo_final.saldo_cantidad,
+                saldo_final_valor=saldo_final.saldo_valor,
+            )
+        )
+    return resultado
+
+
+def calcular_costo_ventas(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> CostoVentasPeriodo:
+    """HU-14: costo de ventas del periodo por producto, según el método de
+    costeo de cada uno. El inventario final valorizado es el que el cierre
+    de periodo lleva al patrimonio como Activo INVENTARIO (HU-15)."""
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    resultado: List[CostoVentasProducto] = []
+    for kardex in kardex_por_periodo(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    ):
+        salidas = [l for l in kardex.lineas if l.tipo == TipoMovimiento.SALIDA]
+        ingresos = round(sum(l.cantidad * (l.precio_venta_unitario or 0) for l in salidas), 2)
+        costo = round(sum(l.costo_total for l in salidas), 2)
+        resultado.append(
+            CostoVentasProducto(
+                producto_id=kardex.producto_id,
+                codigo=kardex.codigo,
+                nombre=kardex.nombre,
+                metodo_costeo=kardex.metodo_costeo,
+                cantidad_vendida=sum(l.cantidad for l in salidas),
                 ingresos_ventas=ingresos,
                 costo_ventas=costo,
                 utilidad_bruta=round(ingresos - costo, 2),
-                saldo_final_cantidad=saldo_final.saldo_cantidad,
-                saldo_final_valor=saldo_final.saldo_valor,
+                saldo_final_cantidad=kardex.saldo_final_cantidad,
+                saldo_final_valor=kardex.saldo_final_valor,
             )
         )
 

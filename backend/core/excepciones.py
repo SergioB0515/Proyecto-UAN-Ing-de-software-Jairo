@@ -34,6 +34,12 @@ class PeriodoFiscalCerradoError(ErrorAplicacion):
     importaciones de exógena (HU-15)."""
 
 
+class EstadoPeriodoInvalidoError(ErrorAplicacion):
+    """El periodo no está en el estado que exige la operación: cerrar uno ya
+    cerrado, reabrir uno abierto, cerrar con años anteriores abiertos o
+    reabrir con años posteriores cerrados (HU-15)."""
+
+
 class ArchivoExogenaInvalidoError(ErrorAplicacion):
     """El archivo no tiene el formato esperado (no se encontró la fila de
     encabezados "NIT" / "Nombre...") — no es un error de fila individual,

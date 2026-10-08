@@ -159,6 +159,21 @@ class Kardex(SQLModel):
     saldo_valor: float
 
 
+class KardexProductoPeriodo(SQLModel):
+    """Kardex de un producto acotado a un periodo: saldo con el que abrió el
+    año, sus movimientos y saldo al cierre (base del kardex de HU-16)."""
+
+    producto_id: int
+    codigo: str
+    nombre: str
+    metodo_costeo: MetodoCosteo
+    saldo_inicial_cantidad: float
+    saldo_inicial_valor: float
+    lineas: List[LineaKardex]
+    saldo_final_cantidad: float
+    saldo_final_valor: float
+
+
 class CostoVentasProducto(SQLModel):
     producto_id: int
     codigo: str
