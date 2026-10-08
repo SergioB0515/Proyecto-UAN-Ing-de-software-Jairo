@@ -29,6 +29,7 @@ def crear_tablas() -> None:
         ReporteExogena,
         TopeExogena,
     )
+    from modulos.inventario.modelos import Categoria, Producto  # noqa: F401
     from modulos.parametros.modelos import UmbralDeclaracion  # noqa: F401
 
     SQLModel.metadata.create_all(engine)

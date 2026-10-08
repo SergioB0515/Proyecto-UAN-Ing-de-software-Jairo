@@ -2,164 +2,165 @@ from typing import List
 
 from sqlmodel import Session, select
 
-from core.excepciones import PeriodoFiscalNoEncontradoError, ReporteExogenaNoEncontradoError
+from core.excepciones import (
+    CategoriaConProductosActivosError,
+    CategoriaNoEncontradaError,
+    InventarioNoAplicaError,
+    ProductoNoEncontradoError,
+)
 
-from ..contribuyentes.modelos import Activo, FuenteIngreso, PeriodoFiscal
-from ..contribuyentes.servicios import listar_activos, listar_fuentes_ingreso, obtener_contribuyente
-from ..exogena.modelos import RegistroExogena, ReporteExogena
-from .modelos import BorradorRenglones, ItemConciliacion, RenglonSugerido, ResultadoConciliacion
+from ..contribuyentes.modelos import Contribuyente, TipoContribuyente
+from ..contribuyentes.servicios import obtener_contribuyente
+from .modelos import (
+    Categoria,
+    CategoriaCrear,
+    Producto,
+    ProductoActualizar,
+    ProductoCrear,
+)
 
-CONCEPTO_CONSUMO_TC = "1023"
+TIPOS_CON_INVENTARIO = {TipoContribuyente.INDEPENDIENTE, TipoContribuyente.MIXTO}
 
 
-def _obtener_periodo_validado(session, contribuyente_id, periodo_fiscal_id):
-    periodo = session.get(PeriodoFiscal, periodo_fiscal_id)
-    if periodo is None or periodo.contribuyente_id != contribuyente_id:
-        raise PeriodoFiscalNoEncontradoError(
-            f"No existe el periodo fiscal {periodo_fiscal_id} para el contribuyente {contribuyente_id}"
+def _obtener_contribuyente_con_inventario(
+    session: Session, contador_id: int, contribuyente_id: int
+) -> Contribuyente:
+    """Valida pertenencia al contador y que el contribuyente tenga negocio:
+    un ASALARIADO no maneja inventario (HU-01)."""
+    contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
+    if contribuyente.tipo_contribuyente not in TIPOS_CON_INVENTARIO:
+        raise InventarioNoAplicaError(
+            f"El contribuyente {contribuyente_id} es "
+            f"{contribuyente.tipo_contribuyente.value}: el inventario solo "
+            "aplica a INDEPENDIENTE o MIXTO"
         )
-    return periodo
+    return contribuyente
 
 
-def _obtener_reporte_mas_reciente(session, periodo_fiscal_id):
-    reporte = session.exec(
-        select(ReporteExogena)
-        .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
-        .order_by(ReporteExogena.fecha_importacion.desc())
-    ).first()
-    if reporte is None:
-        raise ReporteExogenaNoEncontradoError(
-            f"No se ha importado la exógena del periodo fiscal {periodo_fiscal_id}"
+def _obtener_categoria(
+    session: Session, contribuyente_id: int, categoria_id: int
+) -> Categoria:
+    categoria = session.get(Categoria, categoria_id)
+    if categoria is None or categoria.contribuyente_id != contribuyente_id:
+        raise CategoriaNoEncontradaError(
+            f"No existe la categoría {categoria_id} para el contribuyente "
+            f"{contribuyente_id}"
         )
-    return reporte
+    return categoria
 
 
-def conciliar_contribuyente(session, contador_id, contribuyente_id, periodo_fiscal_id):
-    obtener_contribuyente(session, contador_id, contribuyente_id)
-    _obtener_periodo_validado(session, contribuyente_id, periodo_fiscal_id)
-    reporte = _obtener_reporte_mas_reciente(session, periodo_fiscal_id)
+# -------------------------------------------------------------------- Categoria
 
-    registros_exogena = session.exec(
-        select(RegistroExogena).where(RegistroExogena.reporte_exogena_id == reporte.id)
-    ).all()
 
-    activos = listar_activos(session, contador_id, contribuyente_id)
-    fuentes_ingreso = listar_fuentes_ingreso(session, contador_id, contribuyente_id)
+def crear_categoria(
+    session: Session, contador_id: int, contribuyente_id: int, datos: CategoriaCrear
+) -> Categoria:
+    """HU-11."""
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    categoria = Categoria(**datos.model_dump(), contribuyente_id=contribuyente_id)
+    session.add(categoria)
+    session.commit()
+    session.refresh(categoria)
+    return categoria
 
-    items_conciliacion = []
-    ids_registros_usados = set()
 
-    declarados = []
-    for activo in activos:
-        declarados.append({
-            "concepto": activo.descripcion,
-            "valor_declarado": activo.valor,
-            "vinculo_codigo_concepto": activo.vinculo_codigo_concepto,
-            "vinculo_palabra_clave": activo.vinculo_palabra_clave,
-            "origen": "Activo",
-        })
-    for fuente in fuentes_ingreso:
-        declarados.append({
-            "concepto": fuente.concepto,
-            "valor_declarado": fuente.valor_anual,
-            "vinculo_codigo_concepto": fuente.vinculo_codigo_concepto,
-            "vinculo_palabra_clave": fuente.vinculo_palabra_clave,
-            "origen": "FuenteIngreso",
-        })
-
-    for dec in declarados:
-        match = None
-        if dec["vinculo_codigo_concepto"]:
-            for reg in registros_exogena:
-                if reg.id not in ids_registros_usados and reg.concepto_code == dec["vinculo_codigo_concepto"]:
-                    match = reg
-                    break
-        if not match and dec["vinculo_palabra_clave"]:
-            palabra_clave = dec["vinculo_palabra_clave"].lower()
-            for reg in registros_exogena:
-                if reg.id not in ids_registros_usados and reg.detalle and palabra_clave in reg.detalle.lower():
-                    match = reg
-                    break
-
-        if match:
-            ids_registros_usados.add(match.id)
-            diferencia = match.valor - dec["valor_declarado"]
-            tolerancia = max(1000, match.valor * 0.005)
-            estado = "COINCIDE" if abs(diferencia) <= tolerancia else "DISCREPANCIA"
-            items_conciliacion.append(
-                ItemConciliacion(
-                    concepto=dec["concepto"],
-                    origen=dec["origen"],
-                    valor_declarado=dec["valor_declarado"],
-                    valor_exogena=match.valor,
-                    diferencia=diferencia,
-                    estado=estado
-                )
-            )
-        else:
-            items_conciliacion.append(
-                ItemConciliacion(
-                    concepto=dec["concepto"],
-                    origen=dec["origen"],
-                    valor_declarado=dec["valor_declarado"],
-                    valor_exogena=None,
-                    diferencia=None,
-                    estado="NO_REPORTADO_POR_TERCERO"
-                )
-            )
-
-    for reg in registros_exogena:
-        if reg.id in ids_registros_usados:
-            continue
-        if (reg.es_auto_reportado or
-            reg.es_dian or
-            reg.concepto_code == CONCEPTO_CONSUMO_TC or
-            (reg.detalle and "retenci" in reg.detalle.lower())):
-            continue
-        items_conciliacion.append(
-            ItemConciliacion(
-                concepto=reg.detalle,
-                origen="Exógena",
-                valor_declarado=None,
-                valor_exogena=reg.valor,
-                diferencia=None,
-                estado="NO_DECLARADO"
-            )
-        )
-
-    return ResultadoConciliacion(
-        contribuyente_id=contribuyente_id,
-        periodo_fiscal_id=periodo_fiscal_id,
-        items=items_conciliacion
+def listar_categorias(
+    session: Session, contador_id: int, contribuyente_id: int
+) -> List[Categoria]:
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    return list(
+        session.exec(
+            select(Categoria).where(Categoria.contribuyente_id == contribuyente_id)
+        ).all()
     )
 
 
-def generar_borrador_renglones(session, contador_id, contribuyente_id, periodo_fiscal_id):
-    obtener_contribuyente(session, contador_id, contribuyente_id)
-    _obtener_periodo_validado(session, contribuyente_id, periodo_fiscal_id)
-    reporte = _obtener_reporte_mas_reciente(session, periodo_fiscal_id)
+def eliminar_categoria(
+    session: Session, contador_id: int, contribuyente_id: int, categoria_id: int
+) -> None:
+    """HU-11: no se elimina si tiene productos activos. Los inactivos quedan
+    sin categoría — agregación, el producto no desaparece con ella."""
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    categoria = _obtener_categoria(session, contribuyente_id, categoria_id)
 
-    registros_exogena = session.exec(
-        select(RegistroExogena).where(RegistroExogena.reporte_exogena_id == reporte.id)
+    productos = session.exec(
+        select(Producto).where(Producto.categoria_id == categoria_id)
     ).all()
+    if any(producto.activo for producto in productos):
+        raise CategoriaConProductosActivosError(
+            f"La categoría {categoria_id} tiene productos activos asociados"
+        )
 
-    acumulados_renglones = {}
-    for reg in registros_exogena:
-        if reg.renglones_sugeridos:
-            renglones = [r.strip() for r in reg.renglones_sugeridos.split(",")]
-            for renglon in renglones:
-                if renglon not in acumulados_renglones:
-                    acumulados_renglones[renglon] = {"valor_total": 0.0, "cantidad": 0}
-                acumulados_renglones[renglon]["valor_total"] += reg.valor
-                acumulados_renglones[renglon]["cantidad"] += 1
+    for producto in productos:
+        producto.categoria_id = None
+        session.add(producto)
+    session.delete(categoria)
+    session.commit()
 
-    renglones_sugeridos = [
-        RenglonSugerido(renglon=renglon, valor_total=datos["valor_total"], cantidad_registros=datos["cantidad"])
-        for renglon, datos in acumulados_renglones.items()
-    ]
 
-    return BorradorRenglones(
-        contribuyente_id=contribuyente_id,
-        periodo_fiscal_id=periodo_fiscal_id,
-        renglones=renglones_sugeridos
-    )
+# --------------------------------------------------------------------- Producto
+
+
+def crear_producto(
+    session: Session, contador_id: int, contribuyente_id: int, datos: ProductoCrear
+) -> Producto:
+    """HU-11: la clasificación IVA y el método de costeo son obligatorios
+    (los exige el esquema)."""
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    if datos.categoria_id is not None:
+        _obtener_categoria(session, contribuyente_id, datos.categoria_id)
+
+    producto = Producto(**datos.model_dump(), contribuyente_id=contribuyente_id)
+    session.add(producto)
+    session.commit()
+    session.refresh(producto)
+    return producto
+
+
+def listar_productos(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    solo_activos: bool = False,
+) -> List[Producto]:
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    consulta = select(Producto).where(Producto.contribuyente_id == contribuyente_id)
+    if solo_activos:
+        consulta = consulta.where(Producto.activo == True)  # noqa: E712
+    return list(session.exec(consulta).all())
+
+
+def obtener_producto(
+    session: Session, contador_id: int, contribuyente_id: int, producto_id: int
+) -> Producto:
+    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    producto = session.get(Producto, producto_id)
+    if producto is None or producto.contribuyente_id != contribuyente_id:
+        raise ProductoNoEncontradoError(
+            f"No existe el producto {producto_id} para el contribuyente "
+            f"{contribuyente_id}"
+        )
+    return producto
+
+
+def actualizar_producto(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    producto_id: int,
+    datos: ProductoActualizar,
+) -> Producto:
+    """Cambia solo los campos enviados. Desactivar (`activo=False`) es la
+    forma de dar de baja un producto: no se borra, porque sus movimientos
+    deben seguir siendo trazables."""
+    producto = obtener_producto(session, contador_id, contribuyente_id, producto_id)
+    cambios = datos.model_dump(exclude_unset=True)
+    if cambios.get("categoria_id") is not None:
+        _obtener_categoria(session, contribuyente_id, cambios["categoria_id"])
+
+    for campo, valor in cambios.items():
+        setattr(producto, campo, valor)
+    session.add(producto)
+    session.commit()
+    session.refresh(producto)
+    return producto

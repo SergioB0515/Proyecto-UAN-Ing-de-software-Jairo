@@ -38,3 +38,20 @@ class ReporteExogenaNoEncontradoError(ErrorAplicacion):
 class UmbralNoConfiguradoError(ErrorAplicacion):
     """No hay UmbralDeclaracion registrado para el año gravable pedido —
     no se puede calcular la obligación de declarar sin ese dato."""
+
+
+class InventarioNoAplicaError(ErrorAplicacion):
+    """El contribuyente es ASALARIADO: el inventario solo aplica a
+    contribuyentes INDEPENDIENTE o MIXTO (HU-01, HU-11)."""
+
+
+class CategoriaNoEncontradaError(ErrorAplicacion):
+    """La categoría no existe, o no pertenece a ese contribuyente."""
+
+
+class CategoriaConProductosActivosError(ErrorAplicacion):
+    """No se puede eliminar una categoría con productos activos (HU-11)."""
+
+
+class ProductoNoEncontradoError(ErrorAplicacion):
+    """El producto no existe, o no pertenece a ese contribuyente."""

@@ -10,6 +10,7 @@ from database import crear_tablas
 from modulos.contadores.router import router as router_contadores
 from modulos.contribuyentes.router import router as router_contribuyentes
 from modulos.exogena.router import router as router_exogena
+from modulos.inventario.router import router as router_inventario
 from modulos.parametros.router import router as router_parametros
 
 # Orígenes del frontend en desarrollo (Vite). En producción, reemplazar por
@@ -44,6 +45,7 @@ app.add_middleware(
 app.include_router(router_contadores)
 app.include_router(router_contribuyentes)
 app.include_router(router_exogena)
+app.include_router(router_inventario)
 app.include_router(router_parametros)
 
 

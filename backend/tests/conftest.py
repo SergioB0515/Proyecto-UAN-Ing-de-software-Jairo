@@ -51,6 +51,7 @@ from modulos.exogena.modelos import (  # noqa: E402,F401
     ReporteExogena,
     TopeExogena,
 )
+from modulos.inventario.modelos import Categoria, Producto  # noqa: E402,F401
 from modulos.parametros.modelos import UmbralDeclaracion  # noqa: E402,F401
 
 _engine_pruebas = create_engine(DATABASE_URL)
