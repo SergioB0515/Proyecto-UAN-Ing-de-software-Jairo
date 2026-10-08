@@ -128,6 +128,8 @@ classDiagram
     Contribuyente "1" --> "*" FuenteIngreso
     Contribuyente "1" --> "*" Activo
     Contribuyente "1" --> "*" PeriodoFiscal
+    PeriodoFiscal "1" --> "*" FuenteIngreso
+    PeriodoFiscal "1" --> "*" Activo
     Contribuyente "1" --> "*" Producto : solo INDEPENDIENTE/MIXTO
 
     PeriodoFiscal "1" --> "0..1" ReporteExogena
@@ -199,6 +201,11 @@ classDiagram
   pertenece a más de un contador en este alcance.
 - Un `Contribuyente` tiene muchos `FuenteIngreso`, `Activo` y
   `PeriodoFiscal` (1 — \*); esto aplica a todos los contribuyentes.
+- Cada `FuenteIngreso` y cada `Activo` pertenece además a un
+  `PeriodoFiscal` (HU-03): los ingresos son del año gravable y el
+  patrimonio es el del 31 de diciembre de ese año, así que la conciliación,
+  el patrimonio y el resumen de un año solo cuentan los registros de ese
+  año.
 - Un `Contribuyente` tiene muchos `Producto` (1 — \*) **solo** si su
   `tipoContribuyente` es independiente o mixto.
 - Un `PeriodoFiscal` tiene, a lo sumo, un `ReporteExogena` (0..1 — 1); un

@@ -28,9 +28,12 @@ módulos se habilitan para ese contribuyente:
 
 ## Proceso 3 — Cálculo del patrimonio líquido
 
-El patrimonio líquido se calcula como la suma de todos los `Activo`
-asociados al contribuyente (cuentas, vehículos, inmuebles, inversiones),
-más —si aplica— el valor del inventario vigente (ver Proceso 9). Este
+El patrimonio líquido de un año gravable se calcula como la suma de los
+`Activo` del contribuyente registrados en ese `PeriodoFiscal` (cuentas,
+vehículos, inmuebles, inversiones), más —si aplica— el inventario final que
+registra el cierre de ese mismo periodo (ver Proceso 10). Cada `Activo` y
+cada `FuenteIngreso` pertenece a un periodo, porque el patrimonio se
+declara al 31 de diciembre de cada año y los ingresos son los del año. Este
 cálculo es el mismo para ambos perfiles de contribuyente.
 
 Al registrar un `Activo` o una `FuenteIngreso`, el contador puede

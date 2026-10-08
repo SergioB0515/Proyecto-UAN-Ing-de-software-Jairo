@@ -9,6 +9,7 @@ backend/.pytest_cache/
 # Frontend (Node)
 frontend/node_modules/
 frontend/dist/
+frontend/.env
 
 # Editor / SO
 .vscode/

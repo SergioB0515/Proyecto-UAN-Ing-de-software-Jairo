@@ -4,7 +4,7 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**: los cinco incrementos implementados y probados — **114/114 pruebas**.
+**Estado**: los cinco incrementos implementados y probados: **135/135 pruebas**.
 
 | Incremento | Historias | Módulos |
 |---|---|---|
@@ -22,9 +22,9 @@ y filtran por el contador del token.
 | Método y ruta | HU |
 |---|---|
 | `POST /contadores/registro`, `POST /contadores/login`, `GET /contadores/yo` | HU-01 |
-| `POST/GET /contribuyentes` | HU-02 |
-| `POST/GET /contribuyentes/{id}/fuentes-ingreso` | HU-03 |
-| `POST/GET /contribuyentes/{id}/activos`, `GET /contribuyentes/{id}/patrimonio` | HU-04 |
+| `POST/GET /contribuyentes`, `GET/PATCH/DELETE /contribuyentes/{id}` | HU-02 |
+| `POST/GET /contribuyentes/{id}/fuentes-ingreso?periodo_fiscal_id=`, `PATCH/DELETE .../fuentes-ingreso/{fid}` | HU-03 |
+| `POST/GET /contribuyentes/{id}/activos?periodo_fiscal_id=`, `PATCH/DELETE .../activos/{aid}`, `GET /contribuyentes/{id}/patrimonio?periodo_fiscal_id=` | HU-04 |
 | `POST/GET /contribuyentes/{id}/periodos-fiscales` | — |
 | `POST /contribuyentes/{id}/periodos-fiscales/{pid}/exogena` (multipart, campo `archivo`) | HU-05 |
 | `GET /contribuyentes/{id}/reportes-exogena`, `.../{rid}/topes`, `.../{rid}/registros?concepto_code=&nit_reportante=` | HU-06 |
@@ -40,6 +40,21 @@ y filtran por el contador del token.
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/kardex`, `GET .../reportes/{tipo}?formato=xlsx\|pdf` (`tipo`: `kardex`, `saldo-inventario`, `conciliacion`, `borrador-renglones`, `resumen`) | HU-16 |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/resumen` | HU-17 |
 | `GET /cartera?anio_gravable=&orden=alertas\|nombre` | HU-18 |
+
+Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el
+cuerpo (obligatorio) y se rechazan con 409 si ese periodo está cerrado. Sin
+`periodo_fiscal_id`, los `GET` de activos y fuentes devuelven todos los
+años, y el de patrimonio usa el periodo más reciente.
+
+Edición y eliminación (para corregir errores de digitación):
+
+- Activos e ingresos se editan o eliminan solo si su periodo está
+  abierto (409 si no). El periodo de un registro no se cambia: se elimina
+  y se registra en el año correcto. El activo `INVENTARIO` de un cierre no
+  se toca a mano (409): se deshace reabriendo el año.
+- Un contribuyente solo se elimina si no tiene años gravables ni
+  inventario (409 si no), y no se puede pasar a `ASALARIADO` si ya tiene
+  inventario.
 
 Códigos de error: `404` si el recurso no existe o es de otro contador
 (deliberadamente el mismo código en ambos casos), `409` para conflictos de
@@ -108,15 +123,12 @@ mocks): cada prueba abre una transacción y la revierte al terminar, así
 que no hace falta limpiar datos entre corridas. Si quieres apuntar las
 pruebas a otra base, define `TEST_DATABASE_URL` antes de correr `pytest`.
 
-## Pendientes conocidos
-
-- **HU-03**: cada `FuenteIngreso` (y cada `Activo`) todavía no se asocia a
-  un `PeriodoFiscal`; el resumen lo advierte en `avisos`. Requiere recrear
-  esas tablas, porque no hay migraciones.
-- **Frontend**: solo el esqueleto de carpetas.
-
 **Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
-nuevas pero no altera las existentes. Los incrementos 4 y 5 solo agregan
-tablas (`proveedores`, `documentos_soporte`, `movimientos`,
-`cierres_periodo`), así que una base de datos de desarrollo creada antes
-sigue funcionando sin recrearla.
+nuevas pero no altera las existentes. El único cambio a tablas existentes
+(`periodo_fiscal_id` en `activos` y `fuentes_ingreso`, HU-03) lo aplica
+`_migrar_periodo_en_activos_y_fuentes` en `database.py` al arrancar: es
+idempotente y asigna los registros que ya existían al periodo más reciente
+de su contribuyente (el inventario de un cierre, a su propio periodo). Si
+un contribuyente con activos o ingresos no tenía ningún periodo, le crea
+uno abierto para el año anterior al actual. No hace falta recrear la base
+de desarrollo.

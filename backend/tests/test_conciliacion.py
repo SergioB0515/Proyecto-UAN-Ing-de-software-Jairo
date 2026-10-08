@@ -53,9 +53,11 @@ def _preparar(client, email: str, importar: bool = True) -> tuple:
     return token, contribuyente_id, periodo_id
 
 
-def _registrar(client, token, contribuyente_id, ruta, datos):
+def _registrar(client, token, contribuyente_id, periodo_id, ruta, datos):
     respuesta = client.post(
-        f"/contribuyentes/{contribuyente_id}/{ruta}", json=datos, headers=_headers(token)
+        f"/contribuyentes/{contribuyente_id}/{ruta}",
+        json={**datos, "periodo_fiscal_id": periodo_id},
+        headers=_headers(token),
     )
     assert respuesta.status_code == 201
 
@@ -69,18 +71,18 @@ def _conciliar(client, token, contribuyente_id, periodo_id):
 
 def test_conciliacion_clasifica_cada_item(client):
     token, cid, pid = _preparar(client, "conc-1@example.com")
-    _registrar(client, token, cid, "activos", {
+    _registrar(client, token, cid, pid, "activos", {
         "descripcion": "Apartamento", "tipo": "INMUEBLE", "valor": 120000000,
         "vinculo_codigo_concepto": "1476",
     })
-    _registrar(client, token, cid, "activos", {
+    _registrar(client, token, cid, pid, "activos", {
         "descripcion": "Cuenta de ahorros", "tipo": "CUENTA", "valor": 3500000,
         "vinculo_palabra_clave": "movimientos en cuentas",
     })
-    _registrar(client, token, cid, "activos", {
+    _registrar(client, token, cid, pid, "activos", {
         "descripcion": "Moto", "tipo": "VEHICULO", "valor": 8000000,
     })
-    _registrar(client, token, cid, "fuentes-ingreso", {
+    _registrar(client, token, cid, pid, "fuentes-ingreso", {
         "concepto": "Venta apartamento", "valor_anual": 50000000, "vinculo_codigo_concepto": "1032",
     })
 
@@ -112,7 +114,7 @@ def test_la_retencion_no_se_cruza_con_un_ingreso(client):
     # segunda fuente con ese código no debe cruzarse contra la retención.
     token, cid, pid = _preparar(client, "conc-2@example.com")
     for concepto, valor in [("Venta apartamento", 50000000), ("Venta local", 450000)]:
-        _registrar(client, token, cid, "fuentes-ingreso", {
+        _registrar(client, token, cid, pid, "fuentes-ingreso", {
             "concepto": concepto, "valor_anual": valor, "vinculo_codigo_concepto": "1032",
         })
 

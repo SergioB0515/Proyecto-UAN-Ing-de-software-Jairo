@@ -58,12 +58,17 @@ def test_panel_ordena_por_alertas(client):
     _contribuyente(client, h, "Ana sin periodo", anio=None)
     _contribuyente(client, h, "Beto sin exógena")
     con_alertas = _contribuyente(client, h, "Carla con exógena", importar=True)
+    pid = client.get(f"/contribuyentes/{con_alertas}/periodos-fiscales", headers=h).json()[0]["id"]
     # Declara el avalúo y la venta: le quedan menos alertas que a Diego.
     for ruta, datos in [
         ("activos", {"descripcion": "Casa", "tipo": "INMUEBLE", "valor": 120000000, "vinculo_codigo_concepto": "1476"}),
         ("fuentes-ingreso", {"concepto": "Venta", "valor_anual": 50000000, "vinculo_codigo_concepto": "1032"}),
     ]:
-        client.post(f"/contribuyentes/{con_alertas}/{ruta}", json=datos, headers=h)
+        client.post(
+            f"/contribuyentes/{con_alertas}/{ruta}",
+            json={**datos, "periodo_fiscal_id": pid},
+            headers=h,
+        )
     _contribuyente(client, h, "Diego con exógena", importar=True)
 
     respuesta = client.get("/cartera", headers=h)

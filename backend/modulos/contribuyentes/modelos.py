@@ -54,6 +54,15 @@ class ContribuyenteCrear(ContribuyenteBase):
     pass
 
 
+class ContribuyenteActualizar(SQLModel):
+    """Todos los campos opcionales: solo se cambia lo que venga."""
+
+    nombre: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    rut: Optional[str] = Field(default=None, min_length=1, max_length=20)
+    tipo_contribuyente: Optional[TipoContribuyente] = None
+    regimen_tributario: Optional[str] = Field(default=None, max_length=60)
+
+
 class ContribuyenteLeer(ContribuyenteBase):
     id: int
     contador_id: int
@@ -62,12 +71,19 @@ class ContribuyenteLeer(ContribuyenteBase):
 
 class ContribuyenteConPatrimonio(ContribuyenteLeer):
     patrimonio_liquido: float
+    # Periodo sobre el que se calculó; None si el contribuyente aún no
+    # tiene periodos fiscales (patrimonio 0).
+    periodo_fiscal_id: Optional[int] = None
+    anio_gravable: Optional[int] = None
 
 
 # ----------------------------------------------------------------------- Activo
 
 
 class ActivoBase(SQLModel):
+    # HU-03/HU-04: el patrimonio se declara a 31 de diciembre de cada año
+    # gravable, así que cada activo pertenece a un periodo fiscal.
+    periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     descripcion: str = Field(min_length=1, max_length=200)
     tipo: TipoActivo
     valor: float = Field(gt=0)
@@ -99,6 +115,27 @@ class ActivoCrear(ActivoBase):
         return tipo
 
 
+class ActivoActualizar(SQLModel):
+    """Campos editables de un activo. El periodo no se cambia: un activo
+    mal ubicado se elimina y se registra en el año correcto. Un vínculo
+    DIAN enviado como null o cadena vacía se borra."""
+
+    descripcion: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    tipo: Optional[TipoActivo] = None
+    valor: Optional[float] = Field(default=None, gt=0)
+    vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
+    vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
+
+    @field_validator("tipo")
+    @classmethod
+    def _inventario_solo_por_cierre(cls, tipo: Optional[TipoActivo]) -> Optional[TipoActivo]:
+        if tipo == TipoActivo.INVENTARIO:
+            raise ValueError(
+                "Un activo INVENTARIO solo lo crea el cierre del periodo fiscal"
+            )
+        return tipo
+
+
 class ActivoLeer(ActivoBase):
     id: int
     contribuyente_id: int
@@ -111,6 +148,8 @@ class ActivoLeer(ActivoBase):
 
 
 class FuenteIngresoBase(SQLModel):
+    # HU-03: cada fuente de ingreso queda asociada a un periodo fiscal.
+    periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     concepto: str = Field(min_length=1, max_length=200)
     valor_anual: float = Field(gt=0)
     retencion_fuente: float = Field(default=0, ge=0)
@@ -131,6 +170,16 @@ class FuenteIngreso(FuenteIngresoBase, table=True):
 
 class FuenteIngresoCrear(FuenteIngresoBase):
     pass
+
+
+class FuenteIngresoActualizar(SQLModel):
+    """Campos editables de una fuente de ingreso (el periodo no cambia)."""
+
+    concepto: Optional[str] = Field(default=None, min_length=1, max_length=200)
+    valor_anual: Optional[float] = Field(default=None, gt=0)
+    retencion_fuente: Optional[float] = Field(default=None, ge=0)
+    vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
+    vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 
 
 class FuenteIngresoLeer(FuenteIngresoBase):

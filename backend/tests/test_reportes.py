@@ -182,7 +182,8 @@ def test_no_se_registra_un_activo_inventario_a_mano(client):
     e = Escenario(client, "rep-10@example.com")
     respuesta = client.post(
         f"/contribuyentes/{e.cid}/activos",
-        json={"descripcion": "Inventario", "tipo": "INVENTARIO", "valor": 1000},
+        json={"descripcion": "Inventario", "tipo": "INVENTARIO", "valor": 1000,
+              "periodo_fiscal_id": e.periodos[2025]},
         headers=e.h,
     )
     assert respuesta.status_code == 422
@@ -201,7 +202,8 @@ def test_resumen_de_asalariado_sin_exogena(client):
     e = Escenario(client, "rep-12@example.com", tipo="ASALARIADO")
     client.post(
         f"/contribuyentes/{e.cid}/fuentes-ingreso",
-        json={"concepto": "Salario", "valor_anual": 60000000, "retencion_fuente": 2000000},
+        json={"concepto": "Salario", "valor_anual": 60000000, "retencion_fuente": 2000000,
+              "periodo_fiscal_id": e.periodos[2025]},
         headers=e.h,
     )
 

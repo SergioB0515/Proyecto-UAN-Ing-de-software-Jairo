@@ -23,7 +23,7 @@ from ..contribuyentes.modelos import (
     TipoActivo,
 )
 from ..contribuyentes.servicios import (
-    activos_vigentes,
+    listar_activos,
     listar_fuentes_ingreso,
     obtener_contribuyente,
     obtener_periodo_fiscal,
@@ -44,11 +44,6 @@ from .modelos import (
     TipoReporte,
 )
 
-AVISO_SIN_PERIODO_EN_ACTIVOS = (
-    "Los activos y fuentes de ingreso no están asociados a un periodo: se "
-    "muestran los registrados a la fecha."
-)
-
 # --------------------------------------------------------------- Cierre (HU-15)
 
 
@@ -65,8 +60,8 @@ def cerrar_periodo(
     1. El periodo debe estar ABIERTO y todos los años anteriores cerrados
        (el saldo inicial de un año depende del cierre del anterior).
     2. Si el contribuyente maneja inventario, el saldo final valorizado se
-       registra como un Activo INVENTARIO (aunque valga 0, para que el
-       patrimonio deje de contar el inventario del año anterior).
+       registra como un Activo INVENTARIO del mismo periodo (aunque valga 0,
+       para dejar constancia del cierre en el patrimonio del año).
     3. El periodo pasa a CERRADO: ya no admite movimientos ni exógena.
     """
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
@@ -95,6 +90,7 @@ def cerrar_periodo(
             tipo=TipoActivo.INVENTARIO,
             valor=costo.total_inventario_final,
             contribuyente_id=contribuyente_id,
+            periodo_fiscal_id=periodo.id,
         )
         session.add(activo)
         session.flush()
@@ -191,12 +187,12 @@ def construir_resumen(
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
 
-    activos = activos_vigentes(session, contador_id, contribuyente_id)
+    activos = listar_activos(session, contador_id, contribuyente_id, periodo.id)
     por_tipo: Dict[str, float] = defaultdict(float)
     for activo in activos:
         por_tipo[activo.tipo.value] += activo.valor
 
-    fuentes = listar_fuentes_ingreso(session, contador_id, contribuyente_id)
+    fuentes = listar_fuentes_ingreso(session, contador_id, contribuyente_id, periodo.id)
 
     inventario = None
     if contribuyente.tipo_contribuyente in TIPOS_CON_INVENTARIO:
@@ -236,7 +232,7 @@ def construir_resumen(
         inventario=inventario,
         obligacion=obligacion,
         conciliacion=conciliacion,
-        avisos=[AVISO_SIN_PERIODO_EN_ACTIVOS] + avisos,
+        avisos=avisos,
     )
 
 

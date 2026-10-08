@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply bg-papel text-tinta antialiased;
+    font-feature-settings: 'tnum' 0;
+  }
+  body {
+    @apply min-h-screen text-[15px] leading-relaxed;
+  }
+  h1 {
+    @apply text-2xl font-semibold tracking-tight;
+  }
+  h2 {
+    @apply text-lg font-semibold;
+  }
+  h3 {
+    @apply text-base font-semibold;
+  }
+  :focus-visible {
+    @apply outline outline-2 outline-offset-2 outline-libro;
+  }
+  table {
+    @apply w-full border-collapse text-sm;
+  }
+  th {
+    @apply border-b border-papel-linea px-3 py-2 text-left font-medium text-tinta-suave;
+  }
+  td {
+    @apply border-b border-papel-hondo px-3 py-2 align-top;
+  }
+}
+
+@layer components {
+  /* Cifras: siempre tabulares y alineadas a la derecha, como en un libro. */
+  .cifra {
+    font-variant-numeric: tabular-nums;
+    @apply whitespace-nowrap text-right;
+  }
+  .hoja {
+    @apply rounded-md border border-papel-linea bg-white;
+  }
+  .campo {
+    @apply block w-full rounded border border-papel-linea bg-white px-3 py-2 text-sm text-tinta
+      placeholder:text-tinta-tenue focus:border-libro focus:outline-none focus:ring-1 focus:ring-libro
+      disabled:bg-papel-hondo;
+  }
+  .etiqueta {
+    @apply mb-1 block text-sm font-medium text-tinta-suave;
+  }
+  .boton {
+    @apply inline-flex items-center justify-center gap-2 rounded bg-libro px-4 py-2 text-sm font-semibold
+      text-white transition-colors hover:bg-libro-oscuro disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  .boton-secundario {
+    @apply inline-flex items-center justify-center gap-2 rounded border border-papel-linea bg-white px-4 py-2
+      text-sm font-medium text-tinta transition-colors hover:border-tinta-tenue disabled:cursor-not-allowed
+      disabled:opacity-50;
+  }
+  .boton-peligro {
+    @apply inline-flex items-center justify-center gap-2 rounded border border-estado-nodeclarado bg-white px-4
+      py-2 text-sm font-medium text-estado-nodeclarado hover:bg-estado-nodeclarado-claro disabled:opacity-50;
+  }
+  .enlace {
+    @apply font-medium text-libro underline decoration-libro/30 underline-offset-2 hover:decoration-libro;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition: none !important;
+    animation: none !important;
+  }
+}

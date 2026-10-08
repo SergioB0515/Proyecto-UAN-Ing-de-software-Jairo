@@ -21,6 +21,24 @@ class ContribuyenteNoEncontradoError(ErrorAplicacion):
     """El contribuyente no existe, o no pertenece al contador autenticado."""
 
 
+class ContribuyenteConDatosError(ErrorAplicacion):
+    """No se puede eliminar un contribuyente que ya tiene periodos fiscales o
+    inventario registrado, ni pasar a ASALARIADO uno que maneja inventario."""
+
+
+class ActivoNoEncontradoError(ErrorAplicacion):
+    """El activo no existe, o no pertenece a ese contribuyente."""
+
+
+class FuenteIngresoNoEncontradaError(ErrorAplicacion):
+    """La fuente de ingreso no existe, o no pertenece a ese contribuyente."""
+
+
+class ActivoDeCierreError(ErrorAplicacion):
+    """El Activo INVENTARIO lo crea y lo borra el cierre de periodo: no se
+    edita ni se elimina a mano (HU-15)."""
+
+
 class PeriodoFiscalNoEncontradoError(ErrorAplicacion):
     """El periodo fiscal no existe, o no pertenece a ese contribuyente."""
 

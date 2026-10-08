@@ -34,13 +34,19 @@ app_renta_contador/
 │
 └── frontend/                     # SPA en Vue 3 + Vite + Tailwind CSS
     ├── package.json
-    ├── vite.config.ts
+    ├── vite.config.js
+    ├── tailwind.config.js        # Tokens de diseño (colores, tipografía)
     └── src/
-        ├── api/                  # Cliente HTTP hacia el backend (Axios/fetch), manejo de JWT
-        ├── router/               # Rutas de la SPA (vue-router)
-        ├── views/                # Pantallas: Login, Cartera, Contribuyentes, Patrimonio,
-        │                         # ImportarExogena, Conciliacion, Inventario, Reportes
-        └── components/           # Componentes reutilizables (tablas, formularios, gráficas)
+        ├── main.js, App.vue      # Arranque y marco (barra lateral)
+        ├── sesion.js             # Token JWT y contador autenticado
+        ├── contexto.js           # Contribuyente y periodo abiertos, compartidos por sus pantallas
+        ├── formato.js            # Pesos, cantidades y fechas en formato colombiano
+        ├── api/                  # Cliente Axios (JWT, 401 -> login) y un módulo por dominio
+        ├── router/               # Rutas de la SPA y guard de sesión
+        ├── views/                # Login, Cartera, Contribuyentes, Umbrales y, por contribuyente:
+        │                         # Resumen, Patrimonio, Exógena, Conciliación, Borrador,
+        │                         # Inventario, Cierre y reportes
+        └── components/           # Estado de conciliación, tabla de obligación, paneles de inventario
 ```
 
 ## Componentes principales

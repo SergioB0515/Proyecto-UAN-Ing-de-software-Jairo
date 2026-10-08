@@ -8,8 +8,8 @@
 | Modelo de desarrollo (metodología e incrementos) | ✅ Completado (reordenado: obligación de declarar, conciliación y borrador de renglones adelantados) |
 | Modelo de clases y relaciones | ✅ Completado, incluyendo las entidades de configuración (`UmbralDeclaracion`, `ConceptoDian`) |
 | Diagrama de flujo de uso | ✅ Completado |
-| Arquitectura y stack tecnológico | ✅ Completado (propuesta; sin implementar) |
-| Estructura de carpetas del proyecto | ✅ Completado (propuesta; sin implementar) |
+| Arquitectura y stack tecnológico | ✅ Completado e implementado |
+| Estructura de carpetas del proyecto | ✅ Completado e implementado |
 | Historias de usuario | ✅ Completado (18 historias en 5 épicas) |
 | Validación del formato real de la exógena | ✅ Completado — se analizó un archivo real (estructura de encabezado, bloque de Topes, columnas, códigos de concepto y renglones) y se generó un archivo de prueba sintético con la misma estructura para uso en `tests/` |
 | Prototipo de validación (parseo + conciliación) | ✅ Completado — prototipo interactivo funcional que valida, en el navegador, el parseo del Excel real y la lógica de cruce contra datos declarados de ejemplo. Sirvió para descubrir y corregir dos supuestos del diseño (ver nota abajo) |
@@ -18,15 +18,18 @@
 | Backend — Incremento 3 (HU-08 a HU-10) | ✅ Implementado y probado |
 | Backend — Incremento 4 (HU-11 a HU-14) | ✅ Implementado y probado |
 | Backend — Incremento 5 (HU-15 a HU-18) | ✅ Implementado y probado |
-| Frontend | ⏳ Pendiente (solo esqueleto de carpetas) |
-| Evidencias de funcionamiento | ⏳ Pendiente (capturas por historia de usuario) |
+| Backend — HU-03 completa (activos y fuentes de ingreso por periodo) | ✅ Implementado y probado |
+| Edición y eliminación de contribuyentes, activos e ingresos | ✅ Implementado y probado (backend y frontend) |
+| Frontend (Vue 3 + Vite + Tailwind) — todas las historias | ✅ Implementado y verificado de punta a punta en el navegador |
+| Evidencias de funcionamiento | ✅ Capturas por historia de usuario ([10](10-evidencias-funcionamiento.md)) |
 
 ## Detalle
 
-El backend tiene implementados los cinco incrementos, con 114 pruebas
+El backend tiene implementados los cinco incrementos, con 135 pruebas
 automáticas que corren contra una base de datos PostgreSQL real (ver
 [backend/README.md](../backend/README.md) para los endpoints y cómo
-correrlas).
+correrlas). El frontend cubre las 18 historias sobre esos endpoints (ver
+[frontend/README.md](../frontend/README.md)).
 
 Dos hallazgos del prototipo de validación cambiaron decisiones de diseño
 y quedaron incorporados en la implementación:
@@ -67,11 +70,33 @@ Decisiones tomadas durante el incremento 5:
 - Lo que hizo cada cierre se guarda en `CierrePeriodo`, para poder
   deshacerlo al reabrir.
 
+Decisiones tomadas al cerrar HU-03:
+
+- `Activo` y `FuenteIngreso` tienen `periodo_fiscal_id` obligatorio. El
+  patrimonio, la conciliación y el resumen de un año usan solo los
+  registros de ese año (antes mezclaban todos los años).
+- El `Activo` INVENTARIO que crea un cierre queda en el periodo cerrado,
+  así que cada año cuenta solo su propio inventario final; desaparece la
+  regla especial de «solo el inventario del último cierre».
+- No se pueden registrar activos ni ingresos en un periodo cerrado (409).
+- Para no obligar a recrear la base de desarrollo, `database.py` aplica al
+  arrancar una migración puntual e idempotente que agrega la columna y
+  asigna los registros existentes al periodo más reciente de su
+  contribuyente (o al del cierre, para el inventario).
+
+Decisiones sobre la edición y eliminación:
+
+- Activos e ingresos se corrigen o eliminan solo con el periodo abierto,
+  igual que se registran. El año de un registro no se edita: si quedó en
+  el año equivocado, se elimina y se vuelve a registrar.
+- Un contribuyente solo se elimina si no tiene años gravables ni
+  inventario: borrar en cascada su información tributaria con un clic es
+  demasiado riesgoso; la eliminación es para registros hechos por error.
+
 ## Próximos pasos
 
-1. Asociar cada `FuenteIngreso` y `Activo` a un `PeriodoFiscal` (criterio
-   de HU-03 aún no cubierto; requiere recrear esas tablas al no haber
-   migraciones). Mientras tanto el resumen lo advierte en `avisos`.
-2. Frontend en Vue 3 sobre los endpoints ya disponibles.
-3. Registrar capturas y casos verificados en
-   [10. Evidencias de funcionamiento](10-evidencias-funcionamiento.md).
+1. Regenerar `diagrama-clases.png` a partir de
+   [07. Diagrama de clases](07-diagrama-clases.md) (el texto ya incluye la
+   relación `PeriodoFiscal` → `Activo` / `FuenteIngreso`).
+2. Opcional: copiar los activos de un año al siguiente al abrir un periodo,
+   para no volver a digitar bienes que se mantienen.

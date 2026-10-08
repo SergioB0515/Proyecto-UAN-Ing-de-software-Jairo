@@ -9,14 +9,24 @@ declaración.
 
 ## Estado actual del proyecto
 
-**Backend**: los cinco incrementos implementados y probados (114 pruebas
-automáticas contra PostgreSQL) — autenticación, contribuyentes y
-patrimonio, importación de exógena, obligación de declarar, conciliación,
-borrador de renglones, inventario, movimientos y costo de ventas, cierre de
-periodo, reportes en Excel/PDF y panel de cartera.
-**Frontend**: solo el esqueleto de carpetas. Ver
-[backend/README.md](backend/README.md) y
-[documentacion/09-avances-proyecto.md](documentacion/09-avances-proyecto.md).
+**Backend**: los cinco incrementos implementados y probados (135 pruebas
+automáticas contra PostgreSQL): autenticación, contribuyentes, patrimonio
+e ingresos por año gravable, importación de exógena, obligación de
+declarar, conciliación, borrador de renglones, inventario, movimientos y
+costo de ventas, cierre de periodo, reportes en Excel/PDF y panel de
+cartera.
+**Frontend**: SPA en Vue 3 que cubre las 18 historias de usuario,
+verificada de punta a punta en el navegador (capturas en
+[10. Evidencias](documentacion/10-evidencias-funcionamiento.md)).
+
+## Cómo correrlo
+
+1. Backend: ver [backend/README.md](backend/README.md) (PostgreSQL, `.env`,
+   `uvicorn main:app --reload`). Queda en `http://127.0.0.1:8000`.
+2. Frontend: ver [frontend/README.md](frontend/README.md) (`npm install`,
+   `npm run dev`). Queda en `http://localhost:5173`.
+3. En la app: crea una cuenta, registra los umbrales del año en «Umbrales
+   UVT» y luego tu primer contribuyente.
 
 ## Contenido de la documentación
 
@@ -69,6 +79,5 @@ Ver el detalle y las razones de cada elección en
 
 Ver [02. Estructura del proyecto](documentacion/02-estructura-proyecto.md)
 para el árbol completo, incluidos los módulos `parametros` (umbrales de
-declaración) y `cartera` (panel consolidado del contador). La carpeta
-`backend/` implementa esa estructura completa; `frontend/` aún contiene
-solo su esqueleto de carpetas.
+declaración) y `cartera` (panel consolidado del contador). `backend/` y `frontend/`
+implementan esa estructura completa.

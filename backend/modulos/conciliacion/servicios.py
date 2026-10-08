@@ -85,8 +85,8 @@ def _buscar_registro(
 def conciliar_contribuyente(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> ResultadoConciliacion:
-    """HU-08: cruza cada Activo y FuenteIngreso con vínculo DIAN contra los
-    RegistroExogena del reporte más reciente del periodo."""
+    """HU-08: cruza cada Activo y FuenteIngreso del periodo contra los
+    RegistroExogena del reporte más reciente de ese mismo periodo."""
     obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
     reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
 
@@ -105,7 +105,9 @@ def conciliar_contribuyente(
             vinculo_codigo_concepto=activo.vinculo_codigo_concepto,
             vinculo_palabra_clave=activo.vinculo_palabra_clave,
         )
-        for activo in listar_activos(session, contador_id, contribuyente_id)
+        for activo in listar_activos(
+            session, contador_id, contribuyente_id, periodo_fiscal_id
+        )
     ] + [
         _ItemDeclarado(
             concepto=fuente.concepto,
@@ -114,7 +116,9 @@ def conciliar_contribuyente(
             vinculo_codigo_concepto=fuente.vinculo_codigo_concepto,
             vinculo_palabra_clave=fuente.vinculo_palabra_clave,
         )
-        for fuente in listar_fuentes_ingreso(session, contador_id, contribuyente_id)
+        for fuente in listar_fuentes_ingreso(
+            session, contador_id, contribuyente_id, periodo_fiscal_id
+        )
     ]
 
     items: List[ItemConciliacion] = []
