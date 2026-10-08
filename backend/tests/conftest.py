@@ -33,26 +33,12 @@ from fastapi.testclient import TestClient  # noqa: E402
 from sqlmodel import Session, SQLModel, create_engine  # noqa: E402
 
 from core.config import DATABASE_URL  # noqa: E402
-from database import obtener_sesion  # noqa: E402
+from database import obtener_sesion, registrar_modelos  # noqa: E402
 from main import app  # noqa: E402
 
-# Importar los modelos para que SQLModel.metadata los conozca al crear el
-# esquema de pruebas.
-from modulos.contadores.modelos import Contador  # noqa: E402,F401
-from modulos.contribuyentes.modelos import (  # noqa: E402,F401
-    Activo,
-    Contribuyente,
-    FuenteIngreso,
-    PeriodoFiscal,
-)
-from modulos.exogena.modelos import (  # noqa: E402,F401
-    ConceptoDian,
-    RegistroExogena,
-    ReporteExogena,
-    TopeExogena,
-)
-from modulos.inventario.modelos import Categoria, Producto  # noqa: E402,F401
-from modulos.parametros.modelos import UmbralDeclaracion  # noqa: E402,F401
+# Registrar todos los modelos para que SQLModel.metadata los conozca al
+# crear el esquema de pruebas.
+registrar_modelos()
 
 _engine_pruebas = create_engine(DATABASE_URL)
 

@@ -5,10 +5,12 @@ from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
 from core.excepciones import (
+    CambioMetodoCosteoError,
     CategoriaConProductosActivosError,
     CategoriaNoEncontradaError,
     ContribuyenteNoEncontradoError,
     InventarioNoAplicaError,
+    ProductoDuplicadoError,
     ProductoNoEncontradoError,
 )
 from database import obtener_sesion
@@ -30,7 +32,12 @@ _NO_ENCONTRADO = (
     CategoriaNoEncontradaError,
     ProductoNoEncontradoError,
 )
-_CONFLICTO = (InventarioNoAplicaError, CategoriaConProductosActivosError)
+_CONFLICTO = (
+    InventarioNoAplicaError,
+    CategoriaConProductosActivosError,
+    ProductoDuplicadoError,
+    CambioMetodoCosteoError,
+)
 
 
 def _traducir(exc: Exception) -> HTTPException:
@@ -154,7 +161,8 @@ def actualizar_producto(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Incluye desactivar el producto (`activo: false`)."""
+    """Incluye desactivar el producto (`activo: false`). 409 si se intenta
+    cambiar el método de costeo de un producto con movimientos."""
     try:
         return servicios.actualizar_producto(
             session, contador.id, contribuyente_id, producto_id, datos

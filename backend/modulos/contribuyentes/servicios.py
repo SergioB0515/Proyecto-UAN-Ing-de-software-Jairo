@@ -2,7 +2,11 @@ from typing import List
 
 from sqlmodel import Session, select
 
-from core.excepciones import ContribuyenteNoEncontradoError
+from core.excepciones import (
+    ContribuyenteNoEncontradoError,
+    PeriodoFiscalDuplicadoError,
+    PeriodoFiscalNoEncontradoError,
+)
 
 from .modelos import (
     Activo,
@@ -115,10 +119,38 @@ def crear_periodo_fiscal(
     CRUD simple, sin lógica de negocio propia todavía (el cierre de periodo
     es Incremento 5)."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
+    existente = session.exec(
+        select(PeriodoFiscal).where(
+            PeriodoFiscal.contribuyente_id == contribuyente_id,
+            PeriodoFiscal.anio_gravable == datos.anio_gravable,
+        )
+    ).first()
+    if existente is not None:
+        raise PeriodoFiscalDuplicadoError(
+            f"El contribuyente {contribuyente_id} ya tiene un periodo fiscal "
+            f"para el año gravable {datos.anio_gravable}"
+        )
+
     periodo = PeriodoFiscal(**datos.model_dump(), contribuyente_id=contribuyente_id)
     session.add(periodo)
     session.commit()
     session.refresh(periodo)
+    return periodo
+
+
+def obtener_periodo_fiscal(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> PeriodoFiscal:
+    """Valida la pertenencia del contribuyente al contador y del periodo al
+    contribuyente. Lanza PeriodoFiscalNoEncontradoError en el segundo caso —
+    lo usan exogena, parametros, conciliacion y movimientos."""
+    obtener_contribuyente(session, contador_id, contribuyente_id)
+    periodo = session.get(PeriodoFiscal, periodo_fiscal_id)
+    if periodo is None or periodo.contribuyente_id != contribuyente_id:
+        raise PeriodoFiscalNoEncontradoError(
+            f"No existe el periodo fiscal {periodo_fiscal_id} para el "
+            f"contribuyente {contribuyente_id}"
+        )
     return periodo
 
 

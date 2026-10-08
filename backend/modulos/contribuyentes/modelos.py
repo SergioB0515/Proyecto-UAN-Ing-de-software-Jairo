@@ -151,8 +151,11 @@ class PeriodoFiscal(PeriodoFiscalBase, table=True):
     contribuyente_id: int = Field(foreign_key="contribuyentes.id", index=True)
 
 
-class PeriodoFiscalCrear(PeriodoFiscalBase):
-    pass
+class PeriodoFiscalCrear(SQLModel):
+    """Un periodo siempre nace ABIERTO: el estado solo lo cambia el cierre
+    de periodo (Incremento 5), nunca el cliente al crearlo."""
+
+    anio_gravable: int = Field(ge=2000, le=2100)
 
 
 class PeriodoFiscalLeer(PeriodoFiscalBase):

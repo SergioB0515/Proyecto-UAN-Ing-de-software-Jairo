@@ -2,9 +2,8 @@
 documentacion/07-diagrama-clases.md y documentacion/03-logica-proyecto.md
 (Proceso 4).
 
-Los campos y la forma de estas clases ya están definidos y probados contra
-un archivo real de la DIAN — lo que falta es la lógica de
-modulos/exogena/servicios.py que llena estos objetos a partir del Excel.
+Los campos y la forma de estas clases están probados contra un archivo real
+de la DIAN; modulos/exogena/servicios.py los llena a partir del Excel.
 """
 from datetime import datetime, timezone
 from typing import List, Optional
@@ -62,7 +61,7 @@ class RegistroExogenaBase(SQLModel):
     # Extraído de "Detalle" con regex — no todas las filas lo traen.
     concepto_code: Optional[str] = Field(default=None, max_length=10)
     # Extraído de "Uso declaración Sugerida" con regex — puede haber más de
-    # uno por fila; se guardan separados por coma (ej. "R29,R30").
+    # uno por fila; se guardan separados por coma (ej. "R29, R30").
     renglones_sugeridos: Optional[str] = Field(default=None, max_length=100)
     valor: float
     uso_sugerido: Optional[str] = Field(default=None, max_length=500)
@@ -131,4 +130,15 @@ class ResultadoParseo(SQLModel):
     consultante: ConsultanteInfo
     topes: List[TopeExogenaBase] = []
     registros: List[RegistroExogenaBase] = []
+    errores: List[FilaConError] = []
+
+
+class ReporteExogenaImportado(ReporteExogenaLeer):
+    """Respuesta de la importación (HU-05): el reporte guardado más el
+    resumen de lo leído, incluidas las filas que no se pudieron interpretar
+    — se informan al contador en vez de descartarse en silencio."""
+
+    consultante: ConsultanteInfo
+    cantidad_topes: int
+    cantidad_registros: int
     errores: List[FilaConError] = []

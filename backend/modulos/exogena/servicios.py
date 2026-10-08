@@ -1,4 +1,5 @@
-
+"""Importación del Excel de información exógena de la DIAN (Proceso 4 de
+documentacion/03-logica-proyecto.md, HU-05 y HU-06)."""
 import io
 import re
 from typing import List, Optional
@@ -8,17 +9,19 @@ from sqlmodel import Session, select
 
 from core.excepciones import (
     ArchivoExogenaInvalidoError,
-    PeriodoFiscalNoEncontradoError,
+    PeriodoFiscalCerradoError,
+    ReporteExogenaNoEncontradoError,
 )
 
-from ..contribuyentes.modelos import PeriodoFiscal
-from ..contribuyentes.servicios import obtener_contribuyente
+from ..contribuyentes.modelos import EstadoPeriodo
+from ..contribuyentes.servicios import obtener_contribuyente, obtener_periodo_fiscal
 from .modelos import (
     ConsultanteInfo,
     FilaConError,
     RegistroExogena,
     RegistroExogenaBase,
     ReporteExogena,
+    ReporteExogenaImportado,
     ResultadoParseo,
     TopeExogena,
     TopeExogenaBase,
@@ -32,6 +35,18 @@ NIT_DIAN = "800197268"
 
 
 def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
+    """Función pura: convierte los bytes del Excel en consultante, topes,
+    registros y filas con error, sin tocar la base de datos.
+
+    - La fila de encabezados se ubica por contenido ("NIT" / "Nombre..."),
+      no por número de fila.
+    - Las filas sin NIT cuyo detalle empieza por "Tope" son el bloque de
+      Topes; el resto de filas sin NIT se ignoran (notas al pie).
+    - Una fila con NIT pero sin valor numérico se reporta en `errores`.
+
+    Lanza ArchivoExogenaInvalidoError si el archivo no es un Excel o no
+    tiene la fila de encabezados de la DIAN.
+    """
     try:
         tabla = pd.read_excel(io.BytesIO(contenido), header=None)
     except Exception as exc:
@@ -153,18 +168,18 @@ def importar_reporte_exogena(
     periodo_fiscal_id: int,
     contenido: bytes,
     nombre_archivo: str,
-) -> ReporteExogena:
-    obtener_contribuyente(session, contador_id, contribuyente_id)
-
-    periodo = session.exec(
-        select(PeriodoFiscal).where(
-            PeriodoFiscal.id == periodo_fiscal_id,
-            PeriodoFiscal.contribuyente_id == contribuyente_id,
-        )
-    ).first()
-    if periodo is None:
-        raise PeriodoFiscalNoEncontradoError(
-            "El periodo fiscal no existe o no pertenece a este contribuyente"
+) -> ReporteExogenaImportado:
+    """HU-05. Si el periodo ya tiene un reporte, se guarda uno nuevo y los
+    cálculos posteriores (obligación, conciliación, borrador) usan siempre
+    el más reciente — así el contador puede reimportar un archivo
+    corregido sin perder el historial."""
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    if periodo.estado == EstadoPeriodo.CERRADO:
+        raise PeriodoFiscalCerradoError(
+            f"El periodo fiscal {periodo.anio_gravable} está cerrado: no admite "
+            "nuevas importaciones de exógena"
         )
 
     resultado = parsear_archivo_exogena(contenido)
@@ -188,7 +203,73 @@ def importar_reporte_exogena(
 
     session.commit()
     session.refresh(reporte)
+    return ReporteExogenaImportado(
+        **reporte.model_dump(),
+        consultante=resultado.consultante,
+        cantidad_topes=len(resultado.topes),
+        cantidad_registros=len(resultado.registros),
+        errores=resultado.errores,
+    )
+
+
+def listar_reportes_exogena(
+    session: Session, contador_id: int, contribuyente_id: int
+) -> List[ReporteExogena]:
+    """Todos los reportes importados del contribuyente, el más reciente
+    primero."""
+    obtener_contribuyente(session, contador_id, contribuyente_id)
+    return list(
+        session.exec(
+            select(ReporteExogena)
+            .where(ReporteExogena.contribuyente_id == contribuyente_id)
+            .order_by(ReporteExogena.fecha_importacion.desc(), ReporteExogena.id.desc())
+        ).all()
+    )
+
+
+def obtener_reporte_exogena(
+    session: Session, contador_id: int, contribuyente_id: int, reporte_exogena_id: int
+) -> ReporteExogena:
+    """Valida que el reporte pertenezca al contribuyente — y este al
+    contador — antes de exponer cualquiera de sus filas."""
+    obtener_contribuyente(session, contador_id, contribuyente_id)
+    reporte = session.get(ReporteExogena, reporte_exogena_id)
+    if reporte is None or reporte.contribuyente_id != contribuyente_id:
+        raise ReporteExogenaNoEncontradoError(
+            f"No existe el reporte de exógena {reporte_exogena_id} para el "
+            f"contribuyente {contribuyente_id}"
+        )
     return reporte
+
+
+def obtener_reporte_mas_reciente(
+    session: Session, periodo_fiscal_id: int
+) -> ReporteExogena:
+    """El reporte vigente de un periodo (ya validado por quien llama). Lo
+    usan parametros (obligación) y conciliacion."""
+    reporte = session.exec(
+        select(ReporteExogena)
+        .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
+        .order_by(ReporteExogena.fecha_importacion.desc(), ReporteExogena.id.desc())
+    ).first()
+    if reporte is None:
+        raise ReporteExogenaNoEncontradoError(
+            f"No se ha importado la exógena del periodo fiscal {periodo_fiscal_id}"
+        )
+    return reporte
+
+
+def listar_topes_exogena(
+    session: Session, contador_id: int, contribuyente_id: int, reporte_exogena_id: int
+) -> List[TopeExogena]:
+    obtener_reporte_exogena(session, contador_id, contribuyente_id, reporte_exogena_id)
+    return list(
+        session.exec(
+            select(TopeExogena)
+            .where(TopeExogena.reporte_exogena_id == reporte_exogena_id)
+            .order_by(TopeExogena.id)
+        ).all()
+    )
 
 
 def listar_registros_exogena(
@@ -199,7 +280,8 @@ def listar_registros_exogena(
     concepto_code: Optional[str] = None,
     nit_reportante: Optional[str] = None,
 ) -> List[RegistroExogena]:
-    obtener_contribuyente(session, contador_id, contribuyente_id)
+    """HU-06: ordenados por concepto y tercero para que queden agrupados."""
+    obtener_reporte_exogena(session, contador_id, contribuyente_id, reporte_exogena_id)
 
     consulta = select(RegistroExogena).where(
         RegistroExogena.reporte_exogena_id == reporte_exogena_id
@@ -208,5 +290,10 @@ def listar_registros_exogena(
         consulta = consulta.where(RegistroExogena.concepto_code == concepto_code)
     if nit_reportante:
         consulta = consulta.where(RegistroExogena.nit_reportante == nit_reportante)
+    consulta = consulta.order_by(
+        RegistroExogena.concepto_code,
+        RegistroExogena.nit_reportante,
+        RegistroExogena.id,
+    )
 
     return list(session.exec(consulta).all())

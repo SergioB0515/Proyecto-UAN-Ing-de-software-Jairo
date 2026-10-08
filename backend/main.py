@@ -7,10 +7,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from database import crear_tablas
+from modulos.conciliacion.router import router as router_conciliacion
 from modulos.contadores.router import router as router_contadores
 from modulos.contribuyentes.router import router as router_contribuyentes
 from modulos.exogena.router import router as router_exogena
 from modulos.inventario.router import router as router_inventario
+from modulos.movimientos.router import router as router_movimientos
 from modulos.parametros.router import router as router_parametros
 
 # Orígenes del frontend en desarrollo (Vite). En producción, reemplazar por
@@ -30,7 +32,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(
     title="App de Conciliación de Renta — API",
     description="Backend del proyecto de Ingeniería de Software (UAN).",
-    version="0.1.0",
+    version="0.4.0",
     lifespan=lifespan,
 )
 
@@ -45,8 +47,10 @@ app.add_middleware(
 app.include_router(router_contadores)
 app.include_router(router_contribuyentes)
 app.include_router(router_exogena)
-app.include_router(router_inventario)
 app.include_router(router_parametros)
+app.include_router(router_conciliacion)
+app.include_router(router_inventario)
+app.include_router(router_movimientos)
 
 
 @app.get("/salud", tags=["sistema"])

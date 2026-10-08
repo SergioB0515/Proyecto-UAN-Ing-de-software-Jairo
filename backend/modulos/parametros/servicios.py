@@ -2,15 +2,11 @@ from typing import List
 
 from sqlmodel import Session, select
 
-from core.excepciones import (
-    PeriodoFiscalNoEncontradoError,
-    ReporteExogenaNoEncontradoError,
-    UmbralNoConfiguradoError,
-)
+from core.excepciones import UmbralNoConfiguradoError
 
-from ..contribuyentes.modelos import PeriodoFiscal
-from ..contribuyentes.servicios import obtener_contribuyente
-from ..exogena.modelos import ReporteExogena, TopeExogena
+from ..contribuyentes.servicios import obtener_periodo_fiscal
+from ..exogena.modelos import TopeExogena
+from ..exogena.servicios import obtener_reporte_mas_reciente
 from .modelos import (
     DetalleCriterio,
     ResultadoObligacion,
@@ -22,6 +18,7 @@ from .modelos import (
 def registrar_umbral(
     session: Session, datos: UmbralDeclaracionCrear
 ) -> UmbralDeclaracion:
+    """Crea o reemplaza el umbral de un año gravable (el año es la llave)."""
     umbral = UmbralDeclaracion(**datos.model_dump())
     umbral = session.merge(umbral)
     session.commit()
@@ -39,7 +36,11 @@ def obtener_umbral_vigente(session: Session, anio_gravable: int) -> UmbralDeclar
 
 
 def listar_umbrales(session: Session) -> List[UmbralDeclaracion]:
-    return list(session.exec(select(UmbralDeclaracion)).all())
+    return list(
+        session.exec(
+            select(UmbralDeclaracion).order_by(UmbralDeclaracion.anio_gravable)
+        ).all()
+    )
 
 
 def verificar_obligacion_declarar(
@@ -48,23 +49,13 @@ def verificar_obligacion_declarar(
     contribuyente_id: int,
     periodo_fiscal_id: int,
 ) -> ResultadoObligacion:
-    obtener_contribuyente(session, contador_id, contribuyente_id)
-
-    periodo = session.get(PeriodoFiscal, periodo_fiscal_id)
-    if periodo is None or periodo.contribuyente_id != contribuyente_id:
-        raise PeriodoFiscalNoEncontradoError(
-            f"No existe el periodo fiscal {periodo_fiscal_id} para el contribuyente {contribuyente_id}"
-        )
-
-    reporte = session.exec(
-        select(ReporteExogena)
-        .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
-        .order_by(ReporteExogena.fecha_importacion.desc())
-    ).first()
-    if reporte is None:
-        raise ReporteExogenaNoEncontradoError(
-            f"No se ha importado la exógena del periodo fiscal {periodo_fiscal_id}"
-        )
+    """HU-07: compara los Topes del reporte más reciente del periodo contra
+    el UmbralDeclaracion de su año gravable. Basta con que un criterio
+    alcance su umbral para quedar obligado (Proceso 5)."""
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
 
     topes = session.exec(
         select(TopeExogena).where(TopeExogena.reporte_exogena_id == reporte.id)

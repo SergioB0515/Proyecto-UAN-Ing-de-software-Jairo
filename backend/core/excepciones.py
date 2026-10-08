@@ -25,6 +25,15 @@ class PeriodoFiscalNoEncontradoError(ErrorAplicacion):
     """El periodo fiscal no existe, o no pertenece a ese contribuyente."""
 
 
+class PeriodoFiscalDuplicadoError(ErrorAplicacion):
+    """El contribuyente ya tiene un periodo fiscal para ese año gravable."""
+
+
+class PeriodoFiscalCerradoError(ErrorAplicacion):
+    """El periodo fiscal está CERRADO: no admite movimientos ni nuevas
+    importaciones de exógena (HU-15)."""
+
+
 class ArchivoExogenaInvalidoError(ErrorAplicacion):
     """El archivo no tiene el formato esperado (no se encontró la fila de
     encabezados "NIT" / "Nombre...") — no es un error de fila individual,
@@ -55,3 +64,42 @@ class CategoriaConProductosActivosError(ErrorAplicacion):
 
 class ProductoNoEncontradoError(ErrorAplicacion):
     """El producto no existe, o no pertenece a ese contribuyente."""
+
+
+class ProductoDuplicadoError(ErrorAplicacion):
+    """El contribuyente ya tiene un producto con ese código."""
+
+
+class ProductoInactivoError(ErrorAplicacion):
+    """El producto está desactivado: no admite nuevos movimientos."""
+
+
+class CambioMetodoCosteoError(ErrorAplicacion):
+    """No se puede cambiar el método de costeo de un producto que ya tiene
+    movimientos: alteraría retroactivamente su costo de ventas (HU-14)."""
+
+
+class ProveedorNoEncontradoError(ErrorAplicacion):
+    """El proveedor no existe, o no pertenece a ese contribuyente."""
+
+
+class ProveedorDuplicadoError(ErrorAplicacion):
+    """Ya existe un proveedor con esa identificación para el contribuyente
+    (HU-13)."""
+
+
+class DocumentoSoporteNoEncontradoError(ErrorAplicacion):
+    """El documento soporte no existe, o no pertenece a ese contribuyente."""
+
+
+class DocumentoSoporteDuplicadoError(ErrorAplicacion):
+    """Ya existe un documento soporte del mismo tipo y número."""
+
+
+class StockInsuficienteError(ErrorAplicacion):
+    """La salida dejaría el stock del producto en negativo (HU-12)."""
+
+
+class MovimientoInvalidoError(ErrorAplicacion):
+    """El movimiento no es coherente con su contexto (fecha fuera del año
+    del periodo, proveedor en una salida, etc.)."""

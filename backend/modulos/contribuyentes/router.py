@@ -4,7 +4,10 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
-from core.excepciones import ContribuyenteNoEncontradoError
+from core.excepciones import (
+    ContribuyenteNoEncontradoError,
+    PeriodoFiscalDuplicadoError,
+)
 from database import obtener_sesion
 from modulos.contadores.modelos import Contador
 
@@ -114,13 +117,17 @@ def crear_periodo_fiscal(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Nuevo en el Incremento 2."""
+    """Nuevo en el Incremento 2. 409 si ya existe un periodo para ese año."""
     try:
         return servicios.crear_periodo_fiscal(
             session, contador.id, contribuyente_id, datos
         )
     except ContribuyenteNoEncontradoError as exc:
         raise _no_encontrado(exc) from exc
+    except PeriodoFiscalDuplicadoError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT, detail=str(exc)
+        ) from exc
 
 
 @router.get(

@@ -4,18 +4,43 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**:
-- **Incremento 1** (HU-01 a HU-04): implementado y probado — 17/17.
-- **Incremento 2** (HU-05 a HU-07): estructura completa (modelos, routers,
-  tests, catálogo, umbrales) — pero **`parsear_archivo_exogena` y
-  `verificar_obligacion_declarar` están sin implementar a propósito**.
-  Sus firmas y docstrings están en `modulos/exogena/servicios.py` y
-  `modulos/parametros/servicios.py`; los tests que definen el objetivo a
-  cumplir están en `tests/test_exogena.py` y `tests/test_parametros.py`.
-  Con el esqueleto tal como está: **18 pruebas pasan, 20 fallan por
-  `NotImplementedError`** (ninguna por error de estructura). Cuando
-  implementes las dos funciones, las 20 deberían pasar sin tocar nada
-  más.
+**Estado**: incrementos 1 a 4 implementados y probados — **86/86 pruebas**.
+
+| Incremento | Historias | Módulos |
+|---|---|---|
+| 1 | HU-01 a HU-04 | `contadores`, `contribuyentes` |
+| 2 | HU-05 a HU-07 | `exogena`, `parametros` |
+| 3 | HU-08 a HU-10 | `conciliacion` |
+| 4 | HU-11 a HU-14 | `inventario`, `movimientos` |
+| 5 | HU-15 a HU-18 | `reportes`, `cartera` — pendiente |
+
+## Endpoints principales
+
+Todos (salvo registro, login y `/salud`) exigen `Authorization: Bearer <token>`
+y filtran por el contador del token.
+
+| Método y ruta | HU |
+|---|---|
+| `POST /contadores/registro`, `POST /contadores/login`, `GET /contadores/yo` | HU-01 |
+| `POST/GET /contribuyentes` | HU-02 |
+| `POST/GET /contribuyentes/{id}/fuentes-ingreso` | HU-03 |
+| `POST/GET /contribuyentes/{id}/activos`, `GET /contribuyentes/{id}/patrimonio` | HU-04 |
+| `POST/GET /contribuyentes/{id}/periodos-fiscales` | — |
+| `POST /contribuyentes/{id}/periodos-fiscales/{pid}/exogena` (multipart, campo `archivo`) | HU-05 |
+| `GET /contribuyentes/{id}/reportes-exogena`, `.../{rid}/topes`, `.../{rid}/registros?concepto_code=&nit_reportante=` | HU-06 |
+| `POST/GET /parametros/umbrales`, `GET /parametros/contribuyentes/{id}/periodos-fiscales/{pid}/obligacion` | HU-07 |
+| `GET /contribuyentes/{id}/periodos-fiscales/{pid}/conciliacion` | HU-08, HU-09 |
+| `GET /contribuyentes/{id}/periodos-fiscales/{pid}/borrador-renglones` | HU-10 |
+| `POST/GET /contribuyentes/{id}/categorias`, `DELETE .../categorias/{cid}` | HU-11 |
+| `POST/GET /contribuyentes/{id}/productos`, `GET/PATCH .../productos/{prid}` | HU-11 |
+| `POST/GET /contribuyentes/{id}/documentos-soporte`, `POST/GET /contribuyentes/{id}/movimientos` | HU-12 |
+| `POST/GET /contribuyentes/{id}/proveedores` | HU-13 |
+| `GET /contribuyentes/{id}/productos/{prid}/kardex`, `GET /contribuyentes/{id}/periodos-fiscales/{pid}/costo-ventas` | HU-14 |
+
+Códigos de error: `404` si el recurso no existe o es de otro contador
+(deliberadamente el mismo código en ambos casos), `409` para conflictos de
+negocio (duplicados, stock insuficiente, periodo cerrado, contribuyente
+asalariado en inventario) y `422` para datos inválidos.
 
 ## Requisitos
 
@@ -79,10 +104,17 @@ mocks): cada prueba abre una transacción y la revierte al terminar, así
 que no hace falta limpiar datos entre corridas. Si quieres apuntar las
 pruebas a otra base, define `TEST_DATABASE_URL` antes de correr `pytest`.
 
-## Qué falta (próximos incrementos)
+## Qué falta (Incremento 5)
 
-`parametros`, `exogena`, `conciliacion`, `cartera`, `inventario`,
-`movimientos` y `reportes` todavía son solo la carpeta y el `README.md`
-de intención (ver [../documentacion/05-modelo-desarrollo.md](../documentacion/05-modelo-desarrollo.md)
-para el orden). El Incremento 2 (importación de exógena + verificación de
-obligación de declarar) es el siguiente.
+`reportes` (cierre de `PeriodoFiscal`, kardex y reportes exportables en
+Excel/PDF) y `cartera` (panel consolidado) todavía son solo la carpeta y su
+`README.md`. Las piezas que necesitan ya existen: el costo de ventas expone
+`total_inventario_final` (el valor que el cierre llevará al patrimonio como
+`Activo` de tipo `INVENTARIO`), la conciliación expone `resumen.NO_DECLARADO`
+(las alertas del panel de cartera), y la importación de exógena y el
+registro de movimientos ya rechazan periodos `CERRADO`.
+
+**Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
+nuevas pero no altera las existentes. Este incremento solo agrega tablas
+(`proveedores`, `documentos_soporte`, `movimientos`), así que una base de
+datos de desarrollo creada antes sigue funcionando sin recrearla.

@@ -8,14 +8,11 @@ from core.config import DATABASE_URL
 engine = create_engine(DATABASE_URL, echo=False)
 
 
-def crear_tablas() -> None:
-    """Crea las tablas que todavía no existan. Se llama al arrancar la
-    aplicación (ver main.py). Sin Alembic en este incremento: un cambio de
-    esquema exige recrear la base de datos, igual que en el otro proyecto
-    del curso."""
-    # Importa los modelos aquí (no arriba del todo) para que SQLModel los
-    # conozca antes de crear las tablas, sin crear un import circular con
-    # los módulos que a su vez importan `database`.
+def registrar_modelos() -> None:
+    """Importa todos los modelos con tabla para que SQLModel.metadata los
+    conozca. Se importan aquí (no arriba del todo) para no crear un import
+    circular con los módulos que a su vez importan `database`. Lo usan
+    crear_tablas y tests/conftest.py — un modelo nuevo se agrega solo aquí."""
     from modulos.contadores.modelos import Contador  # noqa: F401
     from modulos.contribuyentes.modelos import (  # noqa: F401
         Activo,
@@ -30,8 +27,20 @@ def crear_tablas() -> None:
         TopeExogena,
     )
     from modulos.inventario.modelos import Categoria, Producto  # noqa: F401
+    from modulos.movimientos.modelos import (  # noqa: F401
+        DocumentoSoporte,
+        Movimiento,
+        Proveedor,
+    )
     from modulos.parametros.modelos import UmbralDeclaracion  # noqa: F401
 
+
+def crear_tablas() -> None:
+    """Crea las tablas que todavía no existan. Se llama al arrancar la
+    aplicación (ver main.py). Sin Alembic: `create_all` crea tablas nuevas
+    pero no agrega columnas a tablas que ya existen — un cambio en una
+    tabla existente exige recrear la base de datos."""
+    registrar_modelos()
     SQLModel.metadata.create_all(engine)
 
 

@@ -5,7 +5,7 @@ documentacion/03-logica-proyecto.md (Proceso 5).
 No pertenece a ningún contador ni contribuyente — es un dato de
 configuración compartido (documentacion/04-arquitectura.md).
 """
-from typing import List, Optional
+from typing import List
 
 from sqlmodel import Field, SQLModel
 

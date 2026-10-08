@@ -185,3 +185,37 @@ def test_agregar_activo_a_contribuyente_inexistente_falla(client):
         headers=_headers(token),
     )
     assert respuesta.status_code == 404
+
+
+def test_periodo_fiscal_duplicado_falla(client):
+    token = _crear_contador_y_token(client, "contadorH@example.com")
+    contribuyente = client.post(
+        "/contribuyentes",
+        json={"nombre": "Contribuyente H", "rut": "8000000000", "tipo_contribuyente": "ASALARIADO"},
+        headers=_headers(token),
+    ).json()
+    url = f"/contribuyentes/{contribuyente['id']}/periodos-fiscales"
+
+    primero = client.post(url, json={"anio_gravable": 2025}, headers=_headers(token))
+    segundo = client.post(url, json={"anio_gravable": 2025}, headers=_headers(token))
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
+
+
+def test_periodo_fiscal_siempre_nace_abierto(client):
+    token = _crear_contador_y_token(client, "contadorI@example.com")
+    contribuyente = client.post(
+        "/contribuyentes",
+        json={"nombre": "Contribuyente I", "rut": "8100000000", "tipo_contribuyente": "ASALARIADO"},
+        headers=_headers(token),
+    ).json()
+
+    periodo = client.post(
+        f"/contribuyentes/{contribuyente['id']}/periodos-fiscales",
+        json={"anio_gravable": 2025, "estado": "CERRADO"},
+        headers=_headers(token),
+    )
+
+    assert periodo.status_code == 201
+    assert periodo.json()["estado"] == "ABIERTO"

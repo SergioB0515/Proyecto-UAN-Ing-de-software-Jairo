@@ -9,9 +9,13 @@ declaración.
 
 ## Estado actual del proyecto
 
-Fase de **diseño y documentación**, ya validada contra un archivo real de
-información exógena mediante un prototipo interactivo. Implementación
-pendiente de inicio — ver
+**Backend**: incrementos 1 a 4 implementados y probados (86 pruebas
+automáticas contra PostgreSQL) — autenticación, contribuyentes y
+patrimonio, importación de exógena, obligación de declarar, conciliación,
+borrador de renglones, inventario, movimientos y costo de ventas. Falta el
+incremento 5 (cierre de periodo, reportes exportables y panel de cartera).
+**Frontend**: solo el esqueleto de carpetas. Ver
+[backend/README.md](backend/README.md) y
 [documentacion/09-avances-proyecto.md](documentacion/09-avances-proyecto.md).
 
 ## Contenido de la documentación
@@ -65,7 +69,6 @@ Ver el detalle y las razones de cada elección en
 
 Ver [02. Estructura del proyecto](documentacion/02-estructura-proyecto.md)
 para el árbol completo, incluidos los módulos `parametros` (umbrales de
-declaración) y `cartera` (panel consolidado del contador). Las carpetas
-`backend/` y `frontend/` en este repositorio ya reflejan esa estructura
-(vacías o con manifiestos de dependencias únicamente — la implementación
-aún no ha iniciado).
+declaración) y `cartera` (panel consolidado del contador). La carpeta
+`backend/` implementa esa estructura hasta el incremento 4; `reportes`,
+`cartera` y `frontend/` aún contienen solo su `README.md` de intención.

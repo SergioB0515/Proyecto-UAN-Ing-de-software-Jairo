@@ -3,14 +3,17 @@ from typing import List
 from sqlmodel import Session, select
 
 from core.excepciones import (
+    CambioMetodoCosteoError,
     CategoriaConProductosActivosError,
     CategoriaNoEncontradaError,
     InventarioNoAplicaError,
+    ProductoDuplicadoError,
     ProductoNoEncontradoError,
 )
 
 from ..contribuyentes.modelos import Contribuyente, TipoContribuyente
 from ..contribuyentes.servicios import obtener_contribuyente
+from ..movimientos.modelos import Movimiento
 from .modelos import (
     Categoria,
     CategoriaCrear,
@@ -22,7 +25,7 @@ from .modelos import (
 TIPOS_CON_INVENTARIO = {TipoContribuyente.INDEPENDIENTE, TipoContribuyente.MIXTO}
 
 
-def _obtener_contribuyente_con_inventario(
+def obtener_contribuyente_con_inventario(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> Contribuyente:
     """Valida pertenencia al contador y que el contribuyente tenga negocio:
@@ -56,7 +59,7 @@ def crear_categoria(
     session: Session, contador_id: int, contribuyente_id: int, datos: CategoriaCrear
 ) -> Categoria:
     """HU-11."""
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     categoria = Categoria(**datos.model_dump(), contribuyente_id=contribuyente_id)
     session.add(categoria)
     session.commit()
@@ -67,7 +70,7 @@ def crear_categoria(
 def listar_categorias(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> List[Categoria]:
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     return list(
         session.exec(
             select(Categoria).where(Categoria.contribuyente_id == contribuyente_id)
@@ -80,7 +83,7 @@ def eliminar_categoria(
 ) -> None:
     """HU-11: no se elimina si tiene productos activos. Los inactivos quedan
     sin categoría — agregación, el producto no desaparece con ella."""
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     categoria = _obtener_categoria(session, contribuyente_id, categoria_id)
 
     productos = session.exec(
@@ -106,9 +109,21 @@ def crear_producto(
 ) -> Producto:
     """HU-11: la clasificación IVA y el método de costeo son obligatorios
     (los exige el esquema)."""
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     if datos.categoria_id is not None:
         _obtener_categoria(session, contribuyente_id, datos.categoria_id)
+
+    existente = session.exec(
+        select(Producto).where(
+            Producto.contribuyente_id == contribuyente_id,
+            Producto.codigo == datos.codigo,
+        )
+    ).first()
+    if existente is not None:
+        raise ProductoDuplicadoError(
+            f"El contribuyente {contribuyente_id} ya tiene un producto con el "
+            f"código {datos.codigo}"
+        )
 
     producto = Producto(**datos.model_dump(), contribuyente_id=contribuyente_id)
     session.add(producto)
@@ -123,7 +138,7 @@ def listar_productos(
     contribuyente_id: int,
     solo_activos: bool = False,
 ) -> List[Producto]:
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     consulta = select(Producto).where(Producto.contribuyente_id == contribuyente_id)
     if solo_activos:
         consulta = consulta.where(Producto.activo == True)  # noqa: E712
@@ -133,7 +148,7 @@ def listar_productos(
 def obtener_producto(
     session: Session, contador_id: int, contribuyente_id: int, producto_id: int
 ) -> Producto:
-    _obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
+    obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     producto = session.get(Producto, producto_id)
     if producto is None or producto.contribuyente_id != contribuyente_id:
         raise ProductoNoEncontradoError(
@@ -157,6 +172,21 @@ def actualizar_producto(
     cambios = datos.model_dump(exclude_unset=True)
     if cambios.get("categoria_id") is not None:
         _obtener_categoria(session, contribuyente_id, cambios["categoria_id"])
+
+    nuevo_metodo = cambios.get("metodo_costeo")
+    if nuevo_metodo is not None and nuevo_metodo != producto.metodo_costeo:
+        tiene_movimientos = session.exec(
+            select(Movimiento.id).where(Movimiento.producto_id == producto_id)
+        ).first()
+        if tiene_movimientos is not None:
+            raise CambioMetodoCosteoError(
+                f"El producto {producto_id} ya tiene movimientos: cambiar su "
+                "método de costeo alteraría el costo de ventas ya calculado"
+            )
+    # None explícito en campos obligatorios no es un cambio válido.
+    for campo in ("nombre", "clasificacion_iva", "metodo_costeo", "activo"):
+        if campo in cambios and cambios[campo] is None:
+            del cambios[campo]
 
     for campo, valor in cambios.items():
         setattr(producto, campo, valor)

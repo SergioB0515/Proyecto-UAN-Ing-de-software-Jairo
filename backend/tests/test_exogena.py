@@ -234,3 +234,84 @@ def test_importar_archivo_sin_formato_dian_devuelve_422(client):
     )
 
     assert respuesta.status_code == 422
+
+
+def test_importar_exogena_informa_resumen_y_errores(client):
+    token = _crear_contador_y_token(client, "exogena-g@example.com")
+    contribuyente_id, periodo_id = _crear_contribuyente_con_periodo(client, token)
+
+    cuerpo = _subir_fixture(client, token, contribuyente_id, periodo_id).json()
+
+    assert cuerpo["cantidad_topes"] == 5
+    assert cuerpo["cantidad_registros"] == 10
+    assert cuerpo["errores"] == []
+    assert cuerpo["consultante"]["identificacion"] == "1000000000"
+
+
+def test_parsear_reporta_filas_con_valor_no_numerico():
+    # HU-05: las filas que no se pueden interpretar se informan con su
+    # número de fila, no se descartan en silencio.
+    libro = openpyxl.Workbook()
+    hoja = libro.active
+    hoja.append(["NIT", "Nombre / Razón Social", "NIT", "Nombre", "Detalle", "Valor", "Uso", "Info"])
+    hoja.append([900111222, "BANCO", 1, "X", "Saldo (Concepto: 1010)", 1000, None, None])
+    hoja.append([900111222, "BANCO", 1, "X", "Otro saldo", "no-es-numero", None, None])
+    buffer = io.BytesIO()
+    libro.save(buffer)
+
+    resultado = parsear_archivo_exogena(buffer.getvalue())
+
+    assert len(resultado.registros) == 1
+    assert len(resultado.errores) == 1
+    assert resultado.errores[0].fila == 3
+
+
+def test_listar_registros_de_un_reporte_de_otro_contribuyente_falla(client):
+    # Un contador no puede leer el reporte de otro pasando su propio
+    # contribuyente en la URL y el id del reporte ajeno.
+    token_a = _crear_contador_y_token(client, "exogena-h1@example.com")
+    token_b = _crear_contador_y_token(client, "exogena-h2@example.com")
+    cid_a, periodo_a = _crear_contribuyente_con_periodo(client, token_a)
+    cid_b, _ = _crear_contribuyente_con_periodo(client, token_b)
+    reporte_a = _subir_fixture(client, token_a, cid_a, periodo_a).json()
+
+    respuesta = client.get(
+        f"/contribuyentes/{cid_b}/reportes-exogena/{reporte_a['id']}/registros",
+        headers=_headers(token_b),
+    )
+
+    assert respuesta.status_code == 404
+
+
+def test_listar_reportes_y_topes(client):
+    token = _crear_contador_y_token(client, "exogena-i@example.com")
+    contribuyente_id, periodo_id = _crear_contribuyente_con_periodo(client, token)
+    reporte = _subir_fixture(client, token, contribuyente_id, periodo_id).json()
+
+    reportes = client.get(
+        f"/contribuyentes/{contribuyente_id}/reportes-exogena", headers=_headers(token)
+    )
+    assert [r["id"] for r in reportes.json()] == [reporte["id"]]
+
+    topes = client.get(
+        f"/contribuyentes/{contribuyente_id}/reportes-exogena/{reporte['id']}/topes",
+        headers=_headers(token),
+    )
+    assert topes.status_code == 200
+    assert len(topes.json()) == 5
+
+
+def test_importar_exogena_en_periodo_cerrado_falla(client, session):
+    from modulos.contribuyentes.modelos import EstadoPeriodo, PeriodoFiscal
+
+    token = _crear_contador_y_token(client, "exogena-j@example.com")
+    contribuyente_id, periodo_id = _crear_contribuyente_con_periodo(client, token)
+    # El cierre de periodo es del Incremento 5: aquí se simula directo en BD.
+    periodo = session.get(PeriodoFiscal, periodo_id)
+    periodo.estado = EstadoPeriodo.CERRADO
+    session.add(periodo)
+    session.flush()
+
+    respuesta = _subir_fixture(client, token, contribuyente_id, periodo_id)
+
+    assert respuesta.status_code == 409

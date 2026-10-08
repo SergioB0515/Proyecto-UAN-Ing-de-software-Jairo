@@ -152,3 +152,14 @@ def test_un_contador_no_ve_inventario_de_otro(client):
 
     respuesta = client.get(f"/contribuyentes/{cid}/productos", headers=_headers(token_b))
     assert respuesta.status_code == 404
+
+
+def test_producto_con_codigo_duplicado_falla(client):
+    token = _crear_contador_y_token(client, "inventario7@example.com")
+    cid = _crear_contribuyente(client, token, "INDEPENDIENTE")
+
+    primero = client.post(f"/contribuyentes/{cid}/productos", json=_producto(), headers=_headers(token))
+    segundo = client.post(f"/contribuyentes/{cid}/productos", json=_producto(), headers=_headers(token))
+
+    assert primero.status_code == 201
+    assert segundo.status_code == 409
