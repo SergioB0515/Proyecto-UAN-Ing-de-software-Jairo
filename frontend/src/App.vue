@@ -9,7 +9,7 @@ const router = useRouter()
 const navegacion = [
   { nombre: 'cartera', texto: 'Cartera' },
   { nombre: 'contribuyentes', texto: 'Contribuyentes' },
-  { nombre: 'umbrales', texto: 'Umbrales UVT' },
+  { nombre: 'umbrales', texto: 'Parámetros DIAN' },
   { nombre: 'actividad', texto: 'Actividad' },
   { nombre: 'cuenta', texto: 'Mi cuenta' },
 ]

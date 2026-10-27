@@ -32,7 +32,6 @@ def conciliar(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-08 / HU-09. 404 si el periodo aún no tiene exógena importada."""
     try:
         return servicios.conciliar_contribuyente(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -53,7 +52,6 @@ def borrador_renglones(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-10."""
     try:
         return servicios.generar_borrador_renglones(
             session, contador.id, contribuyente_id, periodo_fiscal_id

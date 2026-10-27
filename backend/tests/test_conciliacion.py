@@ -1,16 +1,3 @@
-"""Pruebas de conciliación (HU-08, HU-09) y borrador de renglones (HU-10)
-contra el fixture de exógena — ver tests/fixtures/reporte_exogena_ejemplo.xlsx.
-
-Registros del fixture relevantes aquí:
-- Avalúo catastral (1476) ........ 120.000.000  R29
-- Venta en notaría (1032) ......... 50.000.000  R112
-- Movimientos en cuentas .......... 3.000.000
-- CDT (1020) ...................... 8.000.000
-- Impuestos y gravámenes (2204) ...... 50.000  R29
-- Retención en notaría (1032) ....... 450.000  R132  (excluida)
-- Consumos con tarjeta (1023) ....... 500.000        (excluida)
-- Facturación DIAN y dos autoreportados          (excluidos)
-"""
 from pathlib import Path
 
 RUTA_FIXTURE = Path(__file__).parent / "fixtures" / "reporte_exogena_ejemplo.xlsx"
@@ -99,7 +86,6 @@ def test_conciliacion_clasifica_cada_item(client):
 
     no_declarados = [i for i in cuerpo["items"] if i["estado"] == "NO_DECLARADO"]
     codigos = sorted(i["concepto_code"] for i in no_declarados)
-    # CDT e impuestos; nunca retención, tarjeta, DIAN ni autoreportados.
     assert codigos == ["1020", "2204"]
     assert cuerpo["resumen"] == {
         "COINCIDE": 2,
@@ -110,8 +96,6 @@ def test_conciliacion_clasifica_cada_item(client):
 
 
 def test_la_retencion_no_se_cruza_con_un_ingreso(client):
-    # La retención de notaría comparte el código 1032 con el ingreso. Una
-    # segunda fuente con ese código no debe cruzarse contra la retención.
     token, cid, pid = _preparar(client, "conc-2@example.com")
     for concepto, valor in [("Venta apartamento", 50000000), ("Venta local", 450000)]:
         _registrar(client, token, cid, pid, "fuentes-ingreso", {
@@ -127,7 +111,6 @@ def test_la_retencion_no_se_cruza_con_un_ingreso(client):
 def test_sin_datos_declarados_todo_lo_relevante_queda_no_declarado(client):
     token, cid, pid = _preparar(client, "conc-3@example.com")
     cuerpo = _conciliar(client, token, cid, pid).json()
-    # Venta, avalúo, movimientos en cuentas, CDT e impuestos.
     assert cuerpo["resumen"]["NO_DECLARADO"] == 5
     assert len(cuerpo["items"]) == 5
 
@@ -158,7 +141,6 @@ def test_borrador_suma_por_renglon(client):
     assert renglones["R29"]["cantidad_registros"] == 2
     assert renglones["R112"]["valor_total"] == 50000000
     assert renglones["R132"]["valor_total"] == 450000
-    # Ordenados por número de renglón, no alfabéticamente.
     assert [r["renglon"] for r in cuerpo["renglones"]] == ["R29", "R112", "R131", "R132"]
     assert "sugerencia" in cuerpo["advertencia"] or "editable" in cuerpo["advertencia"]
 

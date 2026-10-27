@@ -35,6 +35,7 @@ un orden de prioridad posterior.
 | **5** | Cierre de periodo fiscal, reportes consolidados (kardex, saldo de inventario, resumen de patrimonio e ingresos, reporte de conciliación) y panel de cartera | Cierre del sistema; el panel de cartera integra la salida de todos los contribuyentes del contador, así que necesita que los incrementos anteriores ya existan para varios contribuyentes |
 | **6** | Seguridad y trazabilidad: bloqueo por intentos fallidos y registro de accesos, política y cambio de contraseña, auditoría de acciones, validación del archivo subido, cabeceras de seguridad HTTP | La app maneja información tributaria de terceros; con el alcance funcional completo, se aborda la capa de auditoría que el proyecto había dejado como extensión |
 | **7** | Calidad de vida: corrección y eliminación de registros, copia de activos entre años, declarar desde la conciliación | Reduce la digitación repetida y permite corregir errores, lo que más fricción genera en el uso diario |
+| **8** | Seguimiento de la declaración: calendario de vencimientos por NIT, fecha de presentación y fechas especiales, exportación de la cartera | Con varios clientes, el riesgo principal del contador es dejar vencer un plazo; la cartera pasa a priorizar por fecha límite |
 
 Si el cronograma se ajusta durante el semestre, el incremento 4
 (inventario) sigue siendo el candidato natural a recortar o dejar como

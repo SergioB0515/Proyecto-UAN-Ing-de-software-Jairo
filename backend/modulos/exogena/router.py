@@ -48,12 +48,6 @@ def importar_exogena(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-05. El archivo se lee de forma síncrona (`archivo.file.read()`,
-    no `await archivo.read()`) para mantener la ruta síncrona, coherente
-    con la decisión de arquitectura del proyecto (documentacion/04-arquitectura.md).
-
-    La respuesta incluye `errores`: las filas que no se pudieron
-    interpretar, con su número de fila y el motivo."""
     try:
         contenido = servicios.leer_archivo_exogena(archivo.file, archivo.filename)
         return servicios.importar_reporte_exogena(
@@ -88,7 +82,6 @@ def listar_reportes(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Reportes importados del contribuyente, el más reciente primero."""
     try:
         return servicios.listar_reportes_exogena(session, contador.id, contribuyente_id)
     except _NO_ENCONTRADO as exc:
@@ -105,7 +98,6 @@ def listar_topes(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Los cinco Topes del archivo (referencia informativa, Proceso 4)."""
     try:
         return servicios.listar_topes_exogena(
             session, contador.id, contribuyente_id, reporte_exogena_id
@@ -126,7 +118,6 @@ def listar_registros(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-06, con los filtros opcionales que pide el criterio de aceptación."""
     try:
         return servicios.listar_registros_exogena(
             session,

@@ -34,7 +34,6 @@
 }
 
 @layer components {
-  /* Cifras: siempre tabulares y alineadas a la derecha, como en un libro. */
   .cifra {
     font-variant-numeric: tabular-nums;
     @apply whitespace-nowrap text-right;

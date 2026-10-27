@@ -1,5 +1,5 @@
-"""Dependencia get_contador_actual: resuelve el contador autenticado a
-partir del token JWT, para usar en cualquier endpoint protegido."""
+import os
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlmodel import Session, select
@@ -9,9 +9,11 @@ from modulos.contadores.modelos import Contador
 
 from .seguridad import decodificar_token
 
-# tokenUrl es solo para que la documentación interactiva (Swagger) sepa
-# dónde pedir el token con el botón "Authorize" — no redirige ni valida nada.
-_esquema_oauth2 = OAuth2PasswordBearer(tokenUrl="/contadores/login")
+# El prefijo debe coincidir con PREFIJO_API de main.py: solo afecta al botón
+# «Authorize» de /docs, pero sin esto deja de funcionar en el despliegue.
+_PREFIJO_API = os.getenv("PREFIJO_API", "").rstrip("/")
+
+_esquema_oauth2 = OAuth2PasswordBearer(tokenUrl=f"{_PREFIJO_API}/contadores/login")
 
 
 def obtener_contador_actual(

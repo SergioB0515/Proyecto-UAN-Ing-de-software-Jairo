@@ -1,16 +1,3 @@
-"""Auditoría centralizada: en vez de llamar a «registrar evento» en cada
-endpoint, este middleware revisa cada petición terminada y, si fue una
-acción auditable que tuvo éxito, la registra con el contador del token, el
-contribuyente de la ruta y la IP.
-
-Si el contribuyente no está en la ruta (al crearlo), el endpoint lo deja
-en `request.state.auditoria_contribuyente_id`.
-
-Qué es auditable lo decide ACCIONES_AUDITADAS (nombre del endpoint ->
-descripción legible). Un endpoint nuevo que modifique datos debe agregarse
-aquí; la prueba `test_todo_endpoint_que_modifica_esta_auditado` falla si
-se olvida.
-"""
 from typing import Optional
 
 from sqlmodel import select
@@ -23,13 +10,12 @@ from .modelos import EventoAuditoria
 from .servicios import registrar_evento
 
 ACCIONES_AUDITADAS = {
-    # contadores
     "cambiar_contrasena": "Cambió su contraseña",
-    # contribuyentes
     "crear": "Registró un contribuyente",
     "actualizar": "Editó los datos del contribuyente",
     "eliminar": "Eliminó un contribuyente",
     "crear_periodo_fiscal": "Abrió un año gravable",
+    "actualizar_periodo_fiscal": "Actualizó el seguimiento de la declaración",
     "copiar_activos": "Copió los activos del año anterior",
     "crear_activo": "Registró un activo",
     "actualizar_activo": "Editó un activo",
@@ -37,10 +23,10 @@ ACCIONES_AUDITADAS = {
     "crear_fuente_ingreso": "Registró una fuente de ingreso",
     "actualizar_fuente_ingreso": "Editó una fuente de ingreso",
     "eliminar_fuente_ingreso": "Eliminó una fuente de ingreso",
-    # exógena y parámetros
     "importar_exogena": "Importó un archivo de exógena",
     "registrar_umbral": "Registró o cambió un umbral de declaración",
-    # inventario
+    "reemplazar_plazos": "Cambió el calendario de vencimientos",
+    "cargar_calendario_oficial": "Cargó el calendario oficial de vencimientos",
     "crear_categoria": "Creó una categoría",
     "eliminar_categoria": "Eliminó una categoría",
     "crear_producto": "Creó un producto",
@@ -48,10 +34,14 @@ ACCIONES_AUDITADAS = {
     "crear_proveedor": "Registró un proveedor",
     "crear_documento_soporte": "Registró un documento soporte",
     "registrar_movimiento": "Registró un movimiento de inventario",
-    # cierre y reportes (la descarga también se audita: es salida de datos)
     "cerrar_periodo": "Cerró un año gravable",
     "reabrir_periodo": "Reabrió un año gravable",
     "descargar_reporte": "Descargó un reporte",
+    "exportar_cartera": "Exportó el panel de cartera",
+    "subir_adjunto": "Adjuntó un soporte",
+    "actualizar_adjunto": "Editó los datos de un soporte",
+    "eliminar_adjunto": "Eliminó un soporte",
+    "descargar_soportes": "Descargó los soportes de un año en ZIP",
 }
 
 
@@ -80,8 +70,6 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
         if nombre not in ACCIONES_AUDITADAS or respuesta.status_code >= 400:
             return respuesta
 
-        # La sesión se obtiene igual que en los endpoints (respetando
-        # dependency_overrides), para que las pruebas usen su transacción.
         from database import obtener_sesion
 
         fabrica = request.app.dependency_overrides.get(obtener_sesion, obtener_sesion)
@@ -96,8 +84,11 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
                 request.state, "auditoria_contribuyente_id", None
             )
             descripcion = ACCIONES_AUDITADAS[nombre]
+            formato = request.query_params.get("formato", "xlsx")
             if nombre == "descargar_reporte":
-                descripcion += f" ({parametros.get('tipo')}, {request.query_params.get('formato', 'xlsx')})"
+                descripcion += f" ({parametros.get('tipo')}, {formato})"
+            elif nombre == "exportar_cartera":
+                descripcion += f" ({formato})"
             registrar_evento(
                 session,
                 EventoAuditoria(

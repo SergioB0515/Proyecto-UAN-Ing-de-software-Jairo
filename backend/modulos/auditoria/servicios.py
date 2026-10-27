@@ -1,12 +1,3 @@
-"""Bloqueo por intentos fallidos de inicio de sesión y registro de acciones.
-
-El bloqueo es por email: con LIMITE_FALLOS intentos fallidos dentro de
-VENTANA (y después del último acceso exitoso), la cuenta queda bloqueada
-hasta que el más antiguo de esos fallos salga de la ventana. Los intentos
-hechos durante el bloqueo se registran como BLOQUEADO y no cuentan como
-fallos: así un atacante insistiendo no extiende indefinidamente el bloqueo
-del usuario legítimo.
-"""
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
@@ -29,7 +20,6 @@ def _como_utc(fecha: datetime) -> datetime:
 
 
 def bloqueado_hasta(session: Session, email: str, ahora: Optional[datetime] = None) -> Optional[datetime]:
-    """Hasta cuándo está bloqueado el email, o None si no lo está."""
     ahora = ahora or _ahora()
     desde = ahora - VENTANA
     ultimo_exito = session.exec(
@@ -96,8 +86,6 @@ def listar_eventos(
     contribuyente_id: Optional[int] = None,
     limite: int = 100,
 ) -> list:
-    """Eventos del contador, el más reciente primero, con el nombre del
-    contribuyente si todavía existe."""
     from ..contribuyentes.modelos import Contribuyente
 
     consulta = (

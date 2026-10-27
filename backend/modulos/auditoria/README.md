@@ -7,6 +7,7 @@ Seguridad y trazabilidad (Incremento 6):
   hasta que el fallo más antiguo salga de la ventana (`servicios.py`).
 - `EventoAuditoria`: cada acción que modifica datos o descarga un reporte.
   La registra `AuditoriaMiddleware` a partir del nombre del endpoint, sin
-  que cada módulo tenga que acordarse de hacerlo.
+  que cada módulo tenga que acordarse de hacerlo. Subir, editar y eliminar
+  un soporte, y descargar el ZIP de soportes de un año, también se auditan.
 - `GET /auditoria` y `GET /auditoria/accesos`: lo que ve el contador en la
   pantalla «Actividad». Cada contador solo ve lo suyo.

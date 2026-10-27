@@ -30,6 +30,7 @@ from .modelos import (
     FuenteIngresoActualizar,
     FuenteIngresoCrear,
     FuenteIngresoLeer,
+    PeriodoFiscalActualizar,
     PeriodoFiscalCrear,
     PeriodoFiscalLeer,
 )
@@ -72,9 +73,7 @@ def crear(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-02."""
     creado = servicios.crear_contribuyente(session, contador.id, datos)
-    # El id no viene en la ruta: se le pasa a la auditoría por request.state.
     request.state.auditoria_contribuyente_id = creado.id
     return creado
 
@@ -84,7 +83,6 @@ def listar(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-02: solo los contribuyentes del contador autenticado."""
     return servicios.listar_contribuyentes(session, contador.id)
 
 
@@ -94,7 +92,6 @@ def obtener(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Un contribuyente del contador autenticado (404 si es de otro)."""
     try:
         return servicios.obtener_contribuyente(session, contador.id, contribuyente_id)
     except _NO_ENCONTRADO as exc:
@@ -110,7 +107,6 @@ def ver_patrimonio(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-04: datos del contribuyente + su patrimonio líquido en un periodo."""
     try:
         contribuyente = servicios.obtener_contribuyente(
             session, contador.id, contribuyente_id
@@ -152,7 +148,6 @@ def crear_activo(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-04. 409 si el periodo está cerrado."""
     try:
         return servicios.agregar_activo(
             session, contador.id, contribuyente_id, datos
@@ -189,7 +184,6 @@ def crear_periodo_fiscal(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Nuevo en el Incremento 2. 409 si ya existe un periodo para ese año."""
     try:
         return servicios.crear_periodo_fiscal(
             session, contador.id, contribuyente_id, datos
@@ -229,7 +223,6 @@ def crear_fuente_ingreso(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-03. 409 si el periodo está cerrado."""
     try:
         return servicios.agregar_fuente_ingreso(
             session, contador.id, contribuyente_id, datos
@@ -257,11 +250,6 @@ def listar_fuentes_ingreso(
         raise _no_encontrado(exc) from exc
 
 
-# ------------------------------------------------------ Edición y eliminación
-# Corrección de errores de digitación. Todo lo que pertenece a un periodo
-# solo se edita o elimina mientras el periodo esté ABIERTO (409 si no).
-
-
 @router.patch("/{contribuyente_id}", response_model=ContribuyenteLeer)
 def actualizar(
     contribuyente_id: int,
@@ -269,7 +257,6 @@ def actualizar(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """409 si se intenta pasar a ASALARIADO un contribuyente con inventario."""
     try:
         return servicios.actualizar_contribuyente(session, contador.id, contribuyente_id, cambios)
     except _NO_ENCONTRADO + _CONFLICTO as exc:
@@ -282,7 +269,6 @@ def eliminar(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """409 si ya tiene años gravables o inventario registrados."""
     try:
         servicios.eliminar_contribuyente(session, contador.id, contribuyente_id)
     except _NO_ENCONTRADO + _CONFLICTO as exc:
@@ -297,7 +283,6 @@ def actualizar_activo(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """409 si el periodo está cerrado o es el inventario de un cierre."""
     try:
         return servicios.actualizar_activo(
             session, contador.id, contribuyente_id, activo_id, cambios
@@ -366,12 +351,28 @@ def copiar_activos(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Copia los activos del año anterior (sin el inventario ni duplicados).
-    Devuelve los creados. 409 si el periodo está cerrado o no hay año
-    anterior."""
     try:
         return servicios.copiar_activos_del_anio_anterior(
             session, contador.id, contribuyente_id, periodo_fiscal_id
         )
     except _NO_ENCONTRADO + _CONFLICTO as exc:
+        raise _traducir(exc) from exc
+
+
+@router.patch(
+    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}",
+    response_model=PeriodoFiscalLeer,
+)
+def actualizar_periodo_fiscal(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    cambios: PeriodoFiscalActualizar,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.actualizar_periodo_fiscal(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, cambios
+        )
+    except _NO_ENCONTRADO as exc:
         raise _traducir(exc) from exc

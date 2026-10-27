@@ -1,5 +1,3 @@
-"""Importación del Excel de información exógena de la DIAN (Proceso 4 de
-documentacion/03-logica-proyecto.md, HU-05 y HU-06)."""
 import io
 import re
 from typing import List, Optional
@@ -35,16 +33,11 @@ PATRON_RENGLON = re.compile(r"\bR\d+\b")
 
 NIT_DIAN = "800197268"
 
-# Firmas de archivo: un .xlsx es un ZIP; un .xls antiguo, un documento OLE2.
 FIRMAS_EXCEL = (b"PK\x03\x04", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
 EXTENSIONES_EXCEL = (".xlsx", ".xls")
 
 
 def leer_archivo_exogena(flujo, nombre: Optional[str]) -> bytes:
-    """Lee el archivo subido validando, antes de pasarlo a pandas, que no
-    supere el tamaño máximo y que de verdad sea un Excel (por su firma, no
-    solo por la extensión, que el cliente puede falsear). Lee como máximo
-    un byte de más para no cargar en memoria un archivo enorme."""
     limite = int(TAMANO_MAXIMO_EXOGENA_MB * 1024 * 1024)
     contenido = flujo.read(limite + 1)
     if len(contenido) > limite:
@@ -59,18 +52,6 @@ def leer_archivo_exogena(flujo, nombre: Optional[str]) -> bytes:
 
 
 def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
-    """Función pura: convierte los bytes del Excel en consultante, topes,
-    registros y filas con error, sin tocar la base de datos.
-
-    - La fila de encabezados se ubica por contenido ("NIT" / "Nombre..."),
-      no por número de fila.
-    - Las filas sin NIT cuyo detalle empieza por "Tope" son el bloque de
-      Topes; el resto de filas sin NIT se ignoran (notas al pie).
-    - Una fila con NIT pero sin valor numérico se reporta en `errores`.
-
-    Lanza ArchivoExogenaInvalidoError si el archivo no es un Excel o no
-    tiene la fila de encabezados de la DIAN.
-    """
     try:
         tabla = pd.read_excel(io.BytesIO(contenido), header=None)
     except Exception as exc:
@@ -127,7 +108,7 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
 
         try:
             valor = float(_col(fila, 5))
-            if valor != valor:  # NaN
+            if valor != valor:
                 raise ValueError
         except (TypeError, ValueError):
             resultado.errores.append(
@@ -162,7 +143,6 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
 
 
 def _celda(valor):
-    """Normaliza una celda cruda de pandas: NaN/vacío -> None."""
     if valor is None or (isinstance(valor, float) and valor != valor):
         return None
     if isinstance(valor, str) and not valor.strip():
@@ -175,8 +155,6 @@ def _col(fila, indice):
 
 
 def _texto(valor) -> Optional[str]:
-    """Convierte una celda a texto limpio; enteros que vienen como float
-    (ej. NIT 900123.0) se muestran sin decimales."""
     if valor is None:
         return None
     if isinstance(valor, float) and valor.is_integer():
@@ -193,10 +171,6 @@ def importar_reporte_exogena(
     contenido: bytes,
     nombre_archivo: str,
 ) -> ReporteExogenaImportado:
-    """HU-05. Si el periodo ya tiene un reporte, se guarda uno nuevo y los
-    cálculos posteriores (obligación, conciliación, borrador) usan siempre
-    el más reciente — así el contador puede reimportar un archivo
-    corregido sin perder el historial."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -239,8 +213,6 @@ def importar_reporte_exogena(
 def listar_reportes_exogena(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> List[ReporteExogena]:
-    """Todos los reportes importados del contribuyente, el más reciente
-    primero."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     return list(
         session.exec(
@@ -254,8 +226,6 @@ def listar_reportes_exogena(
 def obtener_reporte_exogena(
     session: Session, contador_id: int, contribuyente_id: int, reporte_exogena_id: int
 ) -> ReporteExogena:
-    """Valida que el reporte pertenezca al contribuyente — y este al
-    contador — antes de exponer cualquiera de sus filas."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     reporte = session.get(ReporteExogena, reporte_exogena_id)
     if reporte is None or reporte.contribuyente_id != contribuyente_id:
@@ -269,8 +239,6 @@ def obtener_reporte_exogena(
 def obtener_reporte_mas_reciente(
     session: Session, periodo_fiscal_id: int
 ) -> ReporteExogena:
-    """El reporte vigente de un periodo (ya validado por quien llama). Lo
-    usan parametros (obligación) y conciliacion."""
     reporte = session.exec(
         select(ReporteExogena)
         .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
@@ -304,7 +272,6 @@ def listar_registros_exogena(
     concepto_code: Optional[str] = None,
     nit_reportante: Optional[str] = None,
 ) -> List[RegistroExogena]:
-    """HU-06: ordenados por concepto y tercero para que queden agrupados."""
     obtener_reporte_exogena(session, contador_id, contribuyente_id, reporte_exogena_id)
 
     consulta = select(RegistroExogena).where(

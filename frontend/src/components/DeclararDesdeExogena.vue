@@ -1,7 +1,4 @@
 <script setup>
-// Formulario corto para declarar un concepto que la exógena reporta y no
-// está registrado: llega prellenado con el detalle, el valor y el código de
-// concepto, y crea un activo o una fuente de ingreso del periodo.
 import { reactive } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
@@ -22,7 +19,6 @@ const detalle = (props.item.concepto || '')
   .trim()
 const texto = detalle.toLowerCase()
 
-// Sugerencia inicial a partir del detalle de la DIAN; el contador la cambia si no aplica.
 const pareceIngreso = /ingreso|venta|salario|honorario|pago|arrend|rendimiento|dividend|pensi/.test(texto)
 function tipoActivoSugerido() {
   if (/aval[uú]o|inmueble|predio|catastr/.test(texto)) return 'INMUEBLE'
@@ -41,7 +37,6 @@ const form = reactive({
   guardando: false,
 })
 
-// El vínculo hace que, al recalcular, este registro se cruce con el de la exógena.
 function vinculo() {
   return props.item.concepto_code
     ? { vinculo_codigo_concepto: props.item.concepto_code, vinculo_palabra_clave: null }

@@ -1,0 +1,28 @@
+# Copia este archivo a .env en la raíz del repositorio y cambia TODOS los
+# valores marcados. .env no se sube al repositorio.
+
+# --- Base de datos -------------------------------------------------------
+POSTGRES_USER=renta
+POSTGRES_DB=renta_db
+# Genera una: python -c "import secrets; print(secrets.token_urlsafe(24))"
+POSTGRES_PASSWORD=CAMBIA-ESTA-CLAVE
+
+# --- Aplicación ----------------------------------------------------------
+# Genera una: python -c "import secrets; print(secrets.token_hex(32))"
+JWT_SECRET_KEY=CAMBIA-ESTA-CLAVE
+JWT_EXPIRACION_MINUTOS=120
+
+# Puerto en el que queda la app en la máquina (en el servidor con Caddy
+# delante, déjalo en 127.0.0.1:8000 para no exponerlo directo).
+PUERTO_PUBLICO=8000
+
+# --- Demostración --------------------------------------------------------
+# 1 = carga los datos demo la primera vez que arranca la aplicación.
+# Déjalo vacío en un despliegue que no sea de demostración.
+SEMBRAR_DEMO_AL_ARRANCAR=1
+# Si se define, habilita POST /demo/reiniciar con la cabecera X-Demo-Token.
+# Genera uno: python -c "import secrets; print(secrets.token_urlsafe(16))"
+DEMO_RESET_TOKEN=CAMBIA-ESTE-TOKEN
+
+# --- Solo si usas el perfil `proxy` (HTTPS con Caddy) --------------------
+# DOMINIO=renta.tudominio.com

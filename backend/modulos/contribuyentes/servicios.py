@@ -26,6 +26,7 @@ from .modelos import (
     FuenteIngresoActualizar,
     FuenteIngresoCrear,
     PeriodoFiscal,
+    PeriodoFiscalActualizar,
     PeriodoFiscalCrear,
     TipoActivo,
     TipoContribuyente,
@@ -35,7 +36,6 @@ from .modelos import (
 def crear_contribuyente(
     session: Session, contador_id: int, datos: ContribuyenteCrear
 ) -> Contribuyente:
-    """HU-02."""
     contribuyente = Contribuyente(**datos.model_dump(), contador_id=contador_id)
     session.add(contribuyente)
     session.commit()
@@ -46,8 +46,6 @@ def crear_contribuyente(
 def listar_contribuyentes(
     session: Session, contador_id: int
 ) -> List[Contribuyente]:
-    """Solo los contribuyentes del contador autenticado — nunca los de
-    otro (HU-02, aislamiento por contador)."""
     return list(
         session.exec(
             select(Contribuyente).where(Contribuyente.contador_id == contador_id)
@@ -58,10 +56,6 @@ def listar_contribuyentes(
 def obtener_contribuyente(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> Contribuyente:
-    """Lanza ContribuyenteNoEncontradoError tanto si el id no existe como
-    si existe pero pertenece a otro contador — deliberadamente el mismo
-    error en los dos casos, para no revelar por el código de respuesta que
-    el contribuyente sí existe pero es ajeno."""
     contribuyente = session.get(Contribuyente, contribuyente_id)
     if contribuyente is None or contribuyente.contador_id != contador_id:
         raise ContribuyenteNoEncontradoError(
@@ -71,8 +65,6 @@ def obtener_contribuyente(
 
 
 def _tiene_inventario(session: Session, contribuyente_id: int) -> bool:
-    """¿Tiene categorías, productos, proveedores o documentos soporte?
-    Import local: los módulos de inventario importan este módulo."""
     from ..inventario.modelos import Categoria, Producto
     from ..movimientos.modelos import DocumentoSoporte, Proveedor
 
@@ -86,9 +78,6 @@ def _tiene_inventario(session: Session, contribuyente_id: int) -> bool:
 def actualizar_contribuyente(
     session: Session, contador_id: int, contribuyente_id: int, cambios: ContribuyenteActualizar
 ) -> Contribuyente:
-    """Corrige los datos del contribuyente. No se permite pasar a ASALARIADO
-    uno que ya tiene inventario: ese inventario dejaría de verse y de
-    cerrarse."""
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     datos = cambios.model_dump(exclude_unset=True)
     if (
@@ -100,7 +89,7 @@ def actualizar_contribuyente(
             "No se puede cambiar a ASALARIADO: el contribuyente ya tiene inventario registrado"
         )
     for campo, valor in datos.items():
-        if valor is not None:  # nombre, rut y tipo no admiten null
+        if valor is not None:
             setattr(contribuyente, campo, valor)
     session.add(contribuyente)
     session.commit()
@@ -109,10 +98,8 @@ def actualizar_contribuyente(
 
 
 def eliminar_contribuyente(session: Session, contador_id: int, contribuyente_id: int) -> None:
-    """Solo para corregir un registro hecho por error: se rechaza si ya tiene
-    periodos fiscales (y con ellos activos, ingresos, exógena o cierres) o
-    inventario. Borrar en cascada la información tributaria de un cliente
-    con un clic es demasiado riesgoso."""
+    from ..adjuntos import servicios as adjuntos
+
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     tiene_periodos = (
         session.exec(
@@ -124,16 +111,15 @@ def eliminar_contribuyente(session: Session, contador_id: int, contribuyente_id:
         raise ContribuyenteConDatosError(
             "Solo se puede eliminar un contribuyente sin años gravables ni inventario registrados"
         )
+    rutas = adjuntos.quitar_todos_del_contribuyente(session, contribuyente_id)
     session.delete(contribuyente)
     session.commit()
+    adjuntos.borrar_archivos(rutas)
 
 
 def _periodo_abierto_para_registro(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> PeriodoFiscal:
-    """Un activo o una fuente de ingreso solo se registra en un periodo del
-    mismo contribuyente que siga ABIERTO: un periodo cerrado ya quedó
-    consolidado (HU-15)."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -148,7 +134,6 @@ def _periodo_abierto_para_registro(
 def agregar_activo(
     session: Session, contador_id: int, contribuyente_id: int, datos: ActivoCrear
 ) -> Activo:
-    """HU-04. Valida pertenencia al contador y que el periodo esté abierto."""
     _periodo_abierto_para_registro(
         session, contador_id, contribuyente_id, datos.periodo_fiscal_id
     )
@@ -165,7 +150,6 @@ def agregar_fuente_ingreso(
     contribuyente_id: int,
     datos: FuenteIngresoCrear,
 ) -> FuenteIngreso:
-    """HU-03. Valida pertenencia al contador y que el periodo esté abierto."""
     _periodo_abierto_para_registro(
         session, contador_id, contribuyente_id, datos.periodo_fiscal_id
     )
@@ -177,7 +161,6 @@ def agregar_fuente_ingreso(
 
 
 def _normalizar_vinculos(datos: dict) -> dict:
-    """Un vínculo DIAN vacío se guarda como null."""
     for campo in ("vinculo_codigo_concepto", "vinculo_palabra_clave"):
         if campo in datos and isinstance(datos[campo], str):
             datos[campo] = datos[campo].strip() or None
@@ -208,8 +191,6 @@ def actualizar_activo(
     activo_id: int,
     cambios: ActivoActualizar,
 ) -> Activo:
-    """Corrige un activo de un periodo abierto. Los campos obligatorios
-    enviados como null se ignoran; los vínculos DIAN en null se borran."""
     activo = _activo_editable(session, contador_id, contribuyente_id, activo_id)
     for campo, valor in _normalizar_vinculos(cambios.model_dump(exclude_unset=True)).items():
         if valor is not None or campo.startswith("vinculo_"):
@@ -223,9 +204,14 @@ def actualizar_activo(
 def eliminar_activo(
     session: Session, contador_id: int, contribuyente_id: int, activo_id: int
 ) -> None:
+    from ..adjuntos import servicios as adjuntos
+    from ..adjuntos.modelos import TipoEntidadAdjunto
+
     activo = _activo_editable(session, contador_id, contribuyente_id, activo_id)
+    rutas = adjuntos.quitar_de_entidad(session, contribuyente_id, TipoEntidadAdjunto.ACTIVO, activo.id)
     session.delete(activo)
     session.commit()
+    adjuntos.borrar_archivos(rutas)
 
 
 def _fuente_editable(
@@ -261,25 +247,21 @@ def actualizar_fuente_ingreso(
 def eliminar_fuente_ingreso(
     session: Session, contador_id: int, contribuyente_id: int, fuente_id: int
 ) -> None:
+    from ..adjuntos import servicios as adjuntos
+    from ..adjuntos.modelos import TipoEntidadAdjunto
+
     fuente = _fuente_editable(session, contador_id, contribuyente_id, fuente_id)
+    rutas = adjuntos.quitar_de_entidad(
+        session, contribuyente_id, TipoEntidadAdjunto.FUENTE_INGRESO, fuente.id
+    )
     session.delete(fuente)
     session.commit()
+    adjuntos.borrar_archivos(rutas)
 
 
 def copiar_activos_del_anio_anterior(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> List[Activo]:
-    """Copia al periodo los activos del año gravable anterior más cercano
-    (casa, carro, cuentas: rara vez cambian de un año a otro), con su valor y
-    su vínculo DIAN, para que el contador solo actualice los valores.
-
-    - No copia el inventario del cierre: el del nuevo año lo calcula su
-      propio cierre.
-    - No duplica: se salta los que ya existen en el destino con la misma
-      descripción y tipo, así que se puede ejecutar más de una vez.
-    - El periodo destino debe estar abierto.
-
-    Devuelve solo los activos creados."""
     destino = _periodo_abierto_para_registro(session, contador_id, contribuyente_id, periodo_fiscal_id)
     origen = session.exec(
         select(PeriodoFiscal)
@@ -322,7 +304,6 @@ def listar_activos(
     contribuyente_id: int,
     periodo_fiscal_id: Optional[int] = None,
 ) -> List[Activo]:
-    """Todos los activos del contribuyente, o solo los de un periodo."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     consulta = select(Activo).where(Activo.contribuyente_id == contribuyente_id)
     if periodo_fiscal_id is not None:
@@ -337,8 +318,6 @@ def listar_fuentes_ingreso(
     contribuyente_id: int,
     periodo_fiscal_id: Optional[int] = None,
 ) -> List[FuenteIngreso]:
-    """Todas las fuentes de ingreso del contribuyente, o solo las de un
-    periodo."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     consulta = select(FuenteIngreso).where(
         FuenteIngreso.contribuyente_id == contribuyente_id
@@ -355,9 +334,6 @@ def crear_periodo_fiscal(
     contribuyente_id: int,
     datos: PeriodoFiscalCrear,
 ) -> PeriodoFiscal:
-    """Nuevo en el Incremento 2 — necesario para asociar un ReporteExogena.
-    CRUD simple, sin lógica de negocio propia todavía (el cierre de periodo
-    es Incremento 5)."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     existente = session.exec(
         select(PeriodoFiscal).where(
@@ -381,9 +357,6 @@ def crear_periodo_fiscal(
 def obtener_periodo_fiscal(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> PeriodoFiscal:
-    """Valida la pertenencia del contribuyente al contador y del periodo al
-    contribuyente. Lanza PeriodoFiscalNoEncontradoError en el segundo caso —
-    lo usan exogena, parametros, conciliacion y movimientos."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = session.get(PeriodoFiscal, periodo_fiscal_id)
     if periodo is None or periodo.contribuyente_id != contribuyente_id:
@@ -391,6 +364,22 @@ def obtener_periodo_fiscal(
             f"No existe el periodo fiscal {periodo_fiscal_id} para el "
             f"contribuyente {contribuyente_id}"
         )
+    return periodo
+
+
+def actualizar_periodo_fiscal(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    cambios: PeriodoFiscalActualizar,
+) -> PeriodoFiscal:
+    periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    for campo, valor in cambios.model_dump(exclude_unset=True).items():
+        setattr(periodo, campo, valor)
+    session.add(periodo)
+    session.commit()
+    session.refresh(periodo)
     return periodo
 
 
@@ -410,7 +399,6 @@ def listar_periodos_fiscales(
 def periodo_mas_reciente(
     session: Session, contador_id: int, contribuyente_id: int
 ) -> Optional[PeriodoFiscal]:
-    """El periodo de mayor año gravable, o None si no tiene ninguno."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     return session.exec(
         select(PeriodoFiscal)
@@ -422,9 +410,6 @@ def periodo_mas_reciente(
 def calcular_patrimonio_liquido(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> float:
-    """HU-04: suma de los activos del periodo. El Activo INVENTARIO que crea
-    el cierre (Incremento 5) queda en el periodo cerrado, así que cada año
-    cuenta solo su propio inventario final."""
     return sum(
         activo.valor
         for activo in listar_activos(session, contador_id, contribuyente_id, periodo_fiscal_id)

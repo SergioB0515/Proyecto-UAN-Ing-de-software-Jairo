@@ -24,7 +24,6 @@ router = APIRouter(prefix="/contadores", tags=["contadores"])
 def registro(
     datos: ContadorCrear, session: Session = Depends(obtener_sesion)
 ) -> Contador:
-    """HU-01: crear una cuenta de contador."""
     try:
         return servicios.registrar_contador(session, datos)
     except ContadorYaExisteError as exc:
@@ -36,14 +35,9 @@ def registro(
 @router.post("/login", response_model=Token)
 def login(
     request: Request,
-    # OAuth2PasswordRequestForm exige los campos "username"/"password" en
-    # form-data — es el estándar que espera el flujo OAuth2 de FastAPI.
-    # Aquí "username" es el email del contador.
     form: OAuth2PasswordRequestForm = Depends(),
     session: Session = Depends(obtener_sesion),
 ) -> Token:
-    """HU-01: iniciar sesión y obtener un token JWT. 429 si el email está
-    bloqueado por intentos fallidos (con `Retry-After` en segundos)."""
     credenciales = ContadorLogin(email=form.username, contrasena=form.password)
     try:
         token = servicios.autenticar_contador(session, credenciales, ip_cliente(request))
@@ -64,8 +58,6 @@ def login(
 
 @router.get("/yo", response_model=ContadorLeer)
 def yo(contador: Contador = Depends(obtener_contador_actual)) -> Contador:
-    """Devuelve el contador autenticado — útil para que el frontend
-    verifique si el token guardado sigue siendo válido."""
     return contador
 
 
@@ -75,8 +67,6 @@ def cambiar_contrasena(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Cambia la contraseña del contador autenticado. 400 si la actual no
-    coincide; 422 si la nueva no cumple la política."""
     try:
         servicios.cambiar_contrasena(session, contador, datos)
     except ContrasenaActualIncorrectaError as exc:

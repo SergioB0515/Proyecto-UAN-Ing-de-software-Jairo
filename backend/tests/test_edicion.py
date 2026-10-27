@@ -1,7 +1,3 @@
-"""Edición y eliminación de contribuyentes, activos y fuentes de ingreso
-(corrección de errores de digitación)."""
-
-
 def _crear_contador_y_token(client, email: str) -> str:
     client.post(
         "/contadores/registro",
@@ -43,16 +39,13 @@ class Escenario:
         return self.client.post(self.url("/fuentes-ingreso"), json=datos, headers=self.h).json()
 
 
-# ------------------------------------------------------------- Contribuyente
-
-
 def test_editar_contribuyente(client):
     e = Escenario(client, "ed-1@example.com", con_periodo=False)
     r = client.patch(e.url(), json={"nombre": "Ana María Pérez", "rut": "2020"}, headers=e.h)
     assert r.status_code == 200
     assert r.json()["nombre"] == "Ana María Pérez"
     assert r.json()["rut"] == "2020"
-    assert r.json()["tipo_contribuyente"] == "MIXTO"  # lo no enviado no cambia
+    assert r.json()["tipo_contribuyente"] == "MIXTO"
 
 
 def test_no_pasa_a_asalariado_con_inventario(client):
@@ -84,9 +77,6 @@ def test_otro_contador_no_edita_ni_elimina(client):
     otro = {"Authorization": f"Bearer {_crear_contador_y_token(client, 'ed-6b@example.com')}"}
     assert client.patch(e.url(), json={"nombre": "X"}, headers=otro).status_code == 404
     assert client.delete(e.url(), headers=otro).status_code == 404
-
-
-# -------------------------------------------------------------------- Activos
 
 
 def test_editar_activo_y_borrar_vinculo(client):
@@ -133,8 +123,6 @@ def test_no_se_edita_activo_de_periodo_cerrado(client):
 def test_no_se_edita_el_inventario_del_cierre(client):
     e = Escenario(client, "ed-11@example.com")
     cierre = client.post(e.url(f"/periodos-fiscales/{e.pid}/cerrar"), headers=e.h).json()
-    # Aunque se reabra el periodo, el inventario lo borra la reapertura;
-    # mientras está cerrado, no se toca a mano.
     activo_id = cierre["activo_inventario_id"]
     assert client.delete(e.url(f"/activos/{activo_id}"), headers=e.h).status_code == 409
 
@@ -156,9 +144,6 @@ def test_no_se_cambia_un_activo_a_inventario(client):
     activo = e.activo()
     r = client.patch(e.url(f"/activos/{activo['id']}"), json={"tipo": "INVENTARIO"}, headers=e.h)
     assert r.status_code == 422
-
-
-# ----------------------------------------------------------- Fuentes de ingreso
 
 
 def test_editar_y_eliminar_fuente_de_ingreso(client):
@@ -185,14 +170,11 @@ def test_no_se_edita_fuente_de_periodo_cerrado(client):
     assert r.status_code == 409
 
 
-# ------------------------------------------------- Copiar activos del año anterior
-
-
 def test_copiar_activos_del_anio_anterior(client):
-    e = Escenario(client, "cp-1@example.com")  # 2025, MIXTO
+    e = Escenario(client, "cp-1@example.com")
     e.activo(descripcion="Casa", tipo="INMUEBLE", valor=100, vinculo_codigo_concepto="1476")
     e.activo(descripcion="Cuenta", tipo="CUENTA", valor=50)
-    client.post(e.url(f"/periodos-fiscales/{e.pid}/cerrar"), headers=e.h)  # crea Activo INVENTARIO
+    client.post(e.url(f"/periodos-fiscales/{e.pid}/cerrar"), headers=e.h)
     p2026 = client.post(e.url("/periodos-fiscales"), json={"anio_gravable": 2026}, headers=e.h).json()["id"]
     url = e.url(f"/periodos-fiscales/{p2026}/copiar-activos")
 
@@ -200,10 +182,10 @@ def test_copiar_activos_del_anio_anterior(client):
     de_nuevo = client.post(url, headers=e.h)
 
     assert creados.status_code == 201
-    assert sorted(a["descripcion"] for a in creados.json()) == ["Casa", "Cuenta"]  # sin el inventario
+    assert sorted(a["descripcion"] for a in creados.json()) == ["Casa", "Cuenta"]
     assert all(a["periodo_fiscal_id"] == p2026 for a in creados.json())
     assert next(a for a in creados.json() if a["descripcion"] == "Casa")["vinculo_codigo_concepto"] == "1476"
-    assert de_nuevo.json() == []  # no duplica
+    assert de_nuevo.json() == []
     assert client.get(e.url(f"/patrimonio?periodo_fiscal_id={p2026}"), headers=e.h).json()["patrimonio_liquido"] == 150
 
 

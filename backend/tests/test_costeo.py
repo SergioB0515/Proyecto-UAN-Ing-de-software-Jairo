@@ -1,5 +1,3 @@
-"""Pruebas del motor de costeo (HU-14). Son sobre funciones puras: no
-necesitan base de datos ni cliente HTTP."""
 from datetime import date
 
 import pytest
@@ -27,7 +25,6 @@ def _mov(orden, fecha, tipo, cantidad, valor_unitario):
     )
 
 
-# Dos compras a distinto costo y una venta que consume más de la primera capa.
 MOVIMIENTOS = [
     _mov(1, date(2025, 1, 10), E, 10, 100),
     _mov(2, date(2025, 2, 10), E, 10, 120),
@@ -38,11 +35,9 @@ MOVIMIENTOS = [
 def test_peps_costea_con_las_entradas_mas_antiguas():
     lineas = [c.linea for c in calcular_kardex(MetodoCosteo.PEPS, MOVIMIENTOS)]
     salida = lineas[-1]
-    # 10 unidades a 100 + 5 a 120.
     assert salida.costo_total == 1600
     assert salida.costo_unitario == pytest.approx(106.67, abs=0.01)
     assert salida.precio_venta_unitario == 200
-    # Quedan 5 unidades de la segunda capa.
     assert salida.saldo_cantidad == 5
     assert salida.saldo_valor == 600
 
@@ -51,7 +46,6 @@ def test_promedio_ponderado_recalcula_en_cada_entrada():
     lineas = [
         c.linea for c in calcular_kardex(MetodoCosteo.PROMEDIO_PONDERADO, MOVIMIENTOS)
     ]
-    # Tras las dos entradas: 20 unidades por 2.200 -> promedio 110.
     assert lineas[1].saldo_valor == 2200
     salida = lineas[-1]
     assert salida.costo_unitario == 110
@@ -61,8 +55,6 @@ def test_promedio_ponderado_recalcula_en_cada_entrada():
 
 
 def test_el_orden_es_cronologico_no_de_registro():
-    # La compra barata se registró de último pero con fecha anterior: PEPS
-    # debe consumirla primero.
     movimientos = [
         _mov(1, date(2025, 2, 1), E, 5, 300),
         _mov(2, date(2025, 3, 1), S, 5, 400),
@@ -84,7 +76,6 @@ def test_promedio_sin_saldo_reinicia_el_costo():
         c.linea for c in calcular_kardex(MetodoCosteo.PROMEDIO_PONDERADO, movimientos)
     ]
     assert lineas[1].saldo_valor == 0
-    # El promedio nuevo es solo el de la última compra, sin arrastrar nada.
     assert lineas[-1].costo_unitario == 400
 
 
@@ -102,8 +93,6 @@ def test_cantidades_fraccionarias_no_dejan_residuos():
 
 
 def test_validar_stock_detecta_saldo_negativo_en_el_pasado():
-    # El saldo final sería 5, pero el 1 de febrero se venden 5 unidades que
-    # todavía no habían entrado.
     movimientos = [
         _mov(1, date(2025, 3, 1), E, 10, 100),
         _mov(2, date(2025, 2, 1), S, 5, 200),

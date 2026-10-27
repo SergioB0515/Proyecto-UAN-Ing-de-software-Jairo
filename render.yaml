@@ -1,0 +1,78 @@
+# Blueprint de Render (Infrastructure as Code).
+#
+# En el dashboard: New → Blueprint → elegir este repositorio. Render lee este
+# archivo, construye la imagen Docker, crea la base de datos y conecta las dos
+# cosas. No hay que pegar nada a mano.
+#
+# Lee despliegue/README.md antes: el plan Free tiene tres límites que afectan
+# directo a esta aplicación (suspensión, disco y caducidad de la base).
+
+services:
+  - type: web
+    name: app-renta-contador
+    runtime: docker
+    plan: free
+    region: virginia
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    # Render comprueba esta ruta para dar el despliegue por bueno. Va en la
+    # raíz, sin el prefijo /api, justamente para esto.
+    healthCheckPath: /salud
+    autoDeployTrigger: commit
+    envVars:
+      # Render conecta la base de abajo automáticamente.
+      - key: DATABASE_URL
+        fromDatabase:
+          name: renta-db
+          property: connectionString
+      # Render genera un valor aleatorio la primera vez y lo conserva.
+      - key: JWT_SECRET_KEY
+        generateValue: true
+      - key: JWT_EXPIRACION_MINUTOS
+        value: "120"
+      # Siembra los datos demo en el primer arranque y, en los siguientes,
+      # regenera los archivos de soportes que el disco efímero haya perdido.
+      - key: SEMBRAR_DEMO_AL_ARRANCAR
+        value: "1"
+      # Habilita POST /api/demo/reiniciar con la cabecera X-Demo-Token.
+      # El valor generado se consulta en el dashboard, en Environment.
+      - key: DEMO_RESET_TOKEN
+        generateValue: true
+      # El SPA se sirve desde este mismo contenedor: no hay origen externo.
+      - key: ORIGENES_PERMITIDOS
+        value: ""
+
+databases:
+  - name: renta-db
+    plan: free
+    databaseName: renta_db
+    user: renta
+    region: virginia
+    # OJO CON EL RELOJ: una base Postgres en plan Free de Render «expira 30
+    # días después de creada», con 14 días de gracia antes de que Render la
+    # borre con todos sus datos. El reloj arranca el día que apliques este
+    # blueprint.
+    #
+    # Para esta demo eso pesa poco: los datos se regeneran solos al arrancar
+    # (SEMBRAR_DEMO_AL_ARRANCAR=1), así que si la base caduca no se pierde
+    # nada propio — se crea otra y la aplicación la vuelve a llenar.
+    #
+    # Si la aplicación tiene que seguir viva después de la entrega, cambia
+    # `plan: free` por `plan: basic-256mb` (unos $6/mes) y deja de caducar.
+
+# ---------------------------------------------------------------------------
+# Los soportes adjuntos se guardan en disco, y los discos persistentes no
+# existen en el plan Free: cada reinicio los borra. Los cuatro soportes de la
+# demo se regeneran solos en cada arranque, así que la pantalla nunca queda
+# vacía, pero lo que subas tú durante la demo no sobrevive a un reinicio.
+#
+# Para que persistan, pasa el servicio web a `plan: starter` ($7/mes, además
+# deja de suspenderse) y añade dentro del servicio:
+#
+#     disk:
+#       name: almacen
+#       mountPath: /datos/almacen
+#       sizeGB: 1
+#
+# La ruta coincide con ALMACEN_ADJUNTOS del Dockerfile.
+# ---------------------------------------------------------------------------

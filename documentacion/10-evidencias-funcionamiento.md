@@ -18,7 +18,7 @@ base de datos PostgreSQL vacía:
 6. Cierra el año, descarga reportes y revisa el panel de cartera con un
    segundo contribuyente asalariado sin exógena.
 
-Además del recorrido visual, el backend tiene **152 pruebas automáticas**
+Además del recorrido visual, el backend tiene **170 pruebas automáticas**
 contra PostgreSQL real (`cd backend && pytest`), que cubren los criterios
 de aceptación de cada historia.
 
@@ -193,4 +193,32 @@ y la cuenta con su valor y vínculo DIAN; ejecutarlo de nuevo no duplica.
 formulario llega con el concepto, los $50.000.000 y el código 1032, y
 sugiere «Ingreso» por el detalle. Al registrarlo, la conciliación se
 recalcula: pasa de 4 a 3 no declarados y de 0 a 1 coincidencia.
+
+## Incremento 8 — Seguimiento de la declaración
+
+### HU-25 — Calendario de vencimientos
+![Calendario de vencimientos](evidencias/hu25-calendario-vencimientos.png)
+
+**Resultado:** el calendario oficial del año gravable 2025 se carga con un
+clic (50 rangos, del 12 de agosto al 26 de octubre de 2026). Para un año
+que la aplicación no trae responde «La aplicación no trae el calendario
+oficial de 2026 (disponibles: 2025); regístralo a mano», y se puede pegar
+como texto.
+
+### HU-25 y HU-27 — Cartera por fecha límite y exportación
+![Cartera por vencimiento](evidencias/hu25-hu27-cartera-vencimientos.png)
+
+**Resultado (con fecha del 9 de octubre de 2026):** ordenada por fecha
+límite: NIT …23 vencida desde el 28 de agosto, …80 vence hoy, …81 en 4
+días; la de …99 ya está presentada y queda al final. Los totales cuentan 2
+próximas a vencer y 1 vencida. «Descargar Excel» y «Descargar PDF» bajan
+`cartera_reciente_20261009.xlsx` y `.pdf` con los mismos datos.
+
+### HU-26 — Presentación y fecha especial
+![Seguimiento de la declaración](evidencias/hu26-seguimiento-declaracion.png)
+
+**Resultado:** una fecha especial (30 de noviembre) reemplaza la del
+calendario y la declaración vencida pasa a pendiente; «Volver al
+calendario» la quita. «Marcar como presentada» registra la fecha y la saca
+de las alertas.
 

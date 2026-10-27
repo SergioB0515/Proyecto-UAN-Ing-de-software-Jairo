@@ -29,6 +29,7 @@ const routes = [
       { path: 'conciliacion', name: 'conciliacion', component: () => import('../views/ConciliacionView.vue') },
       { path: 'borrador', name: 'borrador', component: () => import('../views/BorradorView.vue') },
       { path: 'inventario', name: 'inventario', component: () => import('../views/InventarioView.vue') },
+      { path: 'soportes', name: 'soportes', component: () => import('../views/SoportesView.vue') },
       { path: 'cierre', name: 'cierre', component: () => import('../views/CierreView.vue') },
     ],
   },
@@ -43,8 +44,6 @@ const router = createRouter({
   routes,
 })
 
-// Guard: sin token, al login. Con token pero sin contador cargado (p. ej.
-// tras recargar la página), se reconstruye la sesión con GET /contadores/yo.
 router.beforeEach(async (to) => {
   if (to.meta.publica) return true
   if (!sesion.token) return { name: 'login', query: { siguiente: to.fullPath } }

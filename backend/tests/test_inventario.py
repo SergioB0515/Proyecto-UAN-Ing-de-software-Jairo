@@ -108,8 +108,6 @@ def test_no_se_elimina_categoria_con_productos_activos(client):
     )
     assert respuesta.status_code == 409
 
-    # Desactivado el producto, la categoría ya se puede eliminar y el
-    # producto sigue existiendo, sin categoría (agregación).
     client.patch(
         f"/contribuyentes/{cid}/productos/{producto_id}",
         json={"activo": False},

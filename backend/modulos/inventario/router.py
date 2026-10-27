@@ -46,9 +46,6 @@ def _traducir(exc: Exception) -> HTTPException:
     return HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(exc))
 
 
-# -------------------------------------------------------------------- Categoria
-
-
 @router.post(
     "/{contribuyente_id}/categorias",
     response_model=CategoriaLeer,
@@ -60,7 +57,6 @@ def crear_categoria(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-11."""
     try:
         return servicios.crear_categoria(session, contador.id, contribuyente_id, datos)
     except _NO_ENCONTRADO + _CONFLICTO as exc:
@@ -89,16 +85,12 @@ def eliminar_categoria(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-11: 409 si la categoría tiene productos activos."""
     try:
         servicios.eliminar_categoria(
             session, contador.id, contribuyente_id, categoria_id
         )
     except _NO_ENCONTRADO + _CONFLICTO as exc:
         raise _traducir(exc) from exc
-
-
-# --------------------------------------------------------------------- Producto
 
 
 @router.post(
@@ -112,7 +104,6 @@ def crear_producto(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-11."""
     try:
         return servicios.crear_producto(session, contador.id, contribuyente_id, datos)
     except _NO_ENCONTRADO + _CONFLICTO as exc:
@@ -161,8 +152,6 @@ def actualizar_producto(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Incluye desactivar el producto (`activo: false`). 409 si se intenta
-    cambiar el método de costeo de un producto con movimientos."""
     try:
         return servicios.actualizar_producto(
             session, contador.id, contribuyente_id, producto_id, datos

@@ -5,6 +5,11 @@
 - `TablaObligacion.vue`: los cinco criterios de obligación de declarar.
 - `CamposVinculoDian.vue`: código de concepto o palabra clave para el cruce.
 - `MensajeError.vue`, `EstadoVacio.vue`, `Cargando.vue`: estados comunes.
+- `PanelAdjuntos.vue`: soportes de un objeto; elegir o arrastrar varios
+  archivos, pegar una captura con Ctrl+V, editar la nota y eliminar.
+  `BotonAdjuntos.vue` es el clip con el contador que lo abre en una fila;
+  `VistaPreviaAdjunto.vue` muestra PDF e imágenes (Esc cierra, ← → navegan);
+  `IconoArchivo.vue` marca el tipo de archivo.
 - `inventario/`: los cuatro paneles de la pantalla de inventario
   (movimientos, kardex y costo de ventas, productos, proveedores y
   documentos).

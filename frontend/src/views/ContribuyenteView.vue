@@ -28,8 +28,6 @@ const creandoPeriodo = ref(false)
 
 const manejaInventario = computed(() => contribuyente.value && contribuyente.value.tipo_contribuyente !== 'ASALARIADO')
 
-// El periodo vive en la URL (?periodo=ID) para que cada pantalla se pueda
-// enlazar y recargar; sin él, se toma el año más reciente.
 const periodo = computed(() => {
   if (!periodos.value.length) return null
   const elegido = periodos.value.find((p) => p.id === Number(route.query.periodo))
@@ -71,7 +69,6 @@ async function agregarPeriodo() {
   }
 }
 
-// Corrección de datos del contribuyente y eliminación de un registro hecho por error.
 const edicion = reactive({ abierta: false, datos: {}, error: '', guardando: false, confirmandoEliminar: false })
 
 function abrirEdicion() {
@@ -119,6 +116,7 @@ const pestanas = computed(() => [
   { nombre: 'conciliacion', texto: 'Conciliación' },
   { nombre: 'borrador', texto: 'Borrador por renglón' },
   ...(manejaInventario.value ? [{ nombre: 'inventario', texto: 'Inventario' }] : []),
+  { nombre: 'soportes', texto: 'Soportes' },
   { nombre: 'cierre', texto: 'Cierre y reportes' },
 ])
 </script>

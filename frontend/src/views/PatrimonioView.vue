@@ -14,16 +14,21 @@ import {
   listarFuentesIngreso,
 } from '../api/contribuyentes'
 import AccionesFila from '../components/AccionesFila.vue'
+import BotonAdjuntos from '../components/BotonAdjuntos.vue'
 import CamposVinculoDian from '../components/CamposVinculoDian.vue'
 import Cargando from '../components/Cargando.vue'
 import MensajeError from '../components/MensajeError.vue'
+import PanelAdjuntos from '../components/PanelAdjuntos.vue'
 import { useContribuyente } from '../contexto'
 import { ETIQUETAS_TIPO_ACTIVO, dinero } from '../formato'
+import { useConteoAdjuntos } from '../soportes'
 
 const { contribuyente, periodo, periodos } = useContribuyente()
 const cid = contribuyente.value.id
 const pid = periodo.value.id
 const cerrado = computed(() => periodo.value.estado === 'CERRADO')
+const conteo = useConteoAdjuntos(cid)
+const abiertos = ref({})
 
 const activos = ref([])
 const fuentes = ref([])
@@ -44,16 +49,24 @@ function fuenteVacia() {
   return { concepto: '', valor_anual: null, retencion_fuente: 0, vinculo_codigo_concepto: '', vinculo_palabra_clave: '' }
 }
 
-// Un mismo formulario sirve para crear y para editar: `editandoId` dice cuál.
 const formActivo = reactive({ abierto: false, editandoId: null, datos: activoVacio(), error: '', guardando: false })
 const formFuente = reactive({ abierto: false, editandoId: null, datos: fuenteVacia(), error: '', guardando: false })
 
 const OPERACIONES = {
-  activo: { form: formActivo, lista: activos, vacio: activoVacio, crear: crearActivo, actualizar: actualizarActivo, eliminar: eliminarActivo },
-  fuente: { form: formFuente, lista: fuentes, vacio: fuenteVacia, crear: crearFuenteIngreso, actualizar: actualizarFuenteIngreso, eliminar: eliminarFuenteIngreso },
+  activo: { form: formActivo, lista: activos, vacio: activoVacio, crear: crearActivo, actualizar: actualizarActivo, eliminar: eliminarActivo, tipoSoporte: 'ACTIVO' },
+  fuente: { form: formFuente, lista: fuentes, vacio: fuenteVacia, crear: crearFuenteIngreso, actualizar: actualizarFuenteIngreso, eliminar: eliminarFuenteIngreso, tipoSoporte: 'FUENTE_INGRESO' },
 }
 
-// Los vínculos vacíos se mandan como null, no como cadena vacía.
+const clave = (tipo, id) => `${tipo}:${id}`
+const estaAbierto = (tipo, id) => Boolean(abiertos.value[clave(tipo, id)])
+function alternarSoportes(tipo, id) {
+  abiertos.value = { ...abiertos.value, [clave(tipo, id)]: !estaAbierto(tipo, id) }
+}
+function detalleSoportes(tipo, id) {
+  const total = conteo.total(tipo, id)
+  return total ? `con ${total === 1 ? 'su soporte' : `sus ${total} soportes`}` : ''
+}
+
 function limpiar(datos) {
   return {
     ...datos,
@@ -98,18 +111,18 @@ async function guardar(clase) {
 }
 
 async function eliminar(clase, item) {
-  const { lista, eliminar: borrar, form } = OPERACIONES[clase]
+  const { lista, eliminar: borrar, form, tipoSoporte } = OPERACIONES[clase]
   errorLista.value = ''
   try {
     await borrar(cid, item.id)
     lista.value = lista.value.filter((x) => x.id !== item.id)
+    conteo.fijar(tipoSoporte, item.id, 0)
     if (form.editandoId === item.id) cerrarFormulario(clase)
   } catch (e) {
     errorLista.value = mensajeDeError(e)
   }
 }
 
-// Copiar activos del año anterior: solo si existe uno y este año está abierto.
 const anioAnterior = computed(() =>
   periodos.value
     .map((p) => p.anio_gravable)
@@ -141,7 +154,11 @@ function vinculo(item) {
 
 onMounted(async () => {
   try {
-    ;[activos.value, fuentes.value] = await Promise.all([listarActivos(cid, pid), listarFuentesIngreso(cid, pid)])
+    ;[activos.value, fuentes.value] = await Promise.all([
+      listarActivos(cid, pid),
+      listarFuentesIngreso(cid, pid),
+      conteo.cargar(),
+    ])
   } catch (e) {
     error.value = mensajeDeError(e)
   } finally {
@@ -223,32 +240,58 @@ onMounted(async () => {
               <th>Tipo</th>
               <th>Cruce con exógena</th>
               <th class="cifra">Valor</th>
+              <th>Soportes</th>
               <th v-if="!cerrado"><span class="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!activos.length">
-              <td :colspan="cerrado ? 4 : 5" class="py-6 text-center text-tinta-suave">Sin activos registrados en {{ periodo.anio_gravable }}.</td>
+              <td :colspan="cerrado ? 5 : 6" class="py-6 text-center text-tinta-suave">Sin activos registrados en {{ periodo.anio_gravable }}.</td>
             </tr>
-            <tr v-for="a in activos" :key="a.id" :class="formActivo.editandoId === a.id ? 'bg-libro-claro/60' : ''">
-              <td>{{ a.descripcion }}</td>
-              <td>{{ ETIQUETAS_TIPO_ACTIVO[a.tipo] }}</td>
-              <td class="text-tinta-suave">{{ vinculo(a) }}</td>
-              <td class="cifra">{{ dinero(a.valor) }}</td>
-              <td v-if="!cerrado" class="text-right">
-                <AccionesFila
-                  v-if="a.tipo !== 'INVENTARIO'"
-                  :etiqueta="a.descripcion"
-                  @editar="abrirEdicion('activo', a)"
-                  @eliminar="eliminar('activo', a)"
-                />
-              </td>
-            </tr>
+            <template v-for="a in activos" :key="a.id">
+              <tr :class="formActivo.editandoId === a.id ? 'bg-libro-claro/60' : ''">
+                <td>{{ a.descripcion }}</td>
+                <td>{{ ETIQUETAS_TIPO_ACTIVO[a.tipo] }}</td>
+                <td class="text-tinta-suave">{{ vinculo(a) }}</td>
+                <td class="cifra">{{ dinero(a.valor) }}</td>
+                <td>
+                  <BotonAdjuntos
+                    v-if="a.tipo !== 'INVENTARIO'"
+                    :total="conteo.total('ACTIVO', a.id)"
+                    :abierto="estaAbierto('ACTIVO', a.id)"
+                    :etiqueta="a.descripcion"
+                    destacar-falta
+                    @alternar="alternarSoportes('ACTIVO', a.id)"
+                  />
+                </td>
+                <td v-if="!cerrado" class="text-right">
+                  <AccionesFila
+                    v-if="a.tipo !== 'INVENTARIO'"
+                    :etiqueta="a.descripcion"
+                    :detalle="detalleSoportes('ACTIVO', a.id)"
+                    @editar="abrirEdicion('activo', a)"
+                    @eliminar="eliminar('activo', a)"
+                  />
+                </td>
+              </tr>
+              <tr v-if="estaAbierto('ACTIVO', a.id)">
+                <td :colspan="cerrado ? 5 : 6" class="bg-papel/60">
+                  <PanelAdjuntos
+                    :contribuyente-id="cid"
+                    entidad-tipo="ACTIVO"
+                    :entidad-id="a.id"
+                    :puede-eliminar="!cerrado"
+                    @cambio="conteo.fijar('ACTIVO', a.id, $event)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
           <tfoot v-if="activos.length">
             <tr>
               <td colspan="3" class="border-0 font-semibold">Patrimonio líquido</td>
               <td class="cifra border-0 font-semibold">{{ dinero(totalActivos) }}</td>
+              <td class="border-0"></td>
               <td v-if="!cerrado" class="border-0"></td>
             </tr>
           </tfoot>
@@ -305,28 +348,58 @@ onMounted(async () => {
               <th>Cruce con exógena</th>
               <th class="cifra">Retención</th>
               <th class="cifra">Valor anual</th>
+              <th>Soportes</th>
               <th v-if="!cerrado"><span class="sr-only">Acciones</span></th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="!fuentes.length">
-              <td :colspan="cerrado ? 4 : 5" class="py-6 text-center text-tinta-suave">Sin ingresos registrados en {{ periodo.anio_gravable }}.</td>
+              <td :colspan="cerrado ? 5 : 6" class="py-6 text-center text-tinta-suave">Sin ingresos registrados en {{ periodo.anio_gravable }}.</td>
             </tr>
-            <tr v-for="f in fuentes" :key="f.id" :class="formFuente.editandoId === f.id ? 'bg-libro-claro/60' : ''">
-              <td>{{ f.concepto }}</td>
-              <td class="text-tinta-suave">{{ vinculo(f) }}</td>
-              <td class="cifra">{{ dinero(f.retencion_fuente) }}</td>
-              <td class="cifra">{{ dinero(f.valor_anual) }}</td>
-              <td v-if="!cerrado" class="text-right">
-                <AccionesFila :etiqueta="f.concepto" @editar="abrirEdicion('fuente', f)" @eliminar="eliminar('fuente', f)" />
-              </td>
-            </tr>
+            <template v-for="f in fuentes" :key="f.id">
+              <tr :class="formFuente.editandoId === f.id ? 'bg-libro-claro/60' : ''">
+                <td>{{ f.concepto }}</td>
+                <td class="text-tinta-suave">{{ vinculo(f) }}</td>
+                <td class="cifra">{{ dinero(f.retencion_fuente) }}</td>
+                <td class="cifra">{{ dinero(f.valor_anual) }}</td>
+                <td>
+                  <BotonAdjuntos
+                    :total="conteo.total('FUENTE_INGRESO', f.id)"
+                    :abierto="estaAbierto('FUENTE_INGRESO', f.id)"
+                    :etiqueta="f.concepto"
+                    destacar-falta
+                    @alternar="alternarSoportes('FUENTE_INGRESO', f.id)"
+                  />
+                </td>
+                <td v-if="!cerrado" class="text-right">
+                  <AccionesFila
+                    :etiqueta="f.concepto"
+                    :detalle="detalleSoportes('FUENTE_INGRESO', f.id)"
+                    @editar="abrirEdicion('fuente', f)"
+                    @eliminar="eliminar('fuente', f)"
+                  />
+                </td>
+              </tr>
+              <tr v-if="estaAbierto('FUENTE_INGRESO', f.id)">
+                <td :colspan="cerrado ? 5 : 6" class="bg-papel/60">
+                  <PanelAdjuntos
+                    :contribuyente-id="cid"
+                    entidad-tipo="FUENTE_INGRESO"
+                    :entidad-id="f.id"
+                    categoria-inicial="CERTIFICADO"
+                    :puede-eliminar="!cerrado"
+                    @cambio="conteo.fijar('FUENTE_INGRESO', f.id, $event)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
           <tfoot v-if="fuentes.length">
             <tr>
               <td colspan="2" class="border-0 font-semibold">Total</td>
               <td class="cifra border-0 font-semibold">{{ dinero(totalRetenciones) }}</td>
               <td class="cifra border-0 font-semibold">{{ dinero(totalIngresos) }}</td>
+              <td class="border-0"></td>
               <td v-if="!cerrado" class="border-0"></td>
             </tr>
           </tfoot>

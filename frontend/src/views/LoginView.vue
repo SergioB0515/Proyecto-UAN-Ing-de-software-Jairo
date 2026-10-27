@@ -10,7 +10,7 @@ import { guardarToken, sesion } from '../sesion'
 const route = useRoute()
 const router = useRouter()
 
-const modo = ref('ingresar') // 'ingresar' | 'registrarse'
+const modo = ref('ingresar')
 const nombre = ref('')
 const email = ref('')
 const contrasena = ref('')
@@ -51,7 +51,6 @@ function cambiarModo() {
         <p class="text-3xl font-semibold leading-snug text-white">
           Lo que tus clientes declaran, frente a lo que terceros le reportaron a la DIAN.
         </p>
-        <!-- Muestra del cruce que hace la aplicación: el centro del producto. -->
         <table class="mt-10 text-sm text-papel/90" aria-label="Ejemplo de conciliación">
           <thead>
             <tr>

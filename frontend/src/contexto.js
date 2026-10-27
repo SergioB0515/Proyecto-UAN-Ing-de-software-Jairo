@@ -1,8 +1,3 @@
-/**
- * Contexto del contribuyente abierto: lo provee ContribuyenteView y lo
- * consumen sus vistas hijas (resumen, patrimonio, exógena…), para que el
- * contribuyente y el periodo seleccionado se carguen una sola vez.
- */
 import { inject } from 'vue'
 
 export const CLAVE_CONTEXTO = Symbol('contribuyente')

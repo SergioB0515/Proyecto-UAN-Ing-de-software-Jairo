@@ -1,7 +1,3 @@
-"""Cierre de periodo fiscal (HU-15), reportes exportables (HU-16) y resumen
-por contribuyente (HU-17). Procesos 10 y 11 de
-documentacion/03-logica-proyecto.md.
-"""
 from collections import defaultdict
 from datetime import datetime
 from typing import Dict, List, Optional, Tuple
@@ -31,7 +27,7 @@ from ..contribuyentes.servicios import (
 from ..inventario.servicios import TIPOS_CON_INVENTARIO, obtener_contribuyente_con_inventario
 from ..movimientos.servicios import calcular_costo_ventas, kardex_por_periodo
 from ..parametros.modelos import ResultadoObligacion
-from ..parametros.servicios import verificar_obligacion_declarar
+from ..parametros.servicios import calcular_vencimiento, verificar_obligacion_declarar
 from .exportacion import DocumentoReporte, Seccion, a_excel, a_pdf
 from .modelos import (
     CierrePeriodo,
@@ -44,8 +40,6 @@ from .modelos import (
     TipoReporte,
 )
 
-# --------------------------------------------------------------- Cierre (HU-15)
-
 
 def _a_leer(cierre: CierrePeriodo, periodo: PeriodoFiscal) -> CierrePeriodoLeer:
     return CierrePeriodoLeer(
@@ -56,14 +50,6 @@ def _a_leer(cierre: CierrePeriodo, periodo: PeriodoFiscal) -> CierrePeriodoLeer:
 def cerrar_periodo(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> CierrePeriodoLeer:
-    """Proceso 10:
-    1. El periodo debe estar ABIERTO y todos los años anteriores cerrados
-       (el saldo inicial de un año depende del cierre del anterior).
-    2. Si el contribuyente maneja inventario, el saldo final valorizado se
-       registra como un Activo INVENTARIO del mismo periodo (aunque valga 0,
-       para dejar constancia del cierre en el patrimonio del año).
-    3. El periodo pasa a CERRADO: ya no admite movimientos ni exógena.
-    """
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
     if periodo.estado == EstadoPeriodo.CERRADO:
@@ -110,9 +96,6 @@ def cerrar_periodo(
 def reabrir_periodo(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> PeriodoFiscal:
-    """Deshace un cierre para corregir algo: borra el Activo INVENTARIO que
-    creó y vuelve el periodo a ABIERTO. Solo se puede reabrir el último año
-    cerrado, para no invalidar el saldo inicial de un año posterior."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
     if periodo.estado == EstadoPeriodo.ABIERTO:
@@ -150,15 +133,9 @@ def reabrir_periodo(
     return periodo
 
 
-# -------------------------------------------------------------- Resumen (HU-17)
-
-
 def evaluar_declaracion(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> Tuple[Optional[ResultadoObligacion], Optional[Dict[EstadoConciliacion, int]], List[str]]:
-    """Obligación de declarar y resumen de conciliación de un periodo, sin
-    fallar si todavía falta la exógena o el umbral: en ese caso devuelve
-    None y el motivo en avisos. Lo usan el resumen y el panel de cartera."""
     avisos: List[str] = []
     obligacion = None
     conciliacion = None
@@ -176,7 +153,7 @@ def evaluar_declaracion(
             session, contador_id, contribuyente_id, periodo_fiscal_id
         ).resumen
     except ReporteExogenaNoEncontradoError:
-        pass  # el aviso ya quedó registrado arriba
+        pass
 
     return obligacion, conciliacion, avisos
 
@@ -231,12 +208,17 @@ def construir_resumen(
         ),
         inventario=inventario,
         obligacion=obligacion,
+        vencimiento=calcular_vencimiento(
+            session,
+            contribuyente.rut,
+            periodo.anio_gravable,
+            periodo.fecha_vencimiento_manual,
+            periodo.fecha_presentacion,
+        ),
         conciliacion=conciliacion,
         avisos=avisos,
     )
 
-
-# -------------------------------------------------- Reportes exportables (HU-16)
 
 _TITULOS = {
     TipoReporte.KARDEX: "Kardex de inventario",
@@ -260,7 +242,6 @@ def generar_reporte(
     tipo: TipoReporte,
     formato: FormatoReporte,
 ) -> Tuple[bytes, str, str]:
-    """Devuelve (contenido, media_type, nombre_de_archivo)."""
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
 

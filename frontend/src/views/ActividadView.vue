@@ -14,7 +14,6 @@ const router = useRouter()
 const eventos = ref(null)
 const contribuyentes = ref([])
 const error = ref('')
-// El filtro vive en la URL para poder enlazar «Actividad de este contribuyente».
 const filtro = ref(route.query.contribuyente ? Number(route.query.contribuyente) : null)
 
 function fechaHora(valor) {
@@ -39,9 +38,7 @@ onMounted(async () => {
   cargar()
   try {
     contribuyentes.value = await listarContribuyentes()
-  } catch {
-    /* el filtro es opcional */
-  }
+  } catch {}
 })
 </script>
 

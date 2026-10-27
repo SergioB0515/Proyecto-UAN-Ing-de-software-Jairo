@@ -10,7 +10,7 @@
 | Diagrama de flujo de uso | ✅ Completado |
 | Arquitectura y stack tecnológico | ✅ Completado e implementado |
 | Estructura de carpetas del proyecto | ✅ Completado e implementado |
-| Historias de usuario | ✅ Completado (24 historias en 7 épicas) |
+| Historias de usuario | ✅ Completado (27 historias en 8 épicas) |
 | Validación del formato real de la exógena | ✅ Completado — se analizó un archivo real (estructura de encabezado, bloque de Topes, columnas, códigos de concepto y renglones) y se generó un archivo de prueba sintético con la misma estructura para uso en `tests/` |
 | Prototipo de validación (parseo + conciliación) | ✅ Completado — prototipo interactivo funcional que valida, en el navegador, el parseo del Excel real y la lógica de cruce contra datos declarados de ejemplo. Sirvió para descubrir y corregir dos supuestos del diseño (ver nota abajo) |
 | Backend — Incremento 1 (HU-01 a HU-04) | ✅ Implementado y probado |
@@ -22,16 +22,17 @@
 | Edición y eliminación de contribuyentes, activos e ingresos | ✅ Implementado y probado (backend y frontend) |
 | Incremento 6 — Seguridad y trazabilidad (HU-19 a HU-21) | ✅ Implementado y probado (backend y frontend) |
 | Incremento 7 — Calidad de vida (HU-22 a HU-24) | ✅ Implementado y probado (backend y frontend) |
+| Incremento 8 — Seguimiento de la declaración (HU-25 a HU-27) | ✅ Implementado y probado (backend y frontend) |
 | Integración continua (GitHub Actions) | ✅ Pruebas del backend con PostgreSQL y compilación del frontend en cada push |
 | Frontend (Vue 3 + Vite + Tailwind) — todas las historias | ✅ Implementado y verificado de punta a punta en el navegador |
 | Evidencias de funcionamiento | ✅ Capturas por historia de usuario ([10](10-evidencias-funcionamiento.md)) |
 
 ## Detalle
 
-El backend tiene implementados los cinco incrementos, con 152 pruebas
+El backend tiene implementados los cinco incrementos, con 170 pruebas
 automáticas que corren contra una base de datos PostgreSQL real (ver
 [backend/README.md](../backend/README.md) para los endpoints y cómo
-correrlas). El frontend cubre las 24 historias sobre esos endpoints (ver
+correrlas). El frontend cubre las 27 historias sobre esos endpoints (ver
 [frontend/README.md](../frontend/README.md)).
 
 Dos hallazgos del prototipo de validación cambiaron decisiones de diseño
@@ -112,6 +113,22 @@ Decisiones del incremento 6 (seguridad):
 - Pendiente conocido: el token JWT se guarda en `localStorage`, expuesto si
   la app tuviera una falla XSS. Moverlo a una cookie `HttpOnly` exige
   protección CSRF; se deja documentado.
+
+Decisiones del incremento 8 (seguimiento de la declaración):
+
+- El calendario se guarda por rangos de dígitos y año gravable, como dato
+  compartido (igual que los umbrales). "00" se guarda como 100 para que el
+  rango 99–00 sea continuo.
+- La aplicación trae precargado el calendario del año gravable 2025
+  (vencimientos del 12 de agosto al 26 de octubre de 2026), verificado
+  fecha por fecha contra dos publicaciones independientes. Prevalece el
+  calendario oficial de dian.gov.co.
+- Los plazos especiales que la DIAN fija para casos puntuales no se
+  modelan como regla: el contador registra una fecha manual en el periodo.
+- "Presentada" se registra aparte del cierre del periodo: se declara
+  después de cerrar el año, y cerrar no significa haber presentado.
+- La fecha de hoy se calcula en hora de Colombia (UTC-5 fijo), sin
+  depender de la base de zonas horarias del sistema (que Windows no trae).
 
 ## Próximos pasos
 

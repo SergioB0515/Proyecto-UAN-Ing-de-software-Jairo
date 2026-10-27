@@ -3,6 +3,7 @@ import { onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
 import { guardarUmbral, listarUmbrales } from '../api/parametros'
+import CalendarioVencimientos from '../components/CalendarioVencimientos.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { cantidad, dinero } from '../formato'
 
@@ -60,14 +61,19 @@ onMounted(cargar)
 <template>
   <div class="mx-auto max-w-5xl space-y-6">
     <header>
-      <h1>Umbrales de declaración</h1>
+      <h1>Parámetros DIAN</h1>
       <p class="max-w-prose text-tinta-suave">
-        El valor de la UVT y los topes (en UVT) que obligan a una persona natural a declarar renta en cada año
-        gravable. Se comparan contra los topes de la exógena. Son comunes a toda la aplicación.
+        Datos de la DIAN que cambian cada año gravable y son comunes a todos tus contribuyentes.
       </p>
     </header>
 
     <MensajeError :mensaje="error" />
+
+    <h2>Umbrales de declaración</h2>
+    <p class="-mt-4 max-w-prose text-sm text-tinta-suave">
+      El valor de la UVT y los topes (en UVT) que obligan a una persona natural a declarar renta. Se comparan
+      contra los topes de la exógena.
+    </p>
 
     <div class="grid gap-6 lg:grid-cols-[1fr_20rem]">
       <div class="hoja overflow-x-auto">
@@ -121,5 +127,7 @@ onMounted(cargar)
         <button type="submit" class="boton">Guardar umbral</button>
       </form>
     </div>
+
+    <CalendarioVencimientos class="border-t border-papel-linea pt-6" />
   </div>
 </template>

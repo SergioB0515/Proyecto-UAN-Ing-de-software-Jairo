@@ -247,9 +247,6 @@ def test_periodo_fiscal_siempre_nace_abierto(client):
     assert periodo.json()["estado"] == "ABIERTO"
 
 
-# ------------------------------------------------- HU-03: asociación a periodo
-
-
 def _contribuyente_con_dos_periodos(client, email: str) -> tuple:
     token = _crear_contador_y_token(client, email)
     contribuyente_id = client.post(
@@ -304,7 +301,6 @@ def test_fuentes_y_patrimonio_se_separan_por_periodo(client):
         f"/contribuyentes/{cid}/patrimonio?periodo_fiscal_id={p2024}", headers=h
     ).json()
     assert patrimonio_2024["patrimonio_liquido"] == 4000000
-    # Sin periodo explícito: el más reciente.
     assert client.get(f"/contribuyentes/{cid}/patrimonio", headers=h).json()[
         "patrimonio_liquido"
     ] == 5000000

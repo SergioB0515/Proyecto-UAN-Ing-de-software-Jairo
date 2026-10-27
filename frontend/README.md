@@ -44,7 +44,8 @@ agrégalo allí.
 | `src/contexto.js` | `ContribuyenteView` carga el contribuyente y sus periodos una sola vez y los provee (`provide`) a sus pantallas hijas (`useContribuyente()`). |
 | `src/views/` | Una vista por pantalla (ver la tabla de abajo). |
 | `src/components/` | Piezas reutilizadas: `EstadoConciliacion` (color **y** forma, para no depender solo del color), `TablaObligacion`, `CamposVinculoDian`, `AccionesFila` (editar y eliminar con confirmación en la fila), `DeclararDesdeExogena` y los paneles de inventario. |
-| `src/formato.js` | Pesos (COP), cantidades y fechas con formato `es-CO`. |
+| `src/formato.js` | Pesos (COP), cantidades, tamaños de archivo y fechas con formato `es-CO`. |
+| `src/soportes.js` | Conteo de soportes por objeto (`useConteoAdjuntos`) y utilidades de adjuntos. |
 
 | Vista | Historias |
 |---|---|
@@ -63,6 +64,10 @@ agrégalo allí.
 | `ActividadView` | HU-21 |
 | `PatrimonioView`, `ContribuyenteView` (editar y eliminar, copiar activos) | HU-22, HU-23 |
 | `ConciliacionView` + `components/DeclararDesdeExogena.vue` | HU-24 |
+| `UmbralesView` («Parámetros DIAN») + `components/CalendarioVencimientos.vue` | HU-25 |
+| `ResumenView` + `components/SeguimientoDeclaracion.vue` | HU-26 |
+| `CarteraView` (fecha límite, orden por vencimiento, Descargar Excel/PDF) | HU-25, HU-27 |
+| `SoportesView` + `components/PanelAdjuntos.vue` (y el clip «Soportes» en activos, ingresos, movimientos, documentos y proveedores) | — |
 
 ## Diseño
 

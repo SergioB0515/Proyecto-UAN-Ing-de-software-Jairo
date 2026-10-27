@@ -11,7 +11,6 @@ def test_registro_exitoso(client):
     cuerpo = respuesta.json()
     assert cuerpo["email"] == "ana@example.com"
     assert cuerpo["nombre"] == "Ana Pérez"
-    # La contraseña y su hash nunca deben salir en la respuesta.
     assert "contrasena" not in cuerpo
     assert "hash_contrasena" not in cuerpo
 

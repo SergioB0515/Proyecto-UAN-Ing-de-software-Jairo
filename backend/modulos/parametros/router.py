@@ -1,10 +1,12 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Path, status
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
 from core.excepciones import (
+    CalendarioInvalidoError,
+    CalendarioOficialNoDisponibleError,
     ContribuyenteNoEncontradoError,
     PeriodoFiscalNoEncontradoError,
     ReporteExogenaNoEncontradoError,
@@ -15,6 +17,8 @@ from modulos.contadores.modelos import Contador
 
 from . import servicios
 from .modelos import (
+    PlazoDeclaracionDatos,
+    PlazoDeclaracionLeer,
     ResultadoObligacion,
     UmbralDeclaracionCrear,
     UmbralDeclaracionLeer,
@@ -28,8 +32,6 @@ router = APIRouter(prefix="/parametros", tags=["parametros"])
 )
 def registrar_umbral(
     datos: UmbralDeclaracionCrear,
-    # Cualquier contador autenticado puede registrar umbrales — es un dato
-    # compartido, no exclusivo de su cartera (documentacion/04-arquitectura.md).
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
@@ -54,7 +56,6 @@ def verificar_obligacion(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-07."""
     try:
         return servicios.verificar_obligacion_declarar(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -71,3 +72,42 @@ def verificar_obligacion(
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT, detail=str(exc)
         ) from exc
+
+
+_ANIO = Path(ge=2000, le=2100)
+
+
+@router.get("/plazos/{anio_gravable}", response_model=List[PlazoDeclaracionLeer])
+def listar_plazos(
+    anio_gravable: int = _ANIO,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    return servicios.listar_plazos(session, anio_gravable)
+
+
+@router.put("/plazos/{anio_gravable}", response_model=List[PlazoDeclaracionLeer])
+def reemplazar_plazos(
+    plazos: List[PlazoDeclaracionDatos],
+    anio_gravable: int = _ANIO,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.reemplazar_plazos(session, anio_gravable, plazos)
+    except CalendarioInvalidoError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+
+
+@router.post(
+    "/plazos/{anio_gravable}/calendario-oficial", response_model=List[PlazoDeclaracionLeer]
+)
+def cargar_calendario_oficial(
+    anio_gravable: int = _ANIO,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.cargar_calendario_oficial(session, anio_gravable)
+    except CalendarioOficialNoDisponibleError as exc:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc

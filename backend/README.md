@@ -4,7 +4,7 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**: los cinco incrementos implementados y probados: **152/152 pruebas**.
+**Estado**: los cinco incrementos implementados y probados: **195/195 pruebas**.
 
 | Incremento | Historias | Módulos |
 |---|---|---|
@@ -15,6 +15,8 @@ para las razones de cada elección técnica.
 | 5 | HU-15 a HU-18 | `reportes`, `cartera` |
 | 6 | HU-19 a HU-21 | `auditoria`, `contadores` |
 | 7 | HU-22 a HU-24 | `contribuyentes` |
+| 8 | HU-25 a HU-27 | `parametros`, `contribuyentes`, `cartera` |
+| Extra | — | `adjuntos` (soportes: recibos, capturas, PDF) |
 
 ## Endpoints principales
 
@@ -45,6 +47,10 @@ y filtran por el contador del token.
 | `PUT /contadores/yo/contrasena` | HU-20 |
 | `GET /auditoria?contribuyente_id=`, `GET /auditoria/accesos` | HU-19, HU-21 |
 | `POST /contribuyentes/{id}/periodos-fiscales/{pid}/copiar-activos` | HU-23 |
+| `GET/PUT /parametros/plazos/{anio}`, `POST /parametros/plazos/{anio}/calendario-oficial` | HU-25 |
+| `PATCH /contribuyentes/{id}/periodos-fiscales/{pid}` (`fecha_presentacion`, `fecha_vencimiento_manual`) | HU-26 |
+| `GET /cartera?orden=vencimiento`, `GET /cartera/exportar?formato=xlsx\|pdf` | HU-25, HU-27 |
+| `POST/GET /contribuyentes/{id}/adjuntos`, `GET .../adjuntos/resumen`, `GET/PATCH/DELETE .../adjuntos/{aid}`, `GET .../periodos-fiscales/{pid}/soportes/zip` (ver [modulos/adjuntos](modulos/adjuntos/README.md)) | — |
 
 Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el
 cuerpo (obligatorio) y se rechazan con 409 si ese periodo está cerrado. Sin
@@ -69,6 +75,10 @@ Seguridad (`modulos/auditoria`):
   modifica datos o descarga un reporte (lista en `ACCIONES_AUDITADAS`).
 - **Archivo de exógena**: máximo `TAMANO_MAXIMO_EXOGENA_MB` (5 por defecto)
   y firma real de Excel; 413 o 422 si no se cumple.
+- **Soportes adjuntos**: el formato se valida por la firma real del archivo
+  (PDF, imágenes, Excel, Word, CSV, TXT), máximo `TAMANO_MAXIMO_ADJUNTO_MB`
+  (15 por defecto) y guardados en `ALMACEN_ADJUNTOS` con nombre generado por
+  el servidor; 415 o 413 si no se cumple.
 - **CORS**: orígenes en `ORIGENES_PERMITIDOS` del `.env` (por defecto, el
   Vite local). Cabeceras `X-Content-Type-Options`, `X-Frame-Options`,
   `Referrer-Policy` y `Cache-Control: no-store` en toda respuesta.
@@ -76,8 +86,9 @@ Seguridad (`modulos/auditoria`):
 Códigos de error: `404` si el recurso no existe o es de otro contador
 (deliberadamente el mismo código en ambos casos), `409` para conflictos de
 negocio (duplicados, stock insuficiente, periodo cerrado, contribuyente
-asalariado en inventario), `413` para un archivo demasiado grande, `422`
-para datos inválidos y `429` para una cuenta bloqueada.
+asalariado en inventario), `413` para un archivo demasiado grande, `415`
+para un formato de soporte no admitido, `422` para datos inválidos y `429`
+para una cuenta bloqueada.
 
 ## Requisitos
 
@@ -146,8 +157,10 @@ pruebas contra PostgreSQL en cada push a GitHub.
 
 **Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
 nuevas pero no altera las existentes. Las tablas del incremento 6
-(`intentos_acceso`, `eventos_auditoria`) son nuevas, así que se crean
-solas. El único cambio a tablas existentes
+(`intentos_acceso`, `eventos_auditoria`) y del 8 (`plazos_declaracion`)
+son nuevas, así que se crean solas; las dos columnas nuevas de
+`periodos_fiscales` (`fecha_presentacion`, `fecha_vencimiento_manual`) las
+agrega `_agregar_columnas_si_faltan` al arrancar. El único cambio a tablas existentes
 (`periodo_fiscal_id` en `activos` y `fuentes_ingreso`, HU-03) lo aplica
 `_migrar_periodo_en_activos_y_fuentes` en `database.py` al arrancar: es
 idempotente y asigna los registros que ya existían al periodo más reciente

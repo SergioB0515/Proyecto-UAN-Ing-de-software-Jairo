@@ -1,8 +1,3 @@
-"""Resultados de la conciliación (HU-08, HU-09) y del borrador de renglones
-(HU-10). Ninguna de estas clases es tabla: se calculan al momento de la
-consulta para no quedar desactualizadas si se corrige un dato después
-(documentacion/07-diagrama-clases.md).
-"""
 from enum import Enum
 from typing import Dict, List, Optional
 
@@ -27,11 +22,8 @@ class ItemConciliacion(SQLModel):
     origen: OrigenItemConciliacion
     valor_declarado: Optional[float] = None
     valor_exogena: Optional[float] = None
-    # valor_exogena - valor_declarado: positiva si la DIAN ve más de lo
-    # declarado.
     diferencia: Optional[float] = None
     estado: EstadoConciliacion
-    # Del RegistroExogena cruzado (o no declarado), cuando lo hay.
     registro_exogena_id: Optional[int] = None
     nit_reportante: Optional[str] = None
     nombre_reportante: Optional[str] = None
@@ -43,8 +35,6 @@ class ResultadoConciliacion(SQLModel):
     periodo_fiscal_id: int
     reporte_exogena_id: int
     items: List[ItemConciliacion]
-    # Cantidad de ítems por estado; NO_DECLARADO es el número de alertas
-    # que usará el panel de cartera (HU-18).
     resumen: Dict[EstadoConciliacion, int]
 
 

@@ -1,10 +1,11 @@
 <script setup>
 import { onMounted, ref, watch } from 'vue'
 
-import { obtenerPanelCartera } from '../api/cartera'
+import { exportarCartera, obtenerPanelCartera } from '../api/cartera'
 import { mensajeDeError } from '../api/cliente'
 import Cargando from '../components/Cargando.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
+import EstadoVencimiento from '../components/EstadoVencimiento.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { ETIQUETAS_TIPO_CONTRIBUYENTE } from '../formato'
 
@@ -13,19 +14,31 @@ const orden = ref('alertas')
 const panel = ref(null)
 const cargando = ref(true)
 const error = ref('')
+const exportando = ref('')
+
+const filtros = () => ({ anio_gravable: anio.value || undefined, orden: orden.value })
 
 async function cargar() {
   cargando.value = true
   error.value = ''
   try {
-    panel.value = await obtenerPanelCartera({
-      anio_gravable: anio.value || undefined,
-      orden: orden.value,
-    })
+    panel.value = await obtenerPanelCartera(filtros())
   } catch (e) {
     error.value = mensajeDeError(e)
   } finally {
     cargando.value = false
+  }
+}
+
+async function exportar(formato) {
+  error.value = ''
+  exportando.value = formato
+  try {
+    await exportarCartera(filtros(), formato)
+  } catch (e) {
+    error.value = mensajeDeError(e)
+  } finally {
+    exportando.value = ''
   }
 }
 
@@ -38,7 +51,7 @@ watch(orden, cargar)
     <header class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1>Cartera</h1>
-        <p class="text-tinta-suave">Quién debe declarar y quién tiene ingresos o bienes sin declarar.</p>
+        <p class="text-tinta-suave">Quién debe declarar, cuándo vence y quién tiene ingresos o bienes sin declarar.</p>
       </div>
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="cargar">
         <div>
@@ -47,8 +60,9 @@ watch(orden, cargar)
         </div>
         <div>
           <label class="etiqueta" for="orden">Ordenar por</label>
-          <select id="orden" v-model="orden" class="campo w-40">
+          <select id="orden" v-model="orden" class="campo w-44">
             <option value="alertas">Alertas</option>
+            <option value="vencimiento">Fecha límite</option>
             <option value="nombre">Nombre</option>
           </select>
         </div>
@@ -60,7 +74,7 @@ watch(orden, cargar)
     <Cargando v-if="cargando && !panel" />
 
     <template v-else-if="panel">
-      <dl class="grid divide-y divide-papel-linea sm:grid-cols-3 sm:divide-x sm:divide-y-0 rounded-md border border-papel-linea bg-white">
+      <dl class="grid divide-y divide-papel-linea rounded-md border border-papel-linea bg-white sm:grid-cols-5 sm:divide-x sm:divide-y-0">
         <div class="px-5 py-4">
           <dt class="text-sm text-tinta-suave">Contribuyentes</dt>
           <dd class="cifra text-left text-2xl font-semibold">{{ panel.total_contribuyentes }}</dd>
@@ -71,11 +85,20 @@ watch(orden, cargar)
         </div>
         <div class="px-5 py-4">
           <dt class="text-sm text-tinta-suave">Conceptos sin declarar</dt>
-          <dd
-            class="cifra text-left text-2xl font-semibold"
-            :class="panel.total_alertas ? 'text-estado-nodeclarado' : ''"
-          >
+          <dd class="cifra text-left text-2xl font-semibold" :class="panel.total_alertas ? 'text-estado-nodeclarado' : ''">
             {{ panel.total_alertas }}
+          </dd>
+        </div>
+        <div class="px-5 py-4">
+          <dt class="text-sm text-tinta-suave">Vencen en 15 días</dt>
+          <dd class="cifra text-left text-2xl font-semibold" :class="panel.total_proximas ? 'text-estado-discrepancia' : ''">
+            {{ panel.total_proximas }}
+          </dd>
+        </div>
+        <div class="px-5 py-4">
+          <dt class="text-sm text-tinta-suave">Vencidas sin presentar</dt>
+          <dd class="cifra text-left text-2xl font-semibold" :class="panel.total_vencidas ? 'text-estado-nodeclarado' : ''">
+            {{ panel.total_vencidas }}
           </dd>
         </div>
       </dl>
@@ -85,62 +108,81 @@ watch(orden, cargar)
         para empezar a conciliar su información exógena.
       </EstadoVacio>
 
-      <div v-else class="hoja overflow-x-auto">
-        <table>
-          <thead>
-            <tr>
-              <th>Contribuyente</th>
-              <th>Año</th>
-              <th>¿Obligado?</th>
-              <th class="cifra">Sin declarar</th>
-              <th>Pendiente</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="fila in panel.contribuyentes" :key="fila.contribuyente_id">
-              <td>
-                <RouterLink
-                  :to="{
-                    name: 'resumen',
-                    params: { id: fila.contribuyente_id },
-                    query: fila.periodo_fiscal_id ? { periodo: fila.periodo_fiscal_id } : {},
-                  }"
-                  class="enlace"
-                >
-                  {{ fila.nombre }}
-                </RouterLink>
-                <p class="text-xs text-tinta-tenue">
-                  NIT {{ fila.rut }}, {{ ETIQUETAS_TIPO_CONTRIBUYENTE[fila.tipo_contribuyente].toLowerCase() }}
-                </p>
-              </td>
-              <td>
-                <template v-if="fila.anio_gravable">
-                  {{ fila.anio_gravable }}
-                  <span v-if="fila.estado_periodo === 'CERRADO'" class="text-xs text-tinta-tenue">(cerrado)</span>
-                </template>
-                <span v-else class="text-tinta-tenue">—</span>
-              </td>
-              <td>
-                <span v-if="fila.obligado === true" class="font-semibold">Sí</span>
-                <span v-else-if="fila.obligado === false">No</span>
-                <span v-else class="text-tinta-tenue">Sin datos</span>
-              </td>
-              <td class="cifra">
-                <span
-                  v-if="fila.alertas_no_declarado !== null"
-                  :class="fila.alertas_no_declarado ? 'font-semibold text-estado-nodeclarado' : 'text-tinta-tenue'"
-                >
-                  {{ fila.alertas_no_declarado }}
-                </span>
-                <span v-else class="text-tinta-tenue">—</span>
-              </td>
-              <td class="text-tinta-suave">
-                <p v-for="aviso in fila.avisos" :key="aviso" class="text-xs">{{ aviso }}</p>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
+      <template v-else>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="boton-secundario px-3 py-1.5" :disabled="!!exportando" @click="exportar('xlsx')">
+            Descargar Excel
+          </button>
+          <button type="button" class="boton-secundario px-3 py-1.5" :disabled="!!exportando" @click="exportar('pdf')">
+            Descargar PDF
+          </button>
+        </div>
+        <div class="hoja overflow-x-auto">
+          <table>
+            <thead>
+              <tr>
+                <th>Contribuyente</th>
+                <th>Año</th>
+                <th>Declaración</th>
+                <th>¿Obligado?</th>
+                <th class="cifra">Sin declarar</th>
+                <th>Pendiente</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="fila in panel.contribuyentes" :key="fila.contribuyente_id">
+                <td>
+                  <RouterLink
+                    :to="{
+                      name: 'resumen',
+                      params: { id: fila.contribuyente_id },
+                      query: fila.periodo_fiscal_id ? { periodo: fila.periodo_fiscal_id } : {},
+                    }"
+                    class="enlace"
+                  >
+                    {{ fila.nombre }}
+                  </RouterLink>
+                  <p class="text-xs text-tinta-tenue">
+                    NIT {{ fila.rut }}, {{ ETIQUETAS_TIPO_CONTRIBUYENTE[fila.tipo_contribuyente].toLowerCase() }}
+                  </p>
+                </td>
+                <td>
+                  <template v-if="fila.anio_gravable">
+                    {{ fila.anio_gravable }}
+                    <span v-if="fila.estado_periodo === 'CERRADO'" class="text-xs text-tinta-tenue">(cerrado)</span>
+                  </template>
+                  <span v-else class="text-tinta-tenue">—</span>
+                </td>
+                <td>
+                  <EstadoVencimiento v-if="fila.vencimiento" :vencimiento="fila.vencimiento" compacto />
+                  <span v-else class="text-tinta-tenue">—</span>
+                </td>
+                <td>
+                  <span v-if="fila.obligado === true" class="font-semibold">Sí</span>
+                  <span v-else-if="fila.obligado === false">No</span>
+                  <span v-else class="text-tinta-tenue">Sin datos</span>
+                </td>
+                <td class="cifra">
+                  <span
+                    v-if="fila.alertas_no_declarado !== null"
+                    :class="fila.alertas_no_declarado ? 'font-semibold text-estado-nodeclarado' : 'text-tinta-tenue'"
+                  >
+                    {{ fila.alertas_no_declarado }}
+                  </span>
+                  <span v-else class="text-tinta-tenue">—</span>
+                </td>
+                <td class="text-tinta-suave">
+                  <p v-for="aviso in fila.avisos" :key="aviso" class="text-xs">{{ aviso }}</p>
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-if="panel.contribuyentes.some((f) => f.vencimiento?.estado === 'SIN_FECHA')" class="text-sm text-tinta-suave">
+          Para ver las fechas límite, carga el calendario de vencimientos del año en
+          <RouterLink :to="{ name: 'umbrales' }" class="enlace">Parámetros DIAN</RouterLink>.
+        </p>
+      </template>
     </template>
   </div>
 </template>

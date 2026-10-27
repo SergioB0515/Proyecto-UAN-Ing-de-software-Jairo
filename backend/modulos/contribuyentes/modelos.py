@@ -1,7 +1,4 @@
-"""Contribuyente, Activo y FuenteIngreso. Ver documentacion/07-diagrama-clases.md
-y documentacion/03-logica-proyecto.md (Procesos 2 y 3).
-"""
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from enum import Enum
 from typing import List, Optional
 
@@ -20,10 +17,7 @@ class TipoActivo(str, Enum):
     VEHICULO = "VEHICULO"
     INMUEBLE = "INMUEBLE"
     INVERSION = "INVERSION"
-    INVENTARIO = "INVENTARIO"  # lo asigna el cierre de periodo (Incremento 5)
-
-
-# ---------------------------------------------------------------- Contribuyente
+    INVENTARIO = "INVENTARIO"
 
 
 class ContribuyenteBase(SQLModel):
@@ -37,8 +31,6 @@ class Contribuyente(ContribuyenteBase, table=True):
     __tablename__ = "contribuyentes"
 
     id: Optional[int] = Field(default=None, primary_key=True)
-    # Aislamiento por contador (documentacion/04-arquitectura.md): todo
-    # acceso a un Contribuyente filtra por esta columna, no solo la UI.
     contador_id: int = Field(foreign_key="contadores.id", index=True)
     creado_en: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
@@ -55,8 +47,6 @@ class ContribuyenteCrear(ContribuyenteBase):
 
 
 class ContribuyenteActualizar(SQLModel):
-    """Todos los campos opcionales: solo se cambia lo que venga."""
-
     nombre: Optional[str] = Field(default=None, min_length=1, max_length=200)
     rut: Optional[str] = Field(default=None, min_length=1, max_length=20)
     tipo_contribuyente: Optional[TipoContribuyente] = None
@@ -71,24 +61,15 @@ class ContribuyenteLeer(ContribuyenteBase):
 
 class ContribuyenteConPatrimonio(ContribuyenteLeer):
     patrimonio_liquido: float
-    # Periodo sobre el que se calculó; None si el contribuyente aún no
-    # tiene periodos fiscales (patrimonio 0).
     periodo_fiscal_id: Optional[int] = None
     anio_gravable: Optional[int] = None
 
 
-# ----------------------------------------------------------------------- Activo
-
-
 class ActivoBase(SQLModel):
-    # HU-03/HU-04: el patrimonio se declara a 31 de diciembre de cada año
-    # gravable, así que cada activo pertenece a un periodo fiscal.
     periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     descripcion: str = Field(min_length=1, max_length=200)
     tipo: TipoActivo
     valor: float = Field(gt=0)
-    # Vínculo DIAN opcional (documentacion/03-logica-proyecto.md, Proceso 3):
-    # lo usa el motor de conciliación del Incremento 3, no este incremento.
     vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
     vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 
@@ -116,10 +97,6 @@ class ActivoCrear(ActivoBase):
 
 
 class ActivoActualizar(SQLModel):
-    """Campos editables de un activo. El periodo no se cambia: un activo
-    mal ubicado se elimina y se registra en el año correcto. Un vínculo
-    DIAN enviado como null o cadena vacía se borra."""
-
     descripcion: Optional[str] = Field(default=None, min_length=1, max_length=200)
     tipo: Optional[TipoActivo] = None
     valor: Optional[float] = Field(default=None, gt=0)
@@ -139,16 +116,10 @@ class ActivoActualizar(SQLModel):
 class ActivoLeer(ActivoBase):
     id: int
     contribuyente_id: int
-    # Sin gt=0: el Activo INVENTARIO de un cierre puede valer 0 si el
-    # negocio cerró el año sin mercancía.
     valor: float
 
 
-# ------------------------------------------------------------- FuenteIngreso
-
-
 class FuenteIngresoBase(SQLModel):
-    # HU-03: cada fuente de ingreso queda asociada a un periodo fiscal.
     periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     concepto: str = Field(min_length=1, max_length=200)
     valor_anual: float = Field(gt=0)
@@ -173,8 +144,6 @@ class FuenteIngresoCrear(FuenteIngresoBase):
 
 
 class FuenteIngresoActualizar(SQLModel):
-    """Campos editables de una fuente de ingreso (el periodo no cambia)."""
-
     concepto: Optional[str] = Field(default=None, min_length=1, max_length=200)
     valor_anual: Optional[float] = Field(default=None, gt=0)
     retencion_fuente: Optional[float] = Field(default=None, ge=0)
@@ -187,21 +156,16 @@ class FuenteIngresoLeer(FuenteIngresoBase):
     contribuyente_id: int
 
 
-# -------------------------------------------------------------- PeriodoFiscal
-# Nuevo en el Incremento 2: ReporteExogena (modulos/exogena) necesita un
-# PeriodoFiscal al que asociarse (documentacion/03-logica-proyecto.md,
-# Proceso 4). Vive aquí porque es una propiedad del Contribuyente, igual que
-# Activo y FuenteIngreso.
-
-
 class EstadoPeriodo(str, Enum):
     ABIERTO = "ABIERTO"
-    CERRADO = "CERRADO"  # lo asigna el cierre de periodo (Incremento 5)
+    CERRADO = "CERRADO"
 
 
 class PeriodoFiscalBase(SQLModel):
     anio_gravable: int = Field(ge=2000, le=2100)
     estado: EstadoPeriodo = Field(default=EstadoPeriodo.ABIERTO)
+    fecha_vencimiento_manual: Optional[date] = None
+    fecha_presentacion: Optional[date] = None
 
 
 class PeriodoFiscal(PeriodoFiscalBase, table=True):
@@ -212,10 +176,12 @@ class PeriodoFiscal(PeriodoFiscalBase, table=True):
 
 
 class PeriodoFiscalCrear(SQLModel):
-    """Un periodo siempre nace ABIERTO: el estado solo lo cambia el cierre
-    de periodo (Incremento 5), nunca el cliente al crearlo."""
-
     anio_gravable: int = Field(ge=2000, le=2100)
+
+
+class PeriodoFiscalActualizar(SQLModel):
+    fecha_vencimiento_manual: Optional[date] = None
+    fecha_presentacion: Optional[date] = None
 
 
 class PeriodoFiscalLeer(PeriodoFiscalBase):

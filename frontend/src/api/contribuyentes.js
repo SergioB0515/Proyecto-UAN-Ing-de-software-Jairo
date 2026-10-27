@@ -21,7 +21,6 @@ export const listarFuentesIngreso = (id, periodoId) =>
   obtener(`${base(id)}/fuentes-ingreso`, { periodo_fiscal_id: periodoId })
 export const crearFuenteIngreso = (id, datos) => enviar(`${base(id)}/fuentes-ingreso`, datos)
 
-// Corrección de datos (solo en periodos abiertos; el backend responde 409 si no).
 async function parchar(url, cambios) {
   const { data } = await cliente.patch(url, cambios)
   return data
@@ -36,3 +35,8 @@ export const eliminarFuenteIngreso = (id, fuenteId) => cliente.delete(`${base(id
 
 export const copiarActivosAnioAnterior = (id, periodoId) =>
   enviar(`${base(id)}/periodos-fiscales/${periodoId}/copiar-activos`)
+
+export async function actualizarPeriodo(id, periodoId, cambios) {
+  const { data } = await cliente.patch(`${base(id)}/periodos-fiscales/${periodoId}`, cambios)
+  return data
+}

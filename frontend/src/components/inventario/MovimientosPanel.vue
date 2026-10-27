@@ -4,7 +4,10 @@ import { computed, onMounted, reactive, ref } from 'vue'
 import { mensajeDeError } from '../../api/cliente'
 import { listarMovimientos, registrarMovimiento } from '../../api/inventario'
 import { cantidad, dinero, fecha } from '../../formato'
+import { useConteoAdjuntos } from '../../soportes'
+import BotonAdjuntos from '../BotonAdjuntos.vue'
 import MensajeError from '../MensajeError.vue'
+import PanelAdjuntos from '../PanelAdjuntos.vue'
 
 const props = defineProps({
   contribuyenteId: { type: Number, required: true },
@@ -14,6 +17,13 @@ const props = defineProps({
   documentos: { type: Array, required: true },
 })
 const emit = defineEmits(['cambio'])
+
+const conteo = useConteoAdjuntos(props.contribuyenteId)
+const abiertos = ref({})
+const estaAbierto = (id) => Boolean(abiertos.value[id])
+function alternarSoportes(id) {
+  abiertos.value = { ...abiertos.value, [id]: !estaAbierto(id) }
+}
 
 const movimientos = ref([])
 const error = ref('')
@@ -57,7 +67,7 @@ async function registrar() {
     const tipo = form.datos.tipo
     form.datos = { ...vacio(), tipo }
     await cargar()
-    emit('cambio') // las existencias del producto cambiaron
+    emit('cambio')
   } catch (e) {
     form.error = mensajeDeError(e)
   } finally {
@@ -65,7 +75,10 @@ async function registrar() {
   }
 }
 
-onMounted(cargar)
+onMounted(() => {
+  cargar()
+  conteo.cargar()
+})
 </script>
 
 <template>
@@ -163,19 +176,42 @@ onMounted(cargar)
               <th class="cifra">Cantidad</th>
               <th class="cifra">Valor unitario</th>
               <th class="cifra">Total</th>
+              <th>Soportes</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-if="!movimientos.length"><td colspan="7" class="py-6 text-center text-tinta-suave">Sin movimientos este año.</td></tr>
-            <tr v-for="m in movimientos" :key="m.id">
-              <td>{{ fecha(m.fecha) }}</td>
-              <td>{{ m.tipo === 'ENTRADA' ? 'Compra' : 'Venta' }}</td>
-              <td>{{ productoPorId[m.producto_id]?.nombre }}</td>
-              <td class="text-tinta-suave">{{ documentoPorId[m.documento_soporte_id]?.numero }}</td>
-              <td class="cifra">{{ m.tipo === 'SALIDA' ? '−' : '' }}{{ cantidad(m.cantidad) }}</td>
-              <td class="cifra">{{ dinero(m.valor_unitario) }}</td>
-              <td class="cifra">{{ dinero(m.valor_total) }}</td>
-            </tr>
+            <tr v-if="!movimientos.length"><td colspan="8" class="py-6 text-center text-tinta-suave">Sin movimientos este año.</td></tr>
+            <template v-for="m in movimientos" :key="m.id">
+              <tr>
+                <td>{{ fecha(m.fecha) }}</td>
+                <td>{{ m.tipo === 'ENTRADA' ? 'Compra' : 'Venta' }}</td>
+                <td>{{ productoPorId[m.producto_id]?.nombre }}</td>
+                <td class="text-tinta-suave">{{ documentoPorId[m.documento_soporte_id]?.numero }}</td>
+                <td class="cifra">{{ m.tipo === 'SALIDA' ? '−' : '' }}{{ cantidad(m.cantidad) }}</td>
+                <td class="cifra">{{ dinero(m.valor_unitario) }}</td>
+                <td class="cifra">{{ dinero(m.valor_total) }}</td>
+                <td>
+                  <BotonAdjuntos
+                    :total="conteo.total('MOVIMIENTO', m.id)"
+                    :abierto="estaAbierto(m.id)"
+                    :etiqueta="`${m.tipo === 'ENTRADA' ? 'compra' : 'venta'} del ${m.fecha}`"
+                    @alternar="alternarSoportes(m.id)"
+                  />
+                </td>
+              </tr>
+              <tr v-if="estaAbierto(m.id)">
+                <td colspan="8" class="bg-papel/60">
+                  <PanelAdjuntos
+                    :contribuyente-id="contribuyenteId"
+                    entidad-tipo="MOVIMIENTO"
+                    :entidad-id="m.id"
+                    :categoria-inicial="m.tipo === 'ENTRADA' ? 'FACTURA' : 'RECIBO'"
+                    :puede-eliminar="!cerrado"
+                    @cambio="conteo.fijar('MOVIMIENTO', m.id, $event)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>

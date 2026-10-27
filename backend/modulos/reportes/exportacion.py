@@ -1,10 +1,3 @@
-"""Exportación de reportes a Excel (openpyxl) y PDF (reportlab), HU-16.
-
-Cada reporte se arma como una lista de `Seccion` (título, columnas, filas
-y notas) y este módulo solo sabe dibujar secciones: no conoce kardex,
-conciliación ni nada del negocio. Así un reporte nuevo no toca este
-archivo.
-"""
 import io
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -34,7 +27,7 @@ class Seccion:
 @dataclass
 class DocumentoReporte:
     titulo: str
-    encabezado: List[str]  # líneas: contribuyente, año gravable, fecha...
+    encabezado: List[str]
     secciones: List[Seccion]
 
 
@@ -44,7 +37,6 @@ _COLOR_ENCABEZADO = "1F4E79"
 
 
 def _numero_co(valor: float) -> str:
-    """1234567.5 -> '1.234.567,50' (formato colombiano)."""
     return f"{valor:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 
@@ -54,7 +46,7 @@ def _texto_celda(valor: Any) -> str:
     if isinstance(valor, bool):
         return "Sí" if valor else "No"
     if isinstance(valor, int):
-        return str(valor)  # ids y conteos, sin decimales
+        return str(valor)
     if isinstance(valor, float):
         return _numero_co(valor)
     if isinstance(valor, (date, datetime)):
@@ -62,12 +54,7 @@ def _texto_celda(valor: Any) -> str:
     return str(valor)
 
 
-# ------------------------------------------------------------------------ Excel
-
-
 def a_excel(documento: DocumentoReporte) -> bytes:
-    """Una sola hoja con las secciones apiladas, cada una con su título,
-    encabezado de columnas y notas."""
     libro = Workbook()
     hoja = libro.active
     hoja.title = "Reporte"
@@ -116,17 +103,12 @@ def a_excel(documento: DocumentoReporte) -> bytes:
 def _valor_excel(valor: Any) -> Any:
     if isinstance(valor, bool):
         return "Sí" if valor else "No"
-    if hasattr(valor, "value"):  # Enum
+    if hasattr(valor, "value"):
         return valor.value
     return valor
 
 
-# -------------------------------------------------------------------------- PDF
-
-
 def a_pdf(documento: DocumentoReporte) -> bytes:
-    """A4 horizontal; cada sección es una tabla que repite su encabezado si
-    salta de página. Los textos largos se ajustan dentro de la celda."""
     buffer = io.BytesIO()
     pagina = landscape(A4)
     margen = 1.5 * cm
@@ -193,11 +175,7 @@ def _es_numero(valor: Any) -> bool:
 
 
 def _anchos_columnas(columnas: List[str], filas: List[List[str]], ancho_util: float) -> List[float]:
-    """Reparte el ancho de la página: cada columna recibe primero lo que
-    ocupa su palabra más larga (para que ninguna palabra se parta) y el
-    resto se reparte según el contenido más largo de cada una, con tope
-    para que un texto largo no se coma la tabla. Medidas en puntos."""
-    relleno = 14  # padding izquierdo + derecho de la celda, con holgura
+    relleno = 14
 
     def ancho(texto: str, negrita: bool = False) -> float:
         fuente = "Helvetica-Bold" if negrita else "Helvetica"

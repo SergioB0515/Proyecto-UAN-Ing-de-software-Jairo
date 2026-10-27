@@ -345,3 +345,41 @@ está declarado,
 - Al guardarlo, la conciliación se recalcula y el concepto deja de
   aparecer como no declarado.
 
+## Épica 8 — Seguimiento de la declaración (Incremento 8)
+
+### HU-25 — Saber cuándo vence la declaración de cada contribuyente
+**Como** contador,
+**quiero** que la aplicación calcule la fecha límite de cada declaración
+según los dos últimos dígitos del NIT,
+**para** atender primero a los clientes cuyo plazo está por vencer.
+
+**Criterios de aceptación:**
+- El calendario de vencimientos se registra por año gravable; la
+  aplicación trae el oficial de la DIAN para los años verificados y
+  permite registrar otros a mano.
+- Se usan los dos últimos dígitos del NIT sin el dígito de verificación.
+- El panel de cartera muestra la fecha límite y el estado (pendiente,
+  próxima a vencer en 15 días, vencida, presentada) y se puede ordenar
+  por fecha límite.
+
+### HU-26 — Registrar la presentación y fechas especiales
+**Como** contador,
+**quiero** marcar la declaración de un año como presentada y, si la DIAN
+fija un plazo especial para un contribuyente, registrar esa fecha,
+**para** que las alertas reflejen la situación real.
+
+**Criterios de aceptación:**
+- Una declaración presentada deja de generar alertas.
+- La fecha especial reemplaza a la del calendario y se puede quitar.
+- Se puede registrar aunque el periodo esté cerrado.
+
+### HU-27 — Exportar la cartera
+**Como** contador,
+**quiero** descargar el panel de cartera en Excel o PDF,
+**para** compartir el estado de mis clientes o trabajarlo por fuera de la
+aplicación.
+
+**Criterios de aceptación:**
+- La exportación respeta el año y el orden elegidos en el panel.
+- La descarga queda registrada en la actividad.
+

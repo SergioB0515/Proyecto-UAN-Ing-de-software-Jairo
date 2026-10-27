@@ -17,7 +17,7 @@ const pid = periodo.value.id
 const cerrado = computed(() => periodo.value.estado === 'CERRADO')
 
 const reportes = ref([])
-const reporte = computed(() => reportes.value[0] ?? null) // el más reciente
+const reporte = computed(() => reportes.value[0] ?? null)
 const topes = ref([])
 const registros = ref([])
 const obligacion = ref(null)

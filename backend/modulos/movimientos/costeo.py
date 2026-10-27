@@ -1,13 +1,3 @@
-"""Cálculo del kardex por método de costeo (Proceso 9 de
-documentacion/03-logica-proyecto.md, HU-14). Funciones puras: reciben los
-movimientos de un producto y no tocan la base de datos.
-
-Nada de lo que se calcula aquí se persiste: el costo de cada salida depende
-de todo el histórico anterior, así que se recalcula reproduciendo los
-movimientos en orden cronológico (fecha y, dentro del mismo día, orden de
-registro). Así, registrar una compra con fecha anterior corrige el costo de
-las ventas posteriores sin dejar datos guardados desactualizados.
-"""
 from collections import deque
 from dataclasses import dataclass
 from datetime import date
@@ -18,17 +8,13 @@ from core.excepciones import StockInsuficienteError
 from ..inventario.modelos import MetodoCosteo
 from .modelos import LineaKardex, TipoMovimiento
 
-# Margen para comparar cantidades en float (ej. 0.1 + 0.2 != 0.3).
 EPSILON = 1e-9
 
 
 @dataclass
 class MovimientoCosteo:
-    """Lo mínimo de un Movimiento que necesita el costeo. Permite simular un
-    movimiento que todavía no está guardado (sin id)."""
-
     fecha: date
-    orden: float  # id del movimiento; float("inf") para uno aún no guardado
+    orden: float
     tipo: TipoMovimiento
     cantidad: float
     valor_unitario: float
@@ -38,9 +24,6 @@ class MovimientoCosteo:
 
 @dataclass
 class LineaCalculada:
-    """Una línea del kardex más el periodo al que pertenece el movimiento,
-    para poder filtrar por periodo sin volver a la base de datos."""
-
     linea: LineaKardex
     periodo_fiscal_id: Optional[int]
 
@@ -50,9 +33,6 @@ def ordenar(movimientos: Iterable[MovimientoCosteo]) -> List[MovimientoCosteo]:
 
 
 def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> float:
-    """Reproduce las cantidades en orden cronológico y lanza
-    StockInsuficienteError si en algún punto el saldo queda negativo.
-    Devuelve el saldo final."""
     saldo = 0.0
     for mov in ordenar(movimientos):
         if mov.tipo == TipoMovimiento.ENTRADA:
@@ -70,16 +50,13 @@ def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> float:
 def calcular_kardex(
     metodo: MetodoCosteo, movimientos: Iterable[MovimientoCosteo]
 ) -> List[LineaCalculada]:
-    """Kardex completo del producto según su método de costeo."""
     if metodo == MetodoCosteo.PEPS:
         return _kardex_peps(ordenar(movimientos))
     return _kardex_promedio_ponderado(ordenar(movimientos))
 
 
 def _kardex_peps(movimientos: List[MovimientoCosteo]) -> List[LineaCalculada]:
-    """PEPS: cada entrada es una capa con su propio costo; las salidas
-    consumen primero las capas más antiguas."""
-    capas: deque = deque()  # [cantidad_restante, costo_unitario]
+    capas: deque = deque()
     lineas: List[LineaCalculada] = []
 
     for mov in movimientos:
@@ -113,9 +90,6 @@ def _kardex_peps(movimientos: List[MovimientoCosteo]) -> List[LineaCalculada]:
 def _kardex_promedio_ponderado(
     movimientos: List[MovimientoCosteo],
 ) -> List[LineaCalculada]:
-    """Promedio ponderado: cada entrada recalcula
-    costo_promedio = saldo_valor / saldo_cantidad; las salidas se costean a
-    ese promedio vigente."""
     saldo_cantidad = 0.0
     saldo_valor = 0.0
     lineas: List[LineaCalculada] = []
@@ -136,8 +110,6 @@ def _kardex_promedio_ponderado(
             saldo_cantidad -= mov.cantidad
             saldo_valor -= costo_total
             if saldo_cantidad <= EPSILON:
-                # Sin unidades no puede quedar valor: evita residuos de
-                # redondeo que contaminen el siguiente promedio.
                 saldo_cantidad = 0.0
                 saldo_valor = 0.0
 
@@ -167,6 +139,5 @@ def _linea(
 
 
 def _limpiar(valor: float) -> float:
-    """Redondea residuos de float (ej. 2.9999999999 -> 3.0) y evita -0.0."""
     redondeado = round(valor, 6)
     return 0.0 if abs(redondeado) < EPSILON else redondeado

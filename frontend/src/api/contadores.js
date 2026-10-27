@@ -1,7 +1,6 @@
 import { cliente, obtener } from './cliente'
 
 export async function iniciarSesion(email, contrasena) {
-  // El login es OAuth2 estándar: form-data con "username" y "password".
   const form = new URLSearchParams({ username: email, password: contrasena })
   const { data } = await cliente.post('/contadores/login', form)
   return data.access_token

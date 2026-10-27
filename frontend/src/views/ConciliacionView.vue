@@ -13,14 +13,13 @@ import { dinero } from '../formato'
 
 const { contribuyente, periodo } = useContribuyente()
 const resultado = ref(null)
-const declarando = ref(null) // registro_exogena_id de la fila que se está declarando
+const declarando = ref(null)
 const avisoDeclarado = ref('')
 const puedeDeclarar = computed(() => periodo.value.estado !== 'CERRADO')
 const sinExogena = ref(false)
 const error = ref('')
 const filtro = ref(null)
 
-// Orden de lectura: primero lo que exige acción del contador.
 const ORDEN = ['NO_DECLARADO', 'DISCREPANCIA', 'NO_REPORTADO_POR_TERCERO', 'COINCIDE']
 const EXPLICACION = {
   NO_DECLARADO: 'Un tercero lo reportó a la DIAN y no está entre los activos o ingresos registrados.',
@@ -99,7 +98,6 @@ onMounted(cargar)
     <p v-if="filtro" class="text-sm text-tinta-suave">{{ EXPLICACION[filtro] }}</p>
     <p v-if="avisoDeclarado" class="rounded bg-libro-claro px-4 py-3 text-sm" role="status">{{ avisoDeclarado }}</p>
 
-    <!-- Libro de dos columnas: lo declarado frente a lo reportado por terceros. -->
     <div class="hoja overflow-x-auto">
       <table>
         <thead>

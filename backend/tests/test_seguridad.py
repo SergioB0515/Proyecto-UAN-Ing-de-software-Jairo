@@ -1,6 +1,3 @@
-"""Incremento 6: bloqueo por intentos fallidos, política y cambio de
-contraseña, auditoría de acciones, validación del archivo de exógena y
-cabeceras de seguridad."""
 import os
 from datetime import datetime, timedelta, timezone
 
@@ -27,9 +24,6 @@ def _login(client, email: str, clave: str = CLAVE):
 def _headers(client, email: str) -> dict:
     _registrar(client, email)
     return {"Authorization": f"Bearer {_login(client, email).json()['access_token']}"}
-
-
-# ------------------------------------------------------- Bloqueo por fuerza bruta
 
 
 def test_cinco_fallos_bloquean_aunque_la_clave_sea_correcta(client):
@@ -71,7 +65,6 @@ def test_los_fallos_viejos_no_cuentan(client, session):
 
 
 def test_el_bloqueo_aplica_a_emails_inexistentes(client):
-    # Si solo se bloquearan cuentas reales, el 429 revelaría qué emails existen.
     for _ in range(5):
         _login(client, "nadie@example.com", "claveMala999")
     assert _login(client, "nadie@example.com", "claveMala999").status_code == 429
@@ -82,7 +75,7 @@ def test_los_intentos_durante_el_bloqueo_no_lo_extienden(client, session):
     for _ in range(5):
         _login(client, "seg-5@example.com", "claveMala999")
     for _ in range(3):
-        _login(client, "seg-5@example.com", "claveMala999")  # bloqueados
+        _login(client, "seg-5@example.com", "claveMala999")
     resultados = [
         i.resultado
         for i in session.exec(
@@ -101,9 +94,6 @@ def test_el_contador_ve_sus_accesos(client):
 
     assert [a["resultado"] for a in accesos[:2]] == ["FALLIDO", "EXITOSO"]
     assert accesos[0]["ip"]
-
-
-# ------------------------------------------------------------------ Contraseña
 
 
 def test_politica_de_contrasena(client):
@@ -127,16 +117,12 @@ def test_cambiar_contrasena(client):
     assert _login(client, "seg-8@example.com").status_code == 401
 
 
-# ------------------------------------------------------------------- Auditoría
-
-
 def test_las_acciones_quedan_auditadas(client):
     h = _headers(client, "seg-9@example.com")
     cid = client.post(
         "/contribuyentes", json={"nombre": "Ana", "rut": "1", "tipo_contribuyente": "ASALARIADO"}, headers=h
     ).json()["id"]
     pid = client.post(f"/contribuyentes/{cid}/periodos-fiscales", json={"anio_gravable": 2025}, headers=h).json()["id"]
-    # Una acción fallida (422) no se audita.
     client.post(f"/contribuyentes/{cid}/activos", json={"descripcion": "X", "tipo": "CUENTA", "valor": -1, "periodo_fiscal_id": pid}, headers=h)
     client.get(f"/contribuyentes/{cid}/periodos-fiscales/{pid}/reportes/resumen?formato=pdf", headers=h)
 
@@ -167,9 +153,7 @@ def _rutas(rutas):
 
 
 def test_todo_endpoint_que_modifica_esta_auditado():
-    """Si se agrega un endpoint que modifica datos y no se registra en
-    ACCIONES_AUDITADAS, esta prueba falla."""
-    exentos = {"registro", "login"}  # quedan en el registro de accesos
+    exentos = {"registro", "login"}
     sin_auditar = [
         f"{sorted(r.methods)} {r.path} ({r.name})"
         for r in _rutas(app.router.routes)
@@ -178,9 +162,6 @@ def test_todo_endpoint_que_modifica_esta_auditado():
         and r.name not in exentos
     ]
     assert sin_auditar == []
-
-
-# ---------------------------------------------------- Archivo y cabeceras HTTP
 
 
 def _contribuyente_con_periodo(client, email):
@@ -201,7 +182,7 @@ def test_archivo_que_no_es_excel_se_rechaza_aunque_diga_xlsx(client):
 def test_archivo_demasiado_grande_se_rechaza(client, monkeypatch):
     import modulos.exogena.servicios as servicios_exogena
 
-    monkeypatch.setattr(servicios_exogena, "TAMANO_MAXIMO_EXOGENA_MB", 0.001)  # ~1 KB
+    monkeypatch.setattr(servicios_exogena, "TAMANO_MAXIMO_EXOGENA_MB", 0.001)
     h, url = _contribuyente_con_periodo(client, "seg-12@example.com")
     with open(RUTA_FIXTURE, "rb") as archivo:
         respuesta = client.post(url, files={"archivo": ("exogena.xlsx", archivo)}, headers=h)

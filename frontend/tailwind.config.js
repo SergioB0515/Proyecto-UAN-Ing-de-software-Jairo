@@ -1,4 +1,3 @@
-/** Tokens de diseño: ver frontend/README.md. */
 export default {
   content: ['./index.html', './src/**/*.{vue,js}'],
   theme: {

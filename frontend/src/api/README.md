@@ -8,6 +8,6 @@ un texto para mostrar.
 
 Cada dominio tiene su módulo (`contribuyentes.js`, `exogena.js`,
 `conciliacion.js`, `inventario.js`, `reportes.js`, `parametros.js`,
-`cartera.js`), con funciones ya resueltas (`listarActivos(cid, pid)`,
+`cartera.js`, `adjuntos.js`), con funciones ya resueltas (`listarActivos(cid, pid)`,
 `importarExogena(cid, pid, archivo)`…). Las vistas solo llaman a estas
 funciones.

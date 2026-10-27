@@ -1,0 +1,21 @@
+# HTTPS automático (Let's Encrypt) delante del contenedor de la aplicación.
+# Caddy pide y renueva el certificado solo; no hay nada que configurar más
+# allá del dominio, que entra por la variable DOMINIO del compose.
+
+{$DOMINIO} {
+	encode zstd gzip
+
+	# Subida de soportes: el límite real lo aplica la API
+	# (TAMANO_MAXIMO_ADJUNTO_MB); aquí solo se evita que un cuerpo enorme
+	# llegue siquiera al backend.
+	request_body {
+		max_size 20MB
+	}
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	reverse_proxy api:8000
+}

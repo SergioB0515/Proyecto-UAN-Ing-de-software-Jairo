@@ -1,6 +1,4 @@
 <script setup>
-// Vínculo DIAN opcional de un activo o fuente de ingreso (HU-03, HU-04):
-// es lo que usa la conciliación para cruzarlo contra la exógena.
 const codigo = defineModel('codigo', { type: String, default: '' })
 const palabra = defineModel('palabra', { type: String, default: '' })
 defineProps({ prefijo: { type: String, required: true } })

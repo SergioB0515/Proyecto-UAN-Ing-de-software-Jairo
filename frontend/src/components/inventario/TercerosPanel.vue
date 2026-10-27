@@ -1,10 +1,13 @@
 <script setup>
-import { reactive } from 'vue'
+import { onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'
 import { crearDocumentoSoporte, crearProveedor } from '../../api/inventario'
 import { fecha } from '../../formato'
+import { useConteoAdjuntos } from '../../soportes'
+import BotonAdjuntos from '../BotonAdjuntos.vue'
 import MensajeError from '../MensajeError.vue'
+import PanelAdjuntos from '../PanelAdjuntos.vue'
 
 const props = defineProps({
   contribuyenteId: { type: Number, required: true },
@@ -12,6 +15,16 @@ const props = defineProps({
   documentos: { type: Array, required: true },
 })
 const emit = defineEmits(['cambio'])
+
+const conteo = useConteoAdjuntos(props.contribuyenteId)
+const abiertos = ref({})
+const clave = (tipo, id) => `${tipo}:${id}`
+const estaAbierto = (tipo, id) => Boolean(abiertos.value[clave(tipo, id)])
+function alternarSoportes(tipo, id) {
+  abiertos.value = { ...abiertos.value, [clave(tipo, id)]: !estaAbierto(tipo, id) }
+}
+
+onMounted(conteo.cargar)
 
 const TIPOS_DOCUMENTO = {
   FACTURA: 'Factura',
@@ -61,15 +74,36 @@ async function agregarDocumento() {
       <div class="hoja overflow-x-auto">
         <table>
           <thead>
-            <tr><th>Nombre</th><th>Identificación</th><th>Persona</th></tr>
+            <tr><th>Nombre</th><th>Identificación</th><th>Persona</th><th>Soportes</th></tr>
           </thead>
           <tbody>
-            <tr v-if="!proveedores.length"><td colspan="3" class="py-4 text-center text-tinta-suave">Sin proveedores.</td></tr>
-            <tr v-for="p in proveedores" :key="p.id">
-              <td>{{ p.nombre }}</td>
-              <td>{{ p.identificacion }}</td>
-              <td>{{ p.tipo_persona === 'NATURAL' ? 'Natural' : 'Jurídica' }}</td>
-            </tr>
+            <tr v-if="!proveedores.length"><td colspan="4" class="py-4 text-center text-tinta-suave">Sin proveedores.</td></tr>
+            <template v-for="p in proveedores" :key="p.id">
+              <tr>
+                <td>{{ p.nombre }}</td>
+                <td>{{ p.identificacion }}</td>
+                <td>{{ p.tipo_persona === 'NATURAL' ? 'Natural' : 'Jurídica' }}</td>
+                <td>
+                  <BotonAdjuntos
+                    :total="conteo.total('PROVEEDOR', p.id)"
+                    :abierto="estaAbierto('PROVEEDOR', p.id)"
+                    :etiqueta="p.nombre"
+                    @alternar="alternarSoportes('PROVEEDOR', p.id)"
+                  />
+                </td>
+              </tr>
+              <tr v-if="estaAbierto('PROVEEDOR', p.id)">
+                <td colspan="4" class="bg-papel/60">
+                  <PanelAdjuntos
+                    :contribuyente-id="contribuyenteId"
+                    entidad-tipo="PROVEEDOR"
+                    :entidad-id="p.id"
+                    categoria-inicial="CERTIFICADO"
+                    @cambio="conteo.fijar('PROVEEDOR', p.id, $event)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -103,15 +137,37 @@ async function agregarDocumento() {
       <div class="hoja overflow-x-auto">
         <table>
           <thead>
-            <tr><th>Documento</th><th>Fecha</th><th>Descripción</th></tr>
+            <tr><th>Documento</th><th>Fecha</th><th>Descripción</th><th>Soportes</th></tr>
           </thead>
           <tbody>
-            <tr v-if="!documentos.length"><td colspan="3" class="py-4 text-center text-tinta-suave">Sin documentos.</td></tr>
-            <tr v-for="d in documentos" :key="d.id">
-              <td>{{ TIPOS_DOCUMENTO[d.tipo] }} {{ d.numero }}</td>
-              <td>{{ fecha(d.fecha) }}</td>
-              <td class="text-tinta-suave">{{ d.descripcion ?? '—' }}</td>
-            </tr>
+            <tr v-if="!documentos.length"><td colspan="4" class="py-4 text-center text-tinta-suave">Sin documentos.</td></tr>
+            <template v-for="d in documentos" :key="d.id">
+              <tr>
+                <td>{{ TIPOS_DOCUMENTO[d.tipo] }} {{ d.numero }}</td>
+                <td>{{ fecha(d.fecha) }}</td>
+                <td class="text-tinta-suave">{{ d.descripcion ?? '—' }}</td>
+                <td>
+                  <BotonAdjuntos
+                    :total="conteo.total('DOCUMENTO_SOPORTE', d.id)"
+                    :abierto="estaAbierto('DOCUMENTO_SOPORTE', d.id)"
+                    :etiqueta="`${TIPOS_DOCUMENTO[d.tipo]} ${d.numero}`"
+                    destacar-falta
+                    @alternar="alternarSoportes('DOCUMENTO_SOPORTE', d.id)"
+                  />
+                </td>
+              </tr>
+              <tr v-if="estaAbierto('DOCUMENTO_SOPORTE', d.id)">
+                <td colspan="4" class="bg-papel/60">
+                  <PanelAdjuntos
+                    :contribuyente-id="contribuyenteId"
+                    entidad-tipo="DOCUMENTO_SOPORTE"
+                    :entidad-id="d.id"
+                    categoria-inicial="FACTURA"
+                    @cambio="conteo.fijar('DOCUMENTO_SOPORTE', d.id, $event)"
+                  />
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>

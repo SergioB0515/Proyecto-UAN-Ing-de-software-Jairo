@@ -1,7 +1,3 @@
-"""Proveedores, documentos soporte, movimientos de inventario, kardex y
-costo de ventas (Procesos 8 y 9 de documentacion/03-logica-proyecto.md,
-HU-12 a HU-14). Todo el módulo exige un contribuyente INDEPENDIENTE o MIXTO.
-"""
 from typing import List, Optional
 
 from sqlmodel import Session, select
@@ -38,13 +34,10 @@ from .modelos import (
     TipoMovimiento,
 )
 
-# -------------------------------------------------------------------- Proveedor
-
 
 def crear_proveedor(
     session: Session, contador_id: int, contribuyente_id: int, datos: ProveedorCrear
 ) -> Proveedor:
-    """HU-13: la identificación es única por contribuyente."""
     obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     identificacion = datos.identificacion.strip()
     existente = session.exec(
@@ -94,17 +87,12 @@ def _obtener_proveedor(
     return proveedor
 
 
-# ------------------------------------------------------------- DocumentoSoporte
-
-
 def crear_documento_soporte(
     session: Session,
     contador_id: int,
     contribuyente_id: int,
     datos: DocumentoSoporteCrear,
 ) -> DocumentoSoporte:
-    """Un mismo documento (ej. una factura con varias líneas) puede
-    respaldar varios movimientos, por eso se registra aparte."""
     obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     numero = datos.numero.strip()
     existente = session.exec(
@@ -155,9 +143,6 @@ def _obtener_documento(
     return documento
 
 
-# ------------------------------------------------------------------- Movimiento
-
-
 def _movimientos_de_producto(session: Session, producto_id: int) -> List[Movimiento]:
     return list(
         session.exec(
@@ -183,16 +168,6 @@ def _a_costeo(movimiento: Movimiento) -> costeo.MovimientoCosteo:
 def registrar_movimiento(
     session: Session, contador_id: int, contribuyente_id: int, datos: MovimientoCrear
 ) -> Movimiento:
-    """HU-12 (Proceso 8):
-    1. El producto existe, es del contribuyente y está activo.
-    2. El periodo fiscal es del contribuyente, está ABIERTO y la fecha cae
-       en su año gravable.
-    3. Tiene DocumentoSoporte (del mismo contribuyente).
-    4. El proveedor, si viene, es del contribuyente y solo en entradas.
-    5. Una salida no deja el stock en negativo en ningún punto de la
-       línea de tiempo (aunque se registre con fecha anterior).
-    6. Actualiza el stock_actual del producto.
-    """
     obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
 
     producto = obtener_producto(session, contador_id, contribuyente_id, datos.producto_id)
@@ -257,14 +232,9 @@ def listar_movimientos(
     return list(session.exec(consulta.order_by(Movimiento.fecha, Movimiento.id)).all())
 
 
-# ------------------------------------------------------- Kardex y costo de ventas
-
-
 def obtener_kardex(
     session: Session, contador_id: int, contribuyente_id: int, producto_id: int
 ) -> Kardex:
-    """Histórico de movimientos del producto con su costo y saldo, según su
-    método de costeo (HU-14; base del kardex de HU-16)."""
     producto = obtener_producto(session, contador_id, contribuyente_id, producto_id)
     calculadas = costeo.calcular_kardex(
         producto.metodo_costeo,
@@ -285,10 +255,6 @@ def obtener_kardex(
 def kardex_por_periodo(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> List[KardexProductoPeriodo]:
-    """Kardex de cada producto acotado al periodo. Se reproduce desde el
-    primer movimiento histórico (así el saldo que viene de años anteriores
-    se costea bien) y se cortan las líneas del periodo. Se omiten los
-    productos sin movimientos en el año y sin saldo."""
     obtener_contribuyente_con_inventario(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
@@ -302,7 +268,6 @@ def kardex_por_periodo(
 
     resultado: List[KardexProductoPeriodo] = []
     for producto in productos:
-        # Solo lo ocurrido hasta el final del año del periodo.
         movimientos = [
             _a_costeo(m)
             for m in _movimientos_de_producto(session, producto.id)
@@ -337,9 +302,6 @@ def kardex_por_periodo(
 def calcular_costo_ventas(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> CostoVentasPeriodo:
-    """HU-14: costo de ventas del periodo por producto, según el método de
-    costeo de cada uno. El inventario final valorizado es el que el cierre
-    de periodo lleva al patrimonio como Activo INVENTARIO (HU-15)."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )

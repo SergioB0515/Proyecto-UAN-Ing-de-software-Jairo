@@ -1,4 +1,3 @@
-"""Pruebas del panel de cartera (HU-18)."""
 from pathlib import Path
 
 RUTA_FIXTURE = Path(__file__).parent / "fixtures" / "reporte_exogena_ejemplo.xlsx"
@@ -59,7 +58,6 @@ def test_panel_ordena_por_alertas(client):
     _contribuyente(client, h, "Beto sin exógena")
     con_alertas = _contribuyente(client, h, "Carla con exógena", importar=True)
     pid = client.get(f"/contribuyentes/{con_alertas}/periodos-fiscales", headers=h).json()[0]["id"]
-    # Declara el avalúo y la venta: le quedan menos alertas que a Diego.
     for ruta, datos in [
         ("activos", {"descripcion": "Casa", "tipo": "INMUEBLE", "valor": 120000000, "vinculo_codigo_concepto": "1476"}),
         ("fuentes-ingreso", {"concepto": "Venta", "valor_anual": 50000000, "vinculo_codigo_concepto": "1032"}),
@@ -76,7 +74,6 @@ def test_panel_ordena_por_alertas(client):
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
     nombres = [f["nombre"] for f in cuerpo["contribuyentes"]]
-    # Más alertas primero; los que no se pueden evaluar al final.
     assert nombres == ["Diego con exógena", "Carla con exógena", "Ana sin periodo", "Beto sin exógena"]
     filas = {f["nombre"]: f for f in cuerpo["contribuyentes"]}
     assert filas["Diego con exógena"]["alertas_no_declarado"] == 5
@@ -101,7 +98,6 @@ def test_panel_ordena_por_nombre(client):
 
 def test_panel_cuenta_obligados(client):
     h = _headers(_crear_contador_y_token(client, "cartera-3@example.com"))
-    # Umbral bajísimo a propósito para forzar "obligado".
     _registrar_umbral(client, h, valor_uvt=1)
     _contribuyente(client, h, "Obligado", importar=True)
 

@@ -65,9 +65,6 @@ def _traducir(exc: Exception) -> HTTPException:
     return HTTPException(status_code=codigo, detail=str(exc))
 
 
-# -------------------------------------------------------------------- Proveedor
-
-
 @router.post(
     "/{contribuyente_id}/proveedores",
     response_model=ProveedorLeer,
@@ -79,7 +76,6 @@ def crear_proveedor(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-13: 409 si ya existe un proveedor con esa identificación."""
     try:
         return servicios.crear_proveedor(session, contador.id, contribuyente_id, datos)
     except _ERRORES as exc:
@@ -98,9 +94,6 @@ def listar_proveedores(
         raise _traducir(exc) from exc
 
 
-# ------------------------------------------------------------- DocumentoSoporte
-
-
 @router.post(
     "/{contribuyente_id}/documentos-soporte",
     response_model=DocumentoSoporteLeer,
@@ -112,7 +105,6 @@ def crear_documento_soporte(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-12: el documento que luego respalda uno o varios movimientos."""
     try:
         return servicios.crear_documento_soporte(
             session, contador.id, contribuyente_id, datos
@@ -137,9 +129,6 @@ def listar_documentos_soporte(
         raise _traducir(exc) from exc
 
 
-# ------------------------------------------------------------------- Movimiento
-
-
 @router.post(
     "/{contribuyente_id}/movimientos",
     response_model=MovimientoLeer,
@@ -151,9 +140,6 @@ def registrar_movimiento(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-12. 409 por stock insuficiente, producto inactivo o periodo
-    cerrado; 422 si la fecha no cae en el año del periodo o si una salida
-    trae proveedor."""
     try:
         return servicios.registrar_movimiento(
             session, contador.id, contribuyente_id, datos
@@ -179,9 +165,6 @@ def listar_movimientos(
         raise _traducir(exc) from exc
 
 
-# ------------------------------------------------------- Kardex y costo de ventas
-
-
 @router.get(
     "/{contribuyente_id}/productos/{producto_id}/kardex", response_model=Kardex
 )
@@ -191,7 +174,6 @@ def kardex(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-14: histórico de movimientos del producto con costo y saldo."""
     try:
         return servicios.obtener_kardex(
             session, contador.id, contribuyente_id, producto_id
@@ -210,8 +192,6 @@ def kardex_del_periodo(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Kardex de todos los productos en el periodo, con saldo inicial y
-    final (HU-16)."""
     try:
         return servicios.kardex_por_periodo(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -230,7 +210,6 @@ def costo_ventas(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-14: costo de ventas e inventario final del periodo, por producto."""
     try:
         return servicios.calcular_costo_ventas(
             session, contador.id, contribuyente_id, periodo_fiscal_id

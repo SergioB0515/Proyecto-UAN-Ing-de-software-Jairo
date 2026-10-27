@@ -1,4 +1,3 @@
-"""Engine de SQLModel sobre PostgreSQL. Ver documentacion/04-arquitectura.md."""
 from typing import Iterator
 
 from datetime import date
@@ -12,47 +11,32 @@ engine = create_engine(DATABASE_URL, echo=False)
 
 
 def registrar_modelos() -> None:
-    """Importa todos los modelos con tabla para que SQLModel.metadata los
-    conozca. Se importan aquí (no arriba del todo) para no crear un import
-    circular con los módulos que a su vez importan `database`. Lo usan
-    crear_tablas y tests/conftest.py — un modelo nuevo se agrega solo aquí."""
-    from modulos.auditoria.modelos import EventoAuditoria, IntentoAcceso  # noqa: F401
-    from modulos.contadores.modelos import Contador  # noqa: F401
-    from modulos.contribuyentes.modelos import (  # noqa: F401
+    from modulos.adjuntos.modelos import Adjunto
+    from modulos.auditoria.modelos import EventoAuditoria, IntentoAcceso
+    from modulos.contadores.modelos import Contador
+    from modulos.contribuyentes.modelos import (
         Activo,
         Contribuyente,
         FuenteIngreso,
         PeriodoFiscal,
     )
-    from modulos.exogena.modelos import (  # noqa: F401
+    from modulos.exogena.modelos import (
         ConceptoDian,
         RegistroExogena,
         ReporteExogena,
         TopeExogena,
     )
-    from modulos.inventario.modelos import Categoria, Producto  # noqa: F401
-    from modulos.movimientos.modelos import (  # noqa: F401
+    from modulos.inventario.modelos import Categoria, Producto
+    from modulos.movimientos.modelos import (
         DocumentoSoporte,
         Movimiento,
         Proveedor,
     )
-    from modulos.parametros.modelos import UmbralDeclaracion  # noqa: F401
-    from modulos.reportes.modelos import CierrePeriodo  # noqa: F401
+    from modulos.parametros.modelos import PlazoDeclaracion, UmbralDeclaracion
+    from modulos.reportes.modelos import CierrePeriodo
 
 
 def _migrar_periodo_en_activos_y_fuentes(motor) -> None:
-    """Migración puntual (HU-03): `activos` y `fuentes_ingreso` pasaron a
-    tener `periodo_fiscal_id`. Si la base es anterior a ese cambio:
-
-    1. Agrega la columna.
-    2. Asigna el Activo INVENTARIO de cada cierre a su periodo, y el resto
-       de filas al periodo más reciente de su contribuyente; si el contribuyente no tiene periodos, le crea uno
-       ABIERTO para el año anterior al actual (el que normalmente se
-       declara).
-    3. Deja la columna como NOT NULL con su llave foránea.
-
-    Es idempotente: si la columna ya existe no hace nada. Se mantiene aquí
-    en vez de introducir Alembic para un solo cambio de esquema."""
     inspector = inspect(motor)
     tablas = set(inspector.get_table_names())
     pendientes = [
@@ -86,7 +70,6 @@ def _migrar_periodo_en_activos_y_fuentes(motor) -> None:
                 )
 
             if tabla == "activos":
-                # El inventario que creó un cierre va al periodo de ese cierre.
                 conexion.execute(
                     text(
                         "UPDATE activos a SET periodo_fiscal_id = c.periodo_fiscal_id "
@@ -114,18 +97,28 @@ def _migrar_periodo_en_activos_y_fuentes(motor) -> None:
             )
 
 
+def _agregar_columnas_si_faltan(motor, tabla: str, columnas: dict) -> None:
+    inspector = inspect(motor)
+    if tabla not in inspector.get_table_names():
+        return
+    existentes = {c["name"] for c in inspector.get_columns(tabla)}
+    with motor.begin() as conexion:
+        for nombre, tipo in columnas.items():
+            if nombre not in existentes:
+                conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}"))
+
+
 def crear_tablas() -> None:
-    """Crea las tablas que todavía no existan y aplica las migraciones
-    puntuales pendientes. Se llama al arrancar la aplicación (ver main.py).
-    Sin Alembic: `create_all` crea tablas nuevas pero no agrega columnas a
-    tablas que ya existen — por eso los cambios a tablas existentes van en
-    funciones `_migrar_*` idempotentes como la de abajo."""
     registrar_modelos()
     SQLModel.metadata.create_all(engine)
     _migrar_periodo_en_activos_y_fuentes(engine)
+    _agregar_columnas_si_faltan(
+        engine,
+        "periodos_fiscales",
+        {"fecha_vencimiento_manual": "DATE", "fecha_presentacion": "DATE"},
+    )
 
 
 def obtener_sesion() -> Iterator[Session]:
-    """Dependencia de FastAPI: una sesión por petición."""
     with Session(engine) as session:
         yield session

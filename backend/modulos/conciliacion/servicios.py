@@ -1,7 +1,3 @@
-"""Motor de conciliación y borrador de renglones (Procesos 6 y 7 de
-documentacion/03-logica-proyecto.md, HU-08 a HU-10). Solo lectura: nada de
-lo que se calcula aquí modifica los datos registrados.
-"""
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional
@@ -24,12 +20,8 @@ from .modelos import (
     ResultadoConciliacion,
 )
 
-# Consumos con tarjeta: son un gasto del contribuyente, no un ingreso ni un
-# activo que deba declararse, así que no generan alerta NO_DECLARADO.
 CONCEPTO_CONSUMO_TC = "1023"
 
-# Tolerancia para diferencias de redondeo: la mayor entre $1.000 y el 0,5 %
-# del valor reportado.
 TOLERANCIA_ABSOLUTA = 1000.0
 TOLERANCIA_RELATIVA = 0.005
 
@@ -44,14 +36,10 @@ class _ItemDeclarado:
 
 
 def _es_retencion(registro: RegistroExogena) -> bool:
-    # "Retención", "retencion", "RETENCIÓN"... — basta con la raíz.
     return "retenci" in (registro.detalle or "").lower()
 
 
 def _excluido_del_cruce(registro: RegistroExogena) -> bool:
-    """Filas que no representan un cruce real con un tercero (Proceso 6):
-    autoreportadas, reportadas por la propia DIAN, y retenciones (comparten
-    código de concepto con el ingreso al que se asocian, ej. 1032)."""
     return registro.es_auto_reportado or registro.es_dian or _es_retencion(registro)
 
 
@@ -63,10 +51,6 @@ def _dentro_de_tolerancia(valor_exogena: float, valor_declarado: float) -> bool:
 def _buscar_registro(
     item: _ItemDeclarado, candidatos: List[RegistroExogena], usados: set
 ) -> Optional[RegistroExogena]:
-    """Primero por código de concepto; si no hay, por palabra clave en el
-    detalle. Entre varios candidatos se prefiere el de valor más cercano a
-    lo declarado, para que dos activos con el mismo concepto (ej. dos
-    inmuebles) no se crucen al revés."""
     disponibles = [r for r in candidatos if r.id not in usados]
 
     coincidencias: List[RegistroExogena] = []
@@ -85,8 +69,6 @@ def _buscar_registro(
 def conciliar_contribuyente(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> ResultadoConciliacion:
-    """HU-08: cruza cada Activo y FuenteIngreso del periodo contra los
-    RegistroExogena del reporte más reciente de ese mismo periodo."""
     obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
     reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
 
@@ -194,8 +176,6 @@ def _numero_renglon(renglon: str) -> int:
 def generar_borrador_renglones(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> BorradorRenglones:
-    """HU-10: suma los valores de la exógena por cada renglón sugerido. Una
-    fila con varios renglones (ej. "R29, R30") suma en cada uno de ellos."""
     obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
     reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
 

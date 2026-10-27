@@ -20,7 +20,6 @@ def listar_eventos(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Acciones del contador autenticado, la más reciente primero."""
     return [
         EventoAuditoriaLeer(**evento.model_dump(), nombre_contribuyente=nombre)
         for evento, nombre in servicios.listar_eventos(
@@ -35,6 +34,4 @@ def listar_accesos(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Intentos de inicio de sesión con el email del contador: le permite
-    ver si alguien intentó entrar a su cuenta."""
     return servicios.listar_accesos(session, contador.email, limite)

@@ -17,11 +17,8 @@ const RESULTADOS = {
   BLOQUEADO: { texto: 'Rechazado por bloqueo', clase: 'text-estado-nodeclarado' },
 }
 
-// Fallos desde el último ingreso correcto: si los hay, alguien (quizá tú)
-// intentó entrar con una contraseña equivocada.
 const fallosRecientes = computed(() => {
   const indice = accesos.value.findIndex((a) => a.resultado === 'EXITOSO')
-  // El primero exitoso es la sesión actual; se cuentan los fallos anteriores a ella.
   const antes = accesos.value.slice(indice + 1)
   const siguienteExito = antes.findIndex((a) => a.resultado === 'EXITOSO')
   return (siguienteExito === -1 ? antes : antes.slice(0, siguienteExito)).filter((a) => a.resultado !== 'EXITOSO').length

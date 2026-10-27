@@ -1,5 +1,3 @@
-"""Pruebas del módulo de reportes: cierre y reapertura de periodo (HU-15),
-reportes exportables (HU-16) y resumen por contribuyente (HU-17)."""
 import io
 from pathlib import Path
 
@@ -25,8 +23,6 @@ def _headers(token: str) -> dict:
 
 
 class Escenario:
-    """Contador + contribuyente + periodos, con atajos para inventario."""
-
     def __init__(self, client, email: str, tipo: str = "INDEPENDIENTE", anios=(2025,)):
         self.client = client
         self.h = _headers(_crear_contador_y_token(client, email))
@@ -86,9 +82,6 @@ class Escenario:
         return self.client.get(
             f"/contribuyentes/{self.cid}/patrimonio", headers=self.h
         ).json()["patrimonio_liquido"]
-
-
-# ------------------------------------------------------------------ Cierre
 
 
 def test_cerrar_periodo_lleva_el_inventario_al_patrimonio(client):
@@ -167,7 +160,6 @@ def test_el_patrimonio_cuenta_solo_el_inventario_del_ultimo_cierre(client):
 
     assert cierre_2026["valor_inventario"] == 600
     assert cierre_2026["costo_ventas"] == 400
-    # 600 del inventario de 2026, no 1.000 + 600.
     assert e.patrimonio() == 600
 
 
@@ -195,9 +187,6 @@ def test_un_contador_no_cierra_periodos_de_otro(client):
     assert client.post(e.url(2025, "cerrar"), headers=otro).status_code == 404
 
 
-# ----------------------------------------------------------------- Resumen
-
-
 def test_resumen_de_asalariado_sin_exogena(client):
     e = Escenario(client, "rep-12@example.com", tipo="ASALARIADO")
     client.post(
@@ -212,7 +201,7 @@ def test_resumen_de_asalariado_sin_exogena(client):
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
     assert cuerpo["anio_gravable"] == 2025
-    assert cuerpo["inventario"] is None  # HU-17: un asalariado no tiene inventario
+    assert cuerpo["inventario"] is None
     assert cuerpo["ingresos"]["total_ingresos"] == 60000000
     assert cuerpo["ingresos"]["total_retenciones"] == 2000000
     assert cuerpo["obligacion"] is None
@@ -238,9 +227,6 @@ def test_resumen_completo_con_exogena_y_umbral(client):
     assert cuerpo["inventario"]["inventario_final"] == 1000
     assert cuerpo["obligacion"]["obligado"] is False
     assert cuerpo["conciliacion"]["NO_DECLARADO"] == 5
-
-
-# -------------------------------------------------------- Reportes exportables
 
 
 @pytest.mark.parametrize(
@@ -278,8 +264,8 @@ def test_reporte_de_kardex_trae_los_valores_del_costeo(client):
         for celda in fila
     ]
     assert "Saldo inicial" in valores and "Saldo final" in valores
-    assert 300 in valores  # costo de la salida: 3 x 100
-    assert 700 in valores  # saldo final valorizado
+    assert 300 in valores
+    assert 700 in valores
 
 
 def test_reporte_de_inventario_para_asalariado_falla(client):

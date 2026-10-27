@@ -1,9 +1,10 @@
 <script setup>
-// Editar / Eliminar al final de una fila, con confirmación en la misma
-// fila (sin diálogos del navegador).
 import { ref } from 'vue'
 
-defineProps({ etiqueta: { type: String, required: true } })
+defineProps({
+  etiqueta: { type: String, required: true },
+  detalle: { type: String, default: '' },
+})
 const emit = defineEmits(['editar', 'eliminar'])
 const confirmando = ref(false)
 
@@ -28,7 +29,7 @@ function confirmar() {
     </button>
   </span>
   <span v-else class="flex items-center justify-end gap-3 whitespace-nowrap text-sm" role="group" :aria-label="`Confirmar eliminación de ${etiqueta}`">
-    <span class="font-medium">¿Eliminar?</span>
+    <span class="font-medium">¿Eliminar{{ detalle ? ` ${detalle}` : '' }}?</span>
     <button type="button" class="font-semibold text-estado-nodeclarado underline" @click="confirmar">Sí, eliminar</button>
     <button type="button" class="text-tinta-suave underline" @click="confirmando = false">No</button>
   </span>

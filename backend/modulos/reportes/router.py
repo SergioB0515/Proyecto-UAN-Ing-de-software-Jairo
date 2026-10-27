@@ -45,8 +45,6 @@ def cerrar_periodo(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-15: lleva el inventario final al patrimonio y marca el periodo
-    CERRADO. 409 si ya está cerrado o hay años anteriores abiertos."""
     try:
         return servicios.cerrar_periodo(session, contador.id, contribuyente_id, periodo_fiscal_id)
     except _ERRORES as exc:
@@ -60,8 +58,6 @@ def reabrir_periodo(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Deshace el cierre (para corregir). 409 si no está cerrado o hay años
-    posteriores cerrados."""
     try:
         return servicios.reabrir_periodo(session, contador.id, contribuyente_id, periodo_fiscal_id)
     except _ERRORES as exc:
@@ -75,8 +71,6 @@ def resumen(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-17: patrimonio, ingresos, inventario (si aplica), obligación de
-    declarar y conciliación del periodo en una sola respuesta."""
     try:
         return servicios.construir_resumen(session, contador.id, contribuyente_id, periodo_fiscal_id)
     except _ERRORES as exc:
@@ -104,10 +98,6 @@ def descargar_reporte(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """HU-16: kardex, saldo de inventario, conciliación, borrador de
-    renglones o resumen, en Excel (`formato=xlsx`) o PDF (`formato=pdf`).
-    409 si se pide un reporte de inventario para un ASALARIADO; 404 si el
-    reporte necesita exógena y aún no se importó."""
     try:
         contenido, media_type, nombre = servicios.generar_reporte(
             session, contador.id, contribuyente_id, periodo_fiscal_id, tipo, formato

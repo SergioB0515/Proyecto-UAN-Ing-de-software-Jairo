@@ -43,7 +43,6 @@ onMounted(async () => {
       Ningún registro del archivo trae un renglón sugerido.
     </EstadoVacio>
 
-    <!-- Casillas al estilo del formulario 210: número de renglón y valor. -->
     <section v-else class="hoja max-w-3xl p-5 sm:p-6">
       <h2>Formulario 210, año gravable {{ periodo.anio_gravable }}</h2>
       <p class="text-sm text-tinta-suave">{{ contribuyente.nombre }}, NIT {{ contribuyente.rut }}</p>

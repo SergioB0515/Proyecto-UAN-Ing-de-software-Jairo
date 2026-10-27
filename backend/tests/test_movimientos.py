@@ -1,5 +1,3 @@
-"""Pruebas del módulo de movimientos: proveedores (HU-13), documentos
-soporte y movimientos (HU-12), kardex y costo de ventas (HU-14)."""
 from modulos.contribuyentes.modelos import EstadoPeriodo, PeriodoFiscal
 
 
@@ -19,9 +17,6 @@ def _headers(token: str) -> dict:
 
 
 class Escenario:
-    """Contador + contribuyente con negocio + periodo 2025 + documento
-    soporte + proveedor, listos para registrar movimientos."""
-
     def __init__(self, client, email: str, tipo: str = "INDEPENDIENTE"):
         self.client = client
         self.token = _crear_contador_y_token(client, email)
@@ -84,13 +79,9 @@ class Escenario:
         )
 
     def compras_y_venta(self, producto_id):
-        """10 a 100, 10 a 120, y una venta de 15 a 200."""
         self.movimiento(producto_id, "ENTRADA", 10, 100, "2025-01-10", proveedor_id=self.proveedor_id)
         self.movimiento(producto_id, "ENTRADA", 10, 120, "2025-02-10")
         return self.movimiento(producto_id, "SALIDA", 15, 200, "2025-03-10")
-
-
-# ------------------------------------------------------------------ Proveedores
 
 
 def test_crear_y_listar_proveedores(client):
@@ -130,9 +121,6 @@ def test_asalariado_no_tiene_proveedores(client):
     assert respuesta.status_code == 409
 
 
-# ---------------------------------------------------------- Documentos soporte
-
-
 def test_documento_soporte_duplicado_falla(client):
     e = Escenario(client, "mov-doc1@example.com")
     respuesta = client.post(
@@ -143,16 +131,12 @@ def test_documento_soporte_duplicado_falla(client):
     assert respuesta.status_code == 409
 
 
-# ------------------------------------------------------------------ Movimientos
-
-
 def test_entrada_y_salida_actualizan_el_stock(client):
     e = Escenario(client, "mov-1@example.com")
     pid = e.producto()
 
     entrada = e.movimiento(pid, "ENTRADA", 10, 1500, "2025-01-15", proveedor_id=e.proveedor_id)
     assert entrada.status_code == 201
-    # valor_total es derivado: cantidad x valor_unitario.
     assert entrada.json()["valor_total"] == 15000
 
     salida = e.movimiento(pid, "SALIDA", 4, 2500, "2025-01-20")
@@ -178,8 +162,6 @@ def test_salida_sin_stock_suficiente_falla(client):
 
 
 def test_salida_con_fecha_anterior_a_la_entrada_falla(client):
-    # El stock total alcanzaría, pero a esa fecha la mercancía no había
-    # entrado todavía.
     e = Escenario(client, "mov-3@example.com")
     pid = e.producto()
     e.movimiento(pid, "ENTRADA", 10, 100, "2025-06-01")
@@ -242,7 +224,6 @@ def test_movimiento_de_producto_inactivo_falla(client):
 def test_movimiento_en_periodo_cerrado_falla(client, session):
     e = Escenario(client, "mov-9@example.com")
     pid = e.producto()
-    # El cierre de periodo es del Incremento 5: aquí se simula directo en BD.
     periodo = session.get(PeriodoFiscal, e.periodos[2025])
     periodo.estado = EstadoPeriodo.CERRADO
     session.add(periodo)
@@ -263,7 +244,6 @@ def test_no_se_cambia_el_metodo_de_costeo_con_movimientos(client):
     e = Escenario(client, "mov-11@example.com")
     pid = e.producto(metodo="PEPS")
 
-    # Sin movimientos todavía se puede cambiar.
     cambio = client.patch(
         f"/contribuyentes/{e.cid}/productos/{pid}",
         json={"metodo_costeo": "PROMEDIO_PONDERADO"},
@@ -280,9 +260,6 @@ def test_no_se_cambia_el_metodo_de_costeo_con_movimientos(client):
     assert cambio.status_code == 409
 
 
-# --------------------------------------------------- Kardex y costo de ventas
-
-
 def test_kardex_peps(client):
     e = Escenario(client, "mov-12@example.com")
     pid = e.producto(metodo="PEPS")
@@ -292,7 +269,7 @@ def test_kardex_peps(client):
     assert kardex.status_code == 200
     cuerpo = kardex.json()
     assert len(cuerpo["lineas"]) == 3
-    assert cuerpo["lineas"][-1]["costo_total"] == 1600  # 10x100 + 5x120
+    assert cuerpo["lineas"][-1]["costo_total"] == 1600
     assert cuerpo["saldo_cantidad"] == 5
     assert cuerpo["saldo_valor"] == 600
 
@@ -329,7 +306,7 @@ def test_costo_de_ventas_del_periodo(client):
     assert cuerpo["total_costo_ventas"] == 3250
     assert cuerpo["total_ingresos_ventas"] == 6000
     assert cuerpo["total_utilidad_bruta"] == 2750
-    assert cuerpo["total_inventario_final"] == 1150  # 600 + 550
+    assert cuerpo["total_inventario_final"] == 1150
 
 
 def test_costo_de_ventas_arrastra_el_saldo_del_anio_anterior(client):

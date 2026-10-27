@@ -6,21 +6,28 @@ import { obtenerResumen } from '../api/reportes'
 import Cargando from '../components/Cargando.vue'
 import EstadoConciliacion from '../components/EstadoConciliacion.vue'
 import MensajeError from '../components/MensajeError.vue'
+import SeguimientoDeclaracion from '../components/SeguimientoDeclaracion.vue'
 import TablaObligacion from '../components/TablaObligacion.vue'
 import { useContribuyente } from '../contexto'
 import { ETIQUETAS_TIPO_ACTIVO, dinero, fecha } from '../formato'
 
-const { contribuyente, periodo } = useContribuyente()
+const { contribuyente, periodo, recargarPeriodos } = useContribuyente()
 const resumen = ref(null)
 const error = ref('')
 
-onMounted(async () => {
+async function cargar() {
   try {
     resumen.value = await obtenerResumen(contribuyente.value.id, periodo.value.id)
   } catch (e) {
     error.value = mensajeDeError(e)
   }
-})
+}
+
+async function alActualizarSeguimiento() {
+  await Promise.all([cargar(), recargarPeriodos()])
+}
+
+onMounted(cargar)
 </script>
 
 <template>
@@ -32,9 +39,19 @@ onMounted(async () => {
       <li v-for="aviso in resumen.avisos" :key="aviso">{{ aviso }}</li>
     </ul>
 
-    <p v-if="resumen.cierre" class="text-sm text-tinta-suave">
-      Periodo cerrado el {{ fecha(resumen.cierre.fecha_cierre) }}.
-    </p>
+    <section v-if="resumen.vencimiento" class="hoja flex flex-wrap items-start justify-between gap-4 p-5">
+      <div>
+        <h2>Declaración de renta {{ resumen.anio_gravable }}</h2>
+        <p v-if="resumen.cierre" class="text-sm text-tinta-suave">Periodo cerrado el {{ fecha(resumen.cierre.fecha_cierre) }}.</p>
+      </div>
+      <SeguimientoDeclaracion
+        class="min-w-[16rem]"
+        :vencimiento="resumen.vencimiento"
+        :contribuyente-id="contribuyente.id"
+        :periodo-id="periodo.id"
+        @actualizado="alActualizarSeguimiento"
+      />
+    </section>
 
     <div class="grid gap-6 lg:grid-cols-2">
       <section class="hoja p-5">

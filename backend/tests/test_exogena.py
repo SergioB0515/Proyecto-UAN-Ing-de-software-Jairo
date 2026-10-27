@@ -1,8 +1,3 @@
-"""Pruebas del módulo de exógena.
-
-Las de `parsear_archivo_exogena` no necesitan base de datos — son sobre una
-función pura. Las de importación sí, porque pasan por el endpoint real.
-"""
 import io
 from pathlib import Path
 
@@ -20,12 +15,7 @@ def _leer_fixture() -> bytes:
 
 
 def _buscar_registro(resultado, contiene: str):
-    """Ayuda para los tests: el primer registro cuyo detalle contiene el
-    texto dado."""
     return next(r for r in resultado.registros if contiene in r.detalle)
-
-
-# ---------------------------------------------------- parsear_archivo_exogena
 
 
 def test_parsear_detecta_al_consultante():
@@ -36,8 +26,6 @@ def test_parsear_detecta_al_consultante():
 
 def test_parsear_separa_topes_de_registros():
     resultado = parsear_archivo_exogena(_leer_fixture())
-    # El fixture tiene 5 topes y 10 registros de detalle — ver
-    # tests/fixtures/reporte_exogena_ejemplo.xlsx.
     assert len(resultado.topes) == 5
     assert len(resultado.registros) == 10
     assert len(resultado.errores) == 0
@@ -91,8 +79,6 @@ def test_parsear_fila_de_tercero_genuino_no_esta_marcada():
 
 
 def test_parsear_archivo_sin_formato_dian_lanza_error():
-    # Un .xlsx válido, pero que no es un archivo de la DIAN — no tiene la
-    # fila de encabezados "NIT" / "Nombre...".
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja["A1"] = "Esto no es un archivo de la DIAN"
@@ -101,10 +87,6 @@ def test_parsear_archivo_sin_formato_dian_lanza_error():
 
     with pytest.raises(ArchivoExogenaInvalidoError):
         parsear_archivo_exogena(buffer.getvalue())
-
-
-# --------------------------------------------------------- importar_reporte_exogena
-# (vía el endpoint — necesitan contador, contribuyente y periodo fiscal)
 
 
 def _crear_contador_y_token(client, email: str) -> str:
@@ -249,8 +231,6 @@ def test_importar_exogena_informa_resumen_y_errores(client):
 
 
 def test_parsear_reporta_filas_con_valor_no_numerico():
-    # HU-05: las filas que no se pueden interpretar se informan con su
-    # número de fila, no se descartan en silencio.
     libro = openpyxl.Workbook()
     hoja = libro.active
     hoja.append(["NIT", "Nombre / Razón Social", "NIT", "Nombre", "Detalle", "Valor", "Uso", "Info"])
@@ -267,8 +247,6 @@ def test_parsear_reporta_filas_con_valor_no_numerico():
 
 
 def test_listar_registros_de_un_reporte_de_otro_contribuyente_falla(client):
-    # Un contador no puede leer el reporte de otro pasando su propio
-    # contribuyente en la URL y el id del reporte ajeno.
     token_a = _crear_contador_y_token(client, "exogena-h1@example.com")
     token_b = _crear_contador_y_token(client, "exogena-h2@example.com")
     cid_a, periodo_a = _crear_contribuyente_con_periodo(client, token_a)
@@ -306,7 +284,6 @@ def test_importar_exogena_en_periodo_cerrado_falla(client, session):
 
     token = _crear_contador_y_token(client, "exogena-j@example.com")
     contribuyente_id, periodo_id = _crear_contribuyente_con_periodo(client, token)
-    # El cierre de periodo es del Incremento 5: aquí se simula directo en BD.
     periodo = session.get(PeriodoFiscal, periodo_id)
     periodo.estado = EstadoPeriodo.CERRADO
     session.add(periodo)
