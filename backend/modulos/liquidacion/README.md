@@ -14,6 +14,8 @@ liquidar aparte.
 | Archivo | Responsabilidad |
 |---|---|
 | `motor.py` | El cálculo. Funciones puras sobre `Decimal`, sin base de datos. Recibe los parámetros del año; no conoce ningún número del Estatuto. |
+| `calculos_empresariales.py` | Depreciación (arts. 128-137), bancarización (art. 771-5), compensación de pérdidas (arts. 147 y 330) y comparación patrimonial (arts. 236-239). Puros, probables por separado contra su norma. |
+| `plantillas.py` | Catálogo de deducciones frecuentes con su norma y su tope propio. |
 | `../parametros/tablas_oficiales.py` | Los parámetros tributarios por año gravable, cada uno con su fuente legal. Un año nuevo se agrega aquí, sin tocar el motor. |
 | `clasificador.py` | Sugiere la cédula de una fuente de ingreso. Sugiere, no decide. |
 | `modelos.py` | La hoja de liquidación, las deducciones solicitadas y la clasificación por cédula. |
@@ -54,6 +56,39 @@ pendiente y toca las pruebas existentes.
   transcribir.
 - **No presenta la declaración.** No existe API pública de la DIAN para
   eso; se presenta en MUISCA con firma electrónica.
+- **No incorpora sola la renta por comparación patrimonial.** El art. 236
+  admite prueba en contrario: la calcula, la reporta y solo la suma a la
+  base si el contador marca que la acepta. Incorporarla de oficio
+  inventaría un impuesto.
+- **No descuenta las operaciones en efectivo sobre 100 UVT.** Las lista
+  para que el contador las revise: la consecuencia depende de si el pago
+  se canalizó, y eso el software no lo sabe.
+
+## La parte empresarial
+
+Para un contribuyente con negocio, el motor además:
+
+- **Trae el costo de ventas del kardex.** Es la deducción más grande de un
+  comerciante. Antes se calculaba en el cierre y no llegaba a la
+  liquidación, así que se liquidaba impuesto sobre el ingreso bruto.
+- **Deprecia los activos fijos** por línea recta, con la vida útil que
+  registre el contador, recortada a la tasa máxima del art. 137 y avisando
+  cuando recorta.
+- **Aplica el art. 771-5**: el efectivo aceptado es el menor entre el 40 %
+  de los pagos, 40.000 UVT y el 35 % de los costos y deducciones. Lo
+  rechazado vuelve a la renta líquida como renglón propio, para que se vea
+  cuánto costó pagar en efectivo.
+- **Compensa pérdidas** solo contra rentas del mismo tipo (art. 330) y
+  dentro de los doce periodos del art. 147, consumiendo primero las más
+  antiguas.
+- **Reporta la pérdida del ejercicio.** Cuando los costos de una subcédula
+  superan sus ingresos, la renta líquida se trunca en cero pero el exceso
+  se muestra y se avisa: de lo contrario el contador vería una deducción en
+  el borrador que no se restó en ninguna parte.
+- **Calcula el anticipo por los dos procedimientos** del art. 807 y avisa
+  cuando el promedio habría salido más barato. Sin impuesto neto del año
+  anterior registrado, no usa el promedio: daría la mitad del anticipo que
+  corresponde.
 
 ## Flujo
 

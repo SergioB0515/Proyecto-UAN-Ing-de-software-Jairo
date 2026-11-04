@@ -1,15 +1,22 @@
 from typing import List
 
-from fastapi import APIRouter, Depends, HTTPException, Response, status
+from decimal import Decimal
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
 from core.excepciones import (
+    ActivoNoEncontradoError,
     AnioGravableNoSoportadoError,
     ContribuyenteNoEncontradoError,
     DeduccionNoEncontradaError,
     FuenteIngresoNoEncontradaError,
+    PagoEfectivoNoEncontradoError,
+    PerdidaNoEncontradaError,
     PeriodoFiscalNoEncontradoError,
+    PlantillaNoEncontradaError,
+    SinPeriodoAnteriorError,
 )
 from database import obtener_sesion
 from modulos.contadores.modelos import Contador
@@ -20,6 +27,12 @@ from ..reportes.modelos import FormatoReporte
 from ..reportes.servicios import _MEDIA_TYPES
 from .modelos import (
     ClasificacionIngresoDatos,
+    DatosDepreciacionGuardar,
+    DatosDepreciacionLeer,
+    PagoEfectivoCrear,
+    PagoEfectivoLeer,
+    PerdidaFiscalCrear,
+    PerdidaFiscalLeer,
     DeduccionSolicitadaCrear,
     DeduccionSolicitadaLeer,
     HojaLiquidacionActualizar,
@@ -41,8 +54,12 @@ def _traducir(exc: Exception) -> HTTPException:
     dónde hacerlo, para que el error sea accionable y no un callejón.
     """
     if isinstance(exc, (ContribuyenteNoEncontradoError, PeriodoFiscalNoEncontradoError,
-                        DeduccionNoEncontradaError, FuenteIngresoNoEncontradaError)):
+                        DeduccionNoEncontradaError, FuenteIngresoNoEncontradaError,
+                        ActivoNoEncontradoError, PerdidaNoEncontradaError,
+                        PagoEfectivoNoEncontradoError)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, (PlantillaNoEncontradaError, SinPeriodoAnteriorError)):
+        return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnioGravableNoSoportadoError):
         # 422 literal: starlette renombró la constante y la versión antigua
         # emite DeprecationWarning, pero el código no cambia.
@@ -236,3 +253,252 @@ def exportar_liquidacion(
         media_type=_MEDIA_TYPES[formato],
         headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Depreciación
+# ---------------------------------------------------------------------------
+
+
+@router.get("/categorias-depreciacion", response_model=List[dict])
+def categorias_depreciacion(
+    anio_gravable: int = Query(ge=2000, le=2100),
+    contador: Contador = Depends(obtener_contador_actual),
+):
+    """Catálogo del art. 137 con la tasa máxima y la vida útil equivalente."""
+    try:
+        return servicios.categorias_depreciacion(anio_gravable)
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.get(f"{_BASE}/depreciacion", response_model=List[DatosDepreciacionLeer])
+def listar_depreciacion(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.listar_depreciacion(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.put(f"{_BASE}/depreciacion", response_model=List[DatosDepreciacionLeer])
+def guardar_depreciacion(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    datos: List[DatosDepreciacionGuardar],
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.guardar_depreciacion(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, datos
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.delete(
+    f"{_BASE}/depreciacion/{{activo_id}}", status_code=status.HTTP_204_NO_CONTENT
+)
+def eliminar_depreciacion(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    activo_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.eliminar_depreciacion(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, activo_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Pérdidas fiscales (por contribuyente, no por periodo)
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/contribuyentes/{contribuyente_id}/perdidas", response_model=List[PerdidaFiscalLeer]
+)
+def listar_perdidas(
+    contribuyente_id: int,
+    anio_gravable: int = Query(ge=2000, le=2100),
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Pérdidas del contribuyente, marcando cuáles siguen vigentes ese año."""
+    try:
+        return servicios.listar_perdidas(
+            session, contador.id, contribuyente_id, anio_gravable
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.post(
+    "/contribuyentes/{contribuyente_id}/perdidas",
+    response_model=PerdidaFiscalLeer,
+    status_code=status.HTTP_201_CREATED,
+)
+def crear_perdida(
+    contribuyente_id: int,
+    datos: PerdidaFiscalCrear,
+    anio_gravable: int = Query(ge=2000, le=2100),
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.crear_perdida(session, contador.id, contribuyente_id, datos)
+        creadas = servicios.listar_perdidas(
+            session, contador.id, contribuyente_id, anio_gravable
+        )
+        return creadas[-1]
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.delete(
+    "/contribuyentes/{contribuyente_id}/perdidas/{perdida_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def eliminar_perdida(
+    contribuyente_id: int,
+    perdida_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.eliminar_perdida(session, contador.id, contribuyente_id, perdida_id)
+    except Exception as exc:
+        raise _traducir(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Pagos individuales en efectivo
+# ---------------------------------------------------------------------------
+
+
+@router.get(f"{_BASE}/pagos-efectivo", response_model=List[PagoEfectivoLeer])
+def listar_pagos_efectivo(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.listar_pagos_efectivo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.post(
+    f"{_BASE}/pagos-efectivo",
+    response_model=PagoEfectivoLeer,
+    status_code=status.HTTP_201_CREATED,
+)
+def crear_pago_efectivo(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    datos: PagoEfectivoCrear,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.crear_pago_efectivo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, datos
+        )
+        return servicios.listar_pagos_efectivo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )[-1]
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.delete(
+    f"{_BASE}/pagos-efectivo/{{pago_id}}", status_code=status.HTTP_204_NO_CONTENT
+)
+def eliminar_pago_efectivo(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    pago_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.eliminar_pago_efectivo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, pago_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
+# ---------------------------------------------------------------------------
+# Facilidades
+# ---------------------------------------------------------------------------
+
+
+@router.get(f"{_BASE}/plantillas-deducciones", response_model=List[dict])
+def plantillas_deducciones(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Deducciones frecuentes con su norma y su tope propio ya en pesos."""
+    try:
+        return servicios.catalogo_plantillas(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.post(
+    f"{_BASE}/deducciones/desde-plantilla",
+    response_model=DeduccionSolicitadaLeer,
+    status_code=status.HTTP_201_CREATED,
+)
+def crear_deduccion_desde_plantilla(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    codigo: str = Query(min_length=1, max_length=60),
+    valor: Decimal = Query(ge=0),
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.crear_deduccion_desde_plantilla(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, codigo, valor
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.post(f"{_BASE}/hoja/copiar-del-anterior", response_model=HojaLiquidacionLeer)
+def copiar_hoja_del_anterior(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Copia del año anterior la situación del contribuyente, no sus cifras."""
+    try:
+        return servicios.copiar_hoja_del_anio_anterior(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)

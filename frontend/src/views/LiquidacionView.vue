@@ -2,10 +2,14 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
+import { listarActivos } from '../api/contribuyentes'
 import {
   actualizarHoja,
   clasificarIngresos,
+  copiarHojaDelAnterior,
   crearDeduccion,
+  crearDeduccionDesdePlantilla,
+  listarPlantillas,
   eliminarDeduccion,
   exportarLiquidacion,
   liquidar,
@@ -16,6 +20,7 @@ import {
 } from '../api/liquidacion'
 import Cargando from '../components/Cargando.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
+import PanelEmpresarial from '../components/liquidacion/PanelEmpresarial.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { useContribuyente } from '../contexto'
 import { dinero } from '../formato'
@@ -34,7 +39,18 @@ const hoja = ref(null)
 const deducciones = ref([])
 const resultado = ref(null)
 
-const guardando = reactive({ ingresos: false, hoja: false, deduccion: false })
+const guardando = reactive({ ingresos: false, hoja: false, deduccion: false, copia: false })
+const plantillas = ref([])
+const activos = ref([])
+const plantillaElegida = ref('')
+const valorPlantilla = ref('')
+
+// El panel empresarial solo le sirve a quien tiene negocio: a un asalariado le
+// estorbarían tres secciones vacías.
+const tieneNegocio = computed(
+  () => contribuyente.value && contribuyente.value.tipo_contribuyente !== 'ASALARIADO',
+)
+const plantillasUsables = computed(() => plantillas.value.filter((p) => !p.lo_calcula_el_motor))
 const nuevaDeduccion = reactive({
   nombre: '',
   valor: '',
@@ -48,9 +64,11 @@ const renglonAbierto = ref(null)
 // como una lista plana de treinta filas.
 const BLOQUES = [
   { titulo: 'Patrimonio', prefijos: ['PAT-'] },
+  { titulo: 'Depreciación', prefijos: ['DEP-'] },
   { titulo: 'Cédula general', prefijos: ['CG-', 'DED-'] },
   { titulo: 'Pensiones', prefijos: ['PEN-'] },
   { titulo: 'Dividendos', prefijos: ['DIV-'] },
+  { titulo: 'Comparación patrimonial', prefijos: ['COMP-'] },
   { titulo: 'Base e impuesto', prefijos: ['RENTA-PRESUNTIVA', 'BASE-', 'IMP-RENTA'] },
   { titulo: 'Ganancias ocasionales', prefijos: ['GO-'] },
   { titulo: 'Impuesto a cargo y descuentos', prefijos: ['TOTAL-', 'DESC-', 'IMP-NETO'] },
@@ -142,6 +160,30 @@ const SECCIONES_HOJA = [
     ],
   },
   {
+    titulo: 'Bancarización (art. 771-5)',
+    ayuda:
+      'El efectivo aceptado es el menor entre el 40 % de los pagos, 40.000 UVT y el 35 % de los costos y deducciones. Lo que exceda deja de ser deducible.',
+    campos: [
+      { clave: 'total_pagos_del_anio', etiqueta: 'Total de pagos del año' },
+      { clave: 'pagos_en_efectivo', etiqueta: 'Pagos hechos en efectivo' },
+    ],
+  },
+  {
+    titulo: 'Comparación patrimonial (art. 236)',
+    ayuda:
+      'El patrimonio del año anterior se toma de los activos de ese periodo; el campo manual solo lo sobrescribe. La diferencia no justificada no entra a la base a menos que usted la acepte.',
+    campos: [
+      { clave: 'patrimonio_liquido_anterior_manual', etiqueta: 'Patrimonio líquido anterior (manual)' },
+      { clave: 'impuestos_pagados_en_el_anio', etiqueta: 'Impuestos de renta pagados en el año' },
+      { clave: 'justificaciones_patrimoniales', etiqueta: 'Justificaciones del incremento' },
+      {
+        clave: 'aceptar_renta_comparacion_patrimonial',
+        etiqueta: 'Aceptar la diferencia como renta gravable',
+        tipo: 'checkbox',
+      },
+    ],
+  },
+  {
     titulo: 'Cierre de la liquidación',
     ayuda: 'El anticipo del año siguiente depende de cuántos años lleva declarando (art. 807 ET).',
     campos: [
@@ -150,6 +192,26 @@ const SECCIONES_HOJA = [
       { clave: 'anticipo_pagado_anio_anterior', etiqueta: 'Anticipo pagado el año anterior' },
       { clave: 'saldo_a_favor_anio_anterior', etiqueta: 'Saldo a favor del año anterior' },
       { clave: 'anios_declarando', etiqueta: 'Años declarando', tipo: 'entero', max: 99 },
+      { clave: 'impuesto_neto_anio_anterior', etiqueta: 'Impuesto neto del año anterior' },
+      {
+        clave: 'metodo_anticipo',
+        etiqueta: 'Método del anticipo',
+        tipo: 'select',
+        opciones: [
+          { valor: 'DIRECTO', etiqueta: 'Directo (impuesto neto del año)' },
+          { valor: 'PROMEDIO', etiqueta: 'Promedio de los dos últimos años' },
+          { valor: 'MENOR', etiqueta: 'El que resulte menor' },
+        ],
+      },
+      {
+        clave: 'cedula_depreciacion',
+        etiqueta: 'Subcédula de la depreciación',
+        tipo: 'select',
+        opciones: [
+          { valor: 'NO_LABORAL', etiqueta: 'Rentas no laborales' },
+          { valor: 'CAPITAL', etiqueta: 'Rentas de capital' },
+        ],
+      },
     ],
   },
 ]
@@ -169,16 +231,20 @@ async function cargar() {
   cargando.value = true
   error.value = ''
   try {
-    const [c, i, h, d] = await Promise.all([
+    const [c, i, h, d, pl, ac] = await Promise.all([
       listarCedulas(),
       listarIngresos(cid.value, pid.value),
       obtenerHoja(cid.value, pid.value),
       listarDeducciones(cid.value, pid.value),
+      listarPlantillas(cid.value, pid.value),
+      listarActivos(cid.value, pid.value),
     ])
     cedulas.value = c
     ingresos.value = i
     hoja.value = h
     deducciones.value = d
+    plantillas.value = pl
+    activos.value = ac
     await recalcular()
   } catch (e) {
     error.value = mensajeDeError(e)
@@ -252,7 +318,36 @@ async function quitarDeduccion(id) {
   }
 }
 
-const etiquetaCedula = (valor) => cedulas.value.find((c) => c.valor === valor)?.etiqueta ?? valor
+async function agregarDesdePlantilla() {
+  guardando.deduccion = true
+  error.value = ''
+  try {
+    await crearDeduccionDesdePlantilla(
+      cid.value, pid.value, plantillaElegida.value, valorPlantilla.value,
+    )
+    plantillaElegida.value = ''
+    valorPlantilla.value = ''
+    deducciones.value = await listarDeducciones(cid.value, pid.value)
+    await recalcular()
+  } catch (e) {
+    error.value = mensajeDeError(e)
+  } finally {
+    guardando.deduccion = false
+  }
+}
+
+async function copiarDelAnterior() {
+  guardando.copia = true
+  error.value = ''
+  try {
+    hoja.value = await copiarHojaDelAnterior(cid.value, pid.value)
+    await recalcular()
+  } catch (e) {
+    error.value = mensajeDeError(e)
+  } finally {
+    guardando.copia = false
+  }
+}
 
 onMounted(cargar)
 </script>
@@ -338,7 +433,9 @@ onMounted(cargar)
     </section>
 
     <!-- 2. Hoja de liquidación ------------------------------------------- -->
-    <section class="hoja p-5">
+    <!-- v-if="hoja": si la carga falló, la sección no debe reventar la vista
+         entera. El mensaje de error ya está arriba. -->
+    <section v-if="hoja" class="hoja p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h2>Hoja de liquidación</h2>
@@ -347,9 +444,20 @@ onMounted(cargar)
             quién los guardó y cuándo.
           </p>
         </div>
-        <button type="button" class="boton" :disabled="guardando.hoja" @click="guardarHoja">
-          Guardar y recalcular
-        </button>
+        <div class="flex gap-2">
+          <button
+            type="button"
+            class="boton-secundario"
+            :disabled="guardando.copia"
+            title="Copia dependientes, método de anticipo y demás datos de situación; no copia cifras"
+            @click="copiarDelAnterior"
+          >
+            Copiar del año anterior
+          </button>
+          <button type="button" class="boton" :disabled="guardando.hoja" @click="guardarHoja">
+            Guardar y recalcular
+          </button>
+        </div>
       </div>
 
       <div class="mt-5 grid items-start gap-6 lg:grid-cols-2">
@@ -362,6 +470,14 @@ onMounted(cargar)
                 <input v-model="hoja[campo.clave]" type="checkbox" class="rounded border-papel-linea" />
                 {{ campo.etiqueta }}
               </label>
+              <template v-else-if="campo.tipo === 'select'">
+                <label class="etiqueta" :for="`h-${campo.clave}`">{{ campo.etiqueta }}</label>
+                <select :id="`h-${campo.clave}`" v-model="hoja[campo.clave]" class="campo">
+                  <option v-for="o in campo.opciones" :key="o.valor" :value="o.valor">
+                    {{ o.etiqueta }}
+                  </option>
+                </select>
+              </template>
               <template v-else>
                 <label class="etiqueta" :for="`h-${campo.clave}`">{{ campo.etiqueta }}</label>
                 <input
@@ -413,7 +529,32 @@ onMounted(cargar)
         </tbody>
       </table>
 
-      <form class="mt-4 grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-5" @submit.prevent="agregarDeduccion">
+      <form class="mt-4 flex flex-wrap items-end gap-3 rounded border border-papel-linea bg-papel-hondo/40 p-3" @submit.prevent="agregarDesdePlantilla">
+        <div class="min-w-72 flex-1">
+          <label class="etiqueta" for="pl-codigo">Desde el catálogo</label>
+          <select id="pl-codigo" v-model="plantillaElegida" class="campo" required>
+            <option value="" disabled>Elija un concepto frecuente</option>
+            <option v-for="pl in plantillasUsables" :key="pl.codigo" :value="pl.codigo">
+              {{ pl.nombre }} — {{ pl.fuente_legal }}
+            </option>
+          </select>
+          <p v-if="plantillaElegida" class="mt-1 max-w-prose text-xs text-tinta-tenue">
+            {{ plantillas.find((pl) => pl.codigo === plantillaElegida)?.nota }}
+            <template v-if="plantillas.find((pl) => pl.codigo === plantillaElegida)?.tope_anual_en_pesos">
+              Tope propio del año:
+              {{ dinero(plantillas.find((pl) => pl.codigo === plantillaElegida).tope_anual_en_pesos) }}.
+            </template>
+          </p>
+        </div>
+        <div>
+          <label class="etiqueta" for="pl-valor">Valor</label>
+          <input id="pl-valor" v-model="valorPlantilla" type="number" min="0" step="0.01" class="campo w-44" required />
+        </div>
+        <button type="submit" class="boton" :disabled="guardando.deduccion">Agregar del catálogo</button>
+      </form>
+
+      <p class="mt-4 text-sm text-tinta-suave">O registre un concepto que no esté en el catálogo:</p>
+      <form class="mt-2 grid items-end gap-3 sm:grid-cols-2 lg:grid-cols-5" @submit.prevent="agregarDeduccion">
         <div class="lg:col-span-2">
           <label class="etiqueta" for="d-nombre">Concepto</label>
           <input id="d-nombre" v-model="nuevaDeduccion.nombre" class="campo" required maxlength="200" />
@@ -436,7 +577,17 @@ onMounted(cargar)
       </form>
     </section>
 
-    <!-- 4. Borrador de la liquidación ------------------------------------ -->
+    <!-- 4. Parte empresarial (solo si el contribuyente tiene negocio) ----- -->
+    <PanelEmpresarial
+      v-if="tieneNegocio && hoja"
+      :contribuyente-id="cid"
+      :periodo-fiscal-id="pid"
+      :anio-gravable="periodo.anio_gravable"
+      :activos="activos"
+      @cambio="recalcular"
+    />
+
+    <!-- 5. Borrador de la liquidación ------------------------------------ -->
     <template v-if="resultado">
       <section class="hoja p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">

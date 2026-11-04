@@ -29,8 +29,11 @@ def registrar_modelos() -> None:
     from modulos.inventario.modelos import Categoria, Producto
     from modulos.liquidacion.modelos import (
         ClasificacionIngreso,
+        DatosDepreciacion,
         DeduccionSolicitada,
         HojaLiquidacion,
+        PagoEfectivo,
+        PerdidaFiscal,
     )
     from modulos.movimientos.modelos import (
         DocumentoSoporte,
@@ -121,6 +124,26 @@ def crear_tablas() -> None:
         engine,
         "periodos_fiscales",
         {"fecha_vencimiento_manual": "DATE", "fecha_presentacion": "DATE"},
+    )
+    # Columnas agregadas a la hoja de liquidación después de su primera versión.
+    # `SQLModel.metadata.create_all` crea tablas que faltan pero NUNCA altera una
+    # que ya existe, así que sin esto un despliegue con datos arranca y falla al
+    # primer SELECT. Llevan DEFAULT y NOT NULL para que las filas existentes
+    # queden con un valor válido y no con NULL.
+    _agregar_columnas_si_faltan(
+        engine,
+        "hojas_liquidacion",
+        {
+            "metodo_anticipo": "VARCHAR NOT NULL DEFAULT 'DIRECTO'",
+            "impuesto_neto_anio_anterior": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "total_pagos_del_anio": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "pagos_en_efectivo": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "patrimonio_liquido_anterior_manual": "NUMERIC(18,2)",
+            "impuestos_pagados_en_el_anio": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "justificaciones_patrimoniales": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "aceptar_renta_comparacion_patrimonial": "BOOLEAN NOT NULL DEFAULT FALSE",
+            "cedula_depreciacion": "VARCHAR NOT NULL DEFAULT 'NO_LABORAL'",
+        },
     )
 
 

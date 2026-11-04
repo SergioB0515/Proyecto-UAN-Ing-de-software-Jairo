@@ -23,9 +23,9 @@ estimaciones de software se quedan cortas; tómelas como orden de magnitud.
 
 | Métrica | Valor |
 |---|---|
-| Líneas de código (backend + frontend) | ~18.700 |
+| Líneas de código (backend + frontend) | ~22.500 |
 | Módulos del backend | 12 |
-| Pruebas automatizadas | 260, todas en verde |
+| Pruebas automatizadas | 325, todas en verde |
 | Historias de usuario con evidencia | 27 (HU-01 a HU-27) |
 | Despliegue | Docker + Render, un solo contenedor |
 | CI | GitHub Actions |
@@ -128,6 +128,31 @@ liquidando bien. Ese es el punto de haber separado parámetros de lógica.
   tramo de la tabla con la fórmula impresa en el Estatuto en vez de comparar
   contra la salida del propio motor.
 
+### Segunda iteración: la parte empresarial
+
+| Qué | Norma | Estado |
+|---|---|---|
+| Costo de ventas del kardex → cédula no laboral | Arts. 62 y 66 ET | Hecho (era un hueco: se liquidaba sobre el ingreso bruto) |
+| Depreciación por línea recta con tope del art. 137 | Arts. 128-131 y 137 ET | Hecho, 16 categorías con su tasa |
+| Bancarización: límite general e individual | Art. 771-5 ET | Hecho |
+| Compensación de pérdidas por tipo de renta | Arts. 147 y 330 ET | Hecho |
+| Pérdida del ejercicio reportada en vez de truncada en silencio | Arts. 147 y 330 ET | Hecho |
+| Renta por comparación patrimonial | Arts. 236-239 ET | Hecho, no se incorpora sin que el contador la acepte |
+| Anticipo por método directo y por promedio | Art. 807 ET | Hecho, avisa cuál sale más barato |
+| Catálogo de deducciones frecuentes con su norma | — | Hecho |
+| Copiar del año anterior la situación, no las cifras | — | Hecho |
+
+Dos defectos reales que aparecieron al construir esto y vale la pena
+recordar, porque son el tipo de cosa que solo sale corriendo el sistema:
+
+- **`Decimal.normalize()` convierte los múltiplos de diez a notación
+  científica.** `Decimal("40.00").normalize()` devuelve `4E+1`, así que las
+  fórmulas decían «4E+1 %». Hay una prueba que lo vigila.
+- **`create_all` no agrega columnas a una tabla que ya existe.** El
+  despliegue con datos arrancó y falló al primer `SELECT`. Se parchó con el
+  helper de migración que ya tenía el proyecto, pero es exactamente la razón
+  por la que Alembic es prioridad 2 y no 5.
+
 ### Lo que el motor no hace, a propósito
 
 - No liquida años sin parámetros cargados: lanza un error con la lista de años
@@ -144,7 +169,7 @@ liquidando bien. Ese es el punto de haber separado parámetros de lógica.
 |---|---|---|---|---|
 | 1 | Migrar los 61 campos de dinero de `float` a `Decimal`/`NUMERIC(18,2)` | 3–5 días | **Alto** | Toca todos los módulos y las 260 pruebas. Es el defecto más serio para software contable. |
 | 2 | Alembic para migraciones versionadas | 1–2 días | Bajo | Sin esto no se puede evolucionar el esquema con datos reales en producción. |
-| 3 | Mover la cédula a columna de `fuentes_ingreso` y retirar `clasificaciones_ingreso` | 1 día | Bajo | La tabla aparte fue una decisión de no romper nada a tres semanas de la entrega; el diseño correcto es la columna. |
+| 3 | Consolidar las tablas laterales (`clasificaciones_ingreso`, `datos_depreciacion`) como columnas de `fuentes_ingreso` y `activos` | 2 días | Bajo | Fueron decisiones de no romper nada cerca de la entrega; el diseño correcto son las columnas. |
 | 4 | Capa de organización: firma → contadores → roles | 4–6 días | Medio | Las 4.665 firmas del país no son un contador solo. Es el techo comercial actual. |
 | 5 | Cargar el catálogo de conceptos de la DIAN por resolución anual | 2–3 días | Bajo | Clasificar por código es más fiable que por palabras del concepto. |
 | 6 | Mapeo renglón → formulario 210 oficial, versionado por resolución | 2 días | Bajo | Hoy los códigos son propios y el contador tiene que mapear a mano. |
@@ -167,9 +192,10 @@ menos que uno que se usa cada mes, aunque suene más ambicioso.
 
 | Módulo | Esfuerzo | Por qué |
 |---|---|---|
-| **Retención en la fuente** (procedimientos 1 y 2, certificados) | 8–12 días | Es **mensual**, no anual. Convierte el producto de estacional a recurrente, que es la diferencia entre un pico en agosto y un ingreso de doce meses. |
+| **Retención en la fuente** (procedimientos 1 y 2, certificados) | 8–12 días | Es **mensual**, no anual. Convierte el producto de estacional a recurrente, que es la diferencia entre un pico en agosto y un ingreso de doce meses. **Es lo siguiente que hay que construir.** |
 | **Exógena como reportante** (formatos 1001, 1003, 1005, 1007, 1008, 1009, 1012 y XML de la DIAN) | 15–20 días | Hoy la app *lee* la exógena del contribuyente. Generar la que el cliente debe *reportar* es trabajo que el contador hace a mano todos los años y por el que cobra. |
-| **Comparación patrimonial** (arts. 236 a 239 ET) | 4–6 días | Detecta que el patrimonio creció más que la renta declarada, que es exactamente lo que la DIAN cruza. Diferenciador real y barato: ya hay histórico por año. |
+| **Deducción de nómina condicionada al pago de aportes** (arts. 108 y 115-1 ET) | 2–3 días | La DIAN rechaza pagos laborales sin aportes pagados. Es un rechazo automático que conviene detectar antes. |
+| **Cartera de difícil cobro y deuda manifiestamente perdida** (arts. 145 y 146 ET) | 2 días | Deducción común en comerciantes. |
 
 ### Prioridad media
 
@@ -333,7 +359,9 @@ En este orden, y nada más hasta terminar cada uno:
 1. **Antes de la entrega de noviembre:** probar la liquidación con dos o tres
    declaraciones reales que un contador conocido ya haya presentado, y comparar
    cifra contra cifra. Si cuadra, es la mejor diapositiva de la sustentación.
-   Si no cuadra, hay que saberlo antes y no después.
+   Si no cuadra, hay que saberlo antes y no después. Con la parte empresarial
+   ya construida, conviene que al menos una de esas declaraciones sea de un
+   comerciante con inventario.
 2. **Después de la entrega:** Alembic y la migración a `Decimal`. Sin eso no se
    puede poner nada en producción con datos reales.
 3. **Luego:** retención en la fuente, para que el producto tenga uso los doce

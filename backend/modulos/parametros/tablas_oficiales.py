@@ -67,6 +67,21 @@ class LimiteUvt:
 
 
 @dataclass(frozen=True)
+class LimiteBancarizacion:
+    """Límites del art. 771-5 para aceptar pagos en efectivo.
+
+    El límite general es el MENOR entre tres cifras, no una sola. El
+    individual es un tope por operación, independiente del general.
+    """
+
+    porcentaje_de_pagos: Decimal
+    tope_uvt: Decimal
+    porcentaje_de_costos: Decimal
+    limite_individual_uvt: Decimal
+    fuente_legal: str
+
+
+@dataclass(frozen=True)
 class ParametrosAnuales:
     anio_gravable: int
     regimen: str
@@ -94,6 +109,17 @@ class ParametrosAnuales:
     tarifa_ganancia_ocasional_loterias: Decimal
     fuente_ganancia_ocasional: str
     exencion_go_vivienda_uvt: Decimal
+
+    # Pagos en efectivo (bancarización).
+    bancarizacion: LimiteBancarizacion
+
+    # Depreciación: tasa anual máxima por tipo de bien (art. 137).
+    tasas_depreciacion: Dict[str, Decimal]
+    fuente_depreciacion: str
+
+    # Compensación de pérdidas fiscales.
+    anios_compensacion_perdidas: int
+    fuente_compensacion_perdidas: str
 
     # Renta presuntiva.
     tarifa_renta_presuntiva: Decimal
@@ -136,6 +162,34 @@ _TABLA_241 = (
     TramoTarifa(Decimal("18970"), Decimal("31000"), Decimal("0.37"), Decimal("5901")),
     TramoTarifa(Decimal("31000"), None, Decimal("0.39"), Decimal("10352")),
 )
+
+# ---------------------------------------------------------------------------
+# Tasas máximas de depreciación anual (art. 137 ET)
+#
+# La norma fija topes de tasa anual, no vidas útiles mínimas: el contribuyente
+# puede estimar una vida útil menor, pero solo deduce hasta esta tasa. Por eso
+# el motor calcula la depreciación con la vida útil que registre el contador y
+# la recorta a este tope, en vez de imponer la vida útil.
+# ---------------------------------------------------------------------------
+
+_TASAS_DEPRECIACION = {
+    "CONSTRUCCIONES_Y_EDIFICACIONES": Decimal("0.0222"),
+    "ACUEDUCTO_PLANTA_Y_REDES": Decimal("0.0250"),
+    "VIAS_DE_COMUNICACION": Decimal("0.0250"),
+    "FLOTA_Y_EQUIPO_AEREO": Decimal("0.0333"),
+    "FLOTA_Y_EQUIPO_FERREO": Decimal("0.0500"),
+    "FLOTA_Y_EQUIPO_FLUVIAL": Decimal("0.0667"),
+    "ARMAMENTO_Y_EQUIPO_DE_VIGILANCIA": Decimal("0.1000"),
+    "EQUIPO_ELECTRICO": Decimal("0.1000"),
+    "FLOTA_Y_EQUIPO_DE_TRANSPORTE_TERRESTRE": Decimal("0.1000"),
+    "MAQUINARIA_Y_EQUIPOS": Decimal("0.1000"),
+    "MUEBLES_Y_ENSERES": Decimal("0.1000"),
+    "EQUIPO_MEDICO_CIENTIFICO": Decimal("0.1250"),
+    "ENVASES_EMPAQUES_Y_HERRAMIENTAS": Decimal("0.2000"),
+    "EQUIPO_DE_COMPUTACION": Decimal("0.2000"),
+    "REDES_DE_PROCESAMIENTO_DE_DATOS": Decimal("0.2000"),
+    "EQUIPO_DE_COMUNICACION": Decimal("0.2000"),
+}
 
 _TOPES_DECLARAR = {
     "patrimonio_bruto": Decimal("4500"),
@@ -205,6 +259,20 @@ def _parametros_ley_2277(anio: int, uvt: str, fuente_uvt: str) -> ParametrosAnua
         tarifa_ganancia_ocasional_loterias=Decimal("0.20"),
         fuente_ganancia_ocasional="Arts. 313 a 317 ET, modificados por la Ley 2277 de 2022, arts. 32 a 35",
         exencion_go_vivienda_uvt=Decimal("5000"),
+        bancarizacion=LimiteBancarizacion(
+            porcentaje_de_pagos=Decimal("0.40"),
+            tope_uvt=Decimal("40000"),
+            porcentaje_de_costos=Decimal("0.35"),
+            limite_individual_uvt=Decimal("100"),
+            fuente_legal="Art. 771-5 ET, parágrafos 1 y 2 (límites definitivos desde 2021)",
+        ),
+        tasas_depreciacion=dict(_TASAS_DEPRECIACION),
+        fuente_depreciacion="Art. 137 ET (tasas anuales máximas); arts. 128 a 131 ET",
+        anios_compensacion_perdidas=12,
+        fuente_compensacion_perdidas=(
+            "Art. 147 ET por remisión del art. 1.2.1.20.6 del DUR 1625 de 2016; "
+            "art. 330 ET: solo contra rentas del mismo tipo"
+        ),
         tarifa_renta_presuntiva=Decimal("0.00"),
         fuente_renta_presuntiva="Art. 188 ET: 0 % desde el año gravable 2021 (Ley 2010 de 2019, art. 78)",
         anticipo_primer_anio=Decimal("0.25"),

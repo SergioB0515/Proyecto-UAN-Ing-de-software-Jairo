@@ -162,3 +162,15 @@ class AnioGravableNoSoportadoError(ErrorAplicacion):
 
 class DeduccionNoEncontradaError(ErrorAplicacion):
     pass
+
+
+class PerdidaNoEncontradaError(ErrorAplicacion):
+    pass
+
+
+class PagoEfectivoNoEncontradoError(ErrorAplicacion):
+    pass
+
+
+class PlantillaNoEncontradaError(ErrorAplicacion):
+    pass

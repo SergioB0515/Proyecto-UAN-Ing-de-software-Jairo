@@ -50,7 +50,7 @@ y filtran por el contador del token.
 | `GET/PUT /parametros/plazos/{anio}`, `POST /parametros/plazos/{anio}/calendario-oficial` | HU-25 |
 | `PATCH /contribuyentes/{id}/periodos-fiscales/{pid}` (`fecha_presentacion`, `fecha_vencimiento_manual`) | HU-26 |
 | `GET /cartera?orden=vencimiento`, `GET /cartera/exportar?formato=xlsx\|pdf` | HU-25, HU-27 |
-| `GET /liquidacion/cedulas`, `GET/PATCH /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}/hoja`, `POST/GET/DELETE .../deducciones`, `GET/PUT .../ingresos`, `GET /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}`, `GET .../exportar?formato=xlsx\|pdf` (ver [modulos/liquidacion](modulos/liquidacion/README.md)) | — |
+| `GET /liquidacion/cedulas`, `GET/PATCH /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}/hoja`, `POST/GET/DELETE .../deducciones`, `GET/PUT .../ingresos`, `GET /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}`, `GET .../exportar?formato=xlsx\|pdf`, `GET/PUT/DELETE .../depreciacion`, `GET/POST/DELETE .../pagos-efectivo`, `GET/POST/DELETE /liquidacion/contribuyentes/{id}/perdidas`, `GET /liquidacion/categorias-depreciacion`, `GET .../plantillas-deducciones`, `POST .../deducciones/desde-plantilla`, `POST .../hoja/copiar-del-anterior` (ver [modulos/liquidacion](modulos/liquidacion/README.md)) | — |
 | `POST/GET /contribuyentes/{id}/adjuntos`, `GET .../adjuntos/resumen`, `GET/PATCH/DELETE .../adjuntos/{aid}`, `GET .../periodos-fiscales/{pid}/soportes/zip` (ver [modulos/adjuntos](modulos/adjuntos/README.md)) | — |
 
 Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el

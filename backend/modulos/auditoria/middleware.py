@@ -52,6 +52,14 @@ ACCIONES_AUDITADAS = {
     "eliminar_deduccion": "Eliminó una deducción solicitada",
     "clasificar_ingresos": "Clasificó fuentes de ingreso por cédula",
     "exportar_liquidacion": "Exportó el borrador de liquidación",
+    "guardar_depreciacion": "Registró datos de depreciación de activos",
+    "eliminar_depreciacion": "Quitó la depreciación de un activo",
+    "crear_perdida": "Registró una pérdida fiscal de un año anterior",
+    "eliminar_perdida": "Eliminó una pérdida fiscal",
+    "crear_pago_efectivo": "Registró un pago individual en efectivo",
+    "eliminar_pago_efectivo": "Eliminó un pago en efectivo",
+    "crear_deduccion_desde_plantilla": "Solicitó una deducción desde el catálogo",
+    "copiar_hoja_del_anterior": "Copió la hoja de liquidación del año anterior",
 }
 
 

@@ -35,6 +35,16 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Tuple
 
 from ..parametros.tablas_oficiales import ParametrosAnuales, TramoTarifa
+from .calculos_empresariales import (
+    ActivoDepreciable,
+    InsumosBancarizacion,
+    InsumosComparacionPatrimonial,
+    PerdidaCompensable,
+    calcular_bancarizacion,
+    calcular_comparacion_patrimonial,
+    calcular_compensacion_perdidas,
+    calcular_depreciacion,
+)
 
 CERO = Decimal("0")
 _CENTAVO = Decimal("0.01")
@@ -63,6 +73,21 @@ def aproximar_al_multiplo_de_mil(valor: Decimal) -> Decimal:
 
 def _no_negativo(valor: Decimal) -> Decimal:
     return valor if valor > CERO else CERO
+
+
+def porcentaje(fraccion: Decimal) -> str:
+    """Formatea una fracción como porcentaje legible: 0.40 → «40».
+
+    No se usa `Decimal.normalize()` porque convierte los múltiplos de diez a
+    notación científica: `Decimal("40.00").normalize()` devuelve `4E+1`, y la
+    fórmula le mostraría «4E+1 %» al contador. Se quitan los ceros de la parte
+    decimal a mano y se conservan los decimales que importan (2,22 % del
+    art. 137).
+    """
+    texto = f"{(fraccion * 100):f}"
+    if "." in texto:
+        texto = texto.rstrip("0").rstrip(".")
+    return texto or "0"
 
 
 # ---------------------------------------------------------------------------
@@ -117,11 +142,22 @@ class RentasDeTrabajo:
 
 @dataclass
 class RentasPorSubcedula:
-    """Rentas de capital o no laborales (arts. 338 y 340 ET)."""
+    """Rentas de capital o no laborales (arts. 338 y 340 ET).
+
+    `costo_de_ventas` va aparte de `costos_y_gastos` porque lo calcula el
+    kardex del módulo de inventario y no lo digita el contador: separarlo deja
+    ver en el borrador de dónde salió cada cifra.
+    """
 
     ingresos_brutos: Decimal = CERO
     ingresos_no_constitutivos: Decimal = CERO
     costos_y_gastos: Decimal = CERO
+    costo_de_ventas: Decimal = CERO
+    depreciacion: Decimal = CERO
+
+    @property
+    def total_costos(self) -> Decimal:
+        return self.costos_y_gastos + self.costo_de_ventas + self.depreciacion
 
 
 @dataclass
@@ -191,6 +227,22 @@ class InsumosLiquidacion:
     anticipo_pagado_anio_anterior: Decimal = CERO
     saldo_a_favor_anio_anterior: Decimal = CERO
     anios_declarando: int = 3  # 1 = primer año, 2 = segundo, 3 o más = régimen pleno
+
+    # Parte empresarial
+    activos_depreciables: List[ActivoDepreciable] = field(default_factory=list)
+    bancarizacion: InsumosBancarizacion = field(default_factory=InsumosBancarizacion)
+    perdidas_compensables: List[PerdidaCompensable] = field(default_factory=list)
+    comparacion_patrimonial: InsumosComparacionPatrimonial = field(
+        default_factory=InsumosComparacionPatrimonial
+    )
+
+    # Anticipo: "DIRECTO", "PROMEDIO" o "MENOR" (calcula los dos y toma el menor).
+    metodo_anticipo: str = "DIRECTO"
+    impuesto_neto_anio_anterior: Decimal = CERO
+
+    # Subcédula a la que se imputa la depreciación. Depende de la actividad que
+    # produce el activo, así que la decide el contador, no el motor.
+    cedula_depreciacion: str = "NO_LABORAL"
 
 
 # ---------------------------------------------------------------------------
@@ -273,7 +325,7 @@ def aplicar_tabla(
         f"Base {base_uvt.quantize(_CENTAVO)} UVT en el tramo "
         f"{tramo.desde_uvt}–{tramo.hasta_uvt or 'en adelante'} UVT: "
         f"{tramo.impuesto_acumulado_uvt} UVT + "
-        f"{(tramo.tarifa_marginal * 100).normalize()}% × "
+        f"{porcentaje(tramo.tarifa_marginal)}% × "
         f"{exceso_uvt.quantize(_CENTAVO)} UVT = "
         f"{impuesto_uvt.quantize(_CENTAVO)} UVT × ${uvt}"
     )
@@ -465,9 +517,23 @@ def liquidar(
               insumos.patrimonio.patrimonio_liquido,
               "Patrimonio bruto − deudas", "Art. 282 ET"))
 
-    # --- Cédula general: ingresos e INCRNGO -------------------------------
+    # --- Depreciación (arts. 128 a 131 y 137 ET) --------------------------
     trabajo, capital, no_laborales = insumos.trabajo, insumos.capital, insumos.no_laborales
 
+    depreciacion = calcular_depreciacion(insumos.activos_depreciables, parametros)
+    liq.diagnosticos.extend(depreciacion.diagnosticos)
+    for descripcion, valor, formula in depreciacion.detalle:
+        R(Renglon(f"DEP-{_slug(descripcion)}", f"Depreciación — {descripcion}", valor,
+                  formula, parametros.fuente_depreciacion))
+    if depreciacion.total > CERO:
+        R(Renglon("DEP-TOTAL", "Depreciación deducible del periodo", depreciacion.total,
+                  f"Suma de la depreciación de {len(depreciacion.detalle)} activo(s), "
+                  f"imputada a {insumos.cedula_depreciacion}",
+                  parametros.fuente_depreciacion))
+        destino = capital if insumos.cedula_depreciacion == "CAPITAL" else no_laborales
+        destino.depreciacion += depreciacion.total
+
+    # --- Cédula general: ingresos e INCRNGO -------------------------------
     ingresos_cg = (
         trabajo.total_ingresos + capital.ingresos_brutos + no_laborales.ingresos_brutos
     )
@@ -491,19 +557,135 @@ def liquidar(
               "Ingresos de la cédula general − ingresos no constitutivos",
               parametros.limite_general.fuente_legal))
 
-    # --- Costos y gastos --------------------------------------------------
-    costos_cg = capital.costos_y_gastos + no_laborales.costos_y_gastos
+    # --- Renta líquida por subcédula --------------------------------------
+    #
+    # Se calcula subcédula por subcédula y no en bloque, porque el art. 330
+    # exige que una pérdida solo se compense contra rentas del mismo tipo. Sin
+    # este detalle, la compensación se aplicaría contra el total y daría un
+    # impuesto menor al que corresponde.
+    costos_cg = capital.total_costos + no_laborales.total_costos
     if trabajo.opta_por_costos_y_gastos:
         costos_cg += trabajo.costos_y_gastos_sin_vinculo_laboral
-    R(Renglon("CG-COSTOS", "Costos y gastos procedentes", costos_cg,
-              "Imputables a rentas de capital y no laborales. Los de honorarios sin "
-              "vínculo laboral solo si se optó por ellos en vez de la renta exenta "
-              "del art. 206 num. 10",
-              "Art. 336 num. 4 ET"))
 
-    renta_liquida_antes = _no_negativo(base_limite - costos_cg)
+    R(Renglon("CG-COSTOS", "Costos y gastos procedentes", costos_cg,
+              "Imputables a rentas de capital y no laborales, incluidos el costo de "
+              "ventas del inventario y la depreciación. Los de honorarios sin vínculo "
+              "laboral solo si se optó por ellos en vez de la renta exenta del "
+              "art. 206 num. 10",
+              "Art. 336 num. 4 ET"))
+    if capital.costo_de_ventas + no_laborales.costo_de_ventas > CERO:
+        R(Renglon("CG-COSTO-VENTAS", "Costo de ventas del inventario",
+                  capital.costo_de_ventas + no_laborales.costo_de_ventas,
+                  "Calculado por el kardex del módulo de inventario con el método de "
+                  "costeo de cada producto",
+                  "Arts. 62 y 66 ET"))
+
+    # Las rentas líquidas negativas se truncan en cero, pero el exceso no
+    # desaparece: es una pérdida fiscal del ejercicio y el art. 147 permite
+    # compensarla en los doce años siguientes. Si no se reportara, el contador
+    # vería la deducción en el borrador, no la vería restada en ninguna parte y
+    # tampoco sabría que tiene una pérdida que registrar.
+    perdidas_del_ejercicio: dict = {}
+
+    def _renta_subcedula(tipo: str, ingresos: Decimal, incrngo: Decimal, costos: Decimal) -> Decimal:
+        bruta = ingresos - incrngo - costos
+        if bruta < CERO:
+            perdidas_del_ejercicio[tipo] = -bruta
+        return _no_negativo(bruta)
+
+    renta_por_tipo: dict = {}
+    if trabajo.opta_por_costos_y_gastos:
+        renta_por_tipo["TRABAJO_SIN_VINCULO"] = _renta_subcedula(
+            "TRABAJO_SIN_VINCULO",
+            trabajo.ingresos_sin_vinculo_laboral,
+            CERO,
+            trabajo.costos_y_gastos_sin_vinculo_laboral,
+        )
+        renta_trabajo_laboral = _no_negativo(
+            trabajo.ingresos_brutos - trabajo.total_incrngo
+        )
+    else:
+        renta_trabajo_laboral = _no_negativo(
+            trabajo.ingresos_brutos
+            + trabajo.ingresos_sin_vinculo_laboral
+            - trabajo.total_incrngo
+        )
+    renta_por_tipo["CAPITAL"] = _renta_subcedula(
+        "CAPITAL",
+        capital.ingresos_brutos,
+        capital.ingresos_no_constitutivos,
+        capital.total_costos,
+    )
+    renta_por_tipo["NO_LABORAL"] = _renta_subcedula(
+        "NO_LABORAL",
+        no_laborales.ingresos_brutos,
+        no_laborales.ingresos_no_constitutivos,
+        no_laborales.total_costos,
+    )
+
+    for tipo, perdida in perdidas_del_ejercicio.items():
+        R(Renglon(f"CG-PERDIDA-EJERCICIO-{tipo}",
+                  f"Pérdida del ejercicio — {tipo.replace('_', ' ').lower()}",
+                  perdida,
+                  "Los costos y deducciones de esta subcédula superaron sus ingresos. "
+                  "La renta líquida se trunca en cero y el exceso queda como pérdida",
+                  "Arts. 147 y 330 ET"))
+        liq.diagnosticos.append(
+            f"Los costos imputados a {tipo.replace('_', ' ').lower()} superan sus "
+            f"ingresos en ${perdida.quantize(_CENTAVO)}: esa parte NO se dedujo este "
+            f"año. Regístrela como pérdida fiscal de {insumos.anio_gravable} para "
+            f"poder compensarla en los próximos {parametros.anios_compensacion_perdidas} "
+            f"años, o revise si la depreciación y los costos están imputados a la "
+            f"subcédula correcta."
+        )
+
+    # --- Compensación de pérdidas de años anteriores ----------------------
+    compensacion = calcular_compensacion_perdidas(
+        insumos.perdidas_compensables, renta_por_tipo, insumos.anio_gravable, parametros
+    )
+    liq.diagnosticos.extend(compensacion.diagnosticos)
+    for nombre, valor, formula in compensacion.detalle:
+        R(Renglon(f"CG-PERD-{_slug(nombre)}", nombre, valor, formula,
+                  parametros.fuente_compensacion_perdidas))
+    total_compensado = sum(compensacion.por_tipo.values(), CERO)
+    if total_compensado > CERO:
+        R(Renglon("CG-COMPENSACION", "Compensación de pérdidas de años anteriores",
+                  total_compensado,
+                  "Imputadas contra la renta líquida del mismo tipo de renta; las "
+                  "rentas de trabajo con vínculo laboral no admiten compensación",
+                  parametros.fuente_compensacion_perdidas))
+
+    renta_liquida_antes = renta_trabajo_laboral + sum(
+        _no_negativo(renta - compensacion.por_tipo.get(tipo, CERO))
+        for tipo, renta in renta_por_tipo.items()
+    )
+
+    # --- Bancarización (art. 771-5 ET) ------------------------------------
+    #
+    # El efectivo rechazado se devuelve a la renta líquida: se restó como costo
+    # y la norma no lo acepta. Se muestra como renglón propio en vez de
+    # descontarlo del renglón de costos, para que el contador vea cuánto perdió
+    # por pagar en efectivo y pueda cambiar la práctica el año siguiente.
+    banca = calcular_bancarizacion(insumos.bancarizacion, costos_cg, parametros)
+    liq.diagnosticos.extend(banca.diagnosticos)
+    if banca.aplica:
+        R(Renglon("CG-EFECTIVO-ACEPTADO", "Pagos en efectivo aceptados",
+                  banca.efectivo_aceptado, banca.formula,
+                  parametros.bancarizacion.fuente_legal))
+        if banca.efectivo_rechazado > CERO:
+            R(Renglon("CG-EFECTIVO-RECHAZADO",
+                      "Pagos en efectivo no deducibles (se devuelven a la renta)",
+                      banca.efectivo_rechazado,
+                      "Exceso sobre el límite del art. 771-5: se suma de vuelta a la "
+                      "renta líquida porque no es un costo procedente",
+                      parametros.bancarizacion.fuente_legal))
+            renta_liquida_antes += banca.efectivo_rechazado
+
     R(Renglon("CG-RL-ANTES", "Renta líquida antes de rentas exentas y deducciones",
-              renta_liquida_antes, "Base del límite − costos y gastos", "Art. 336 ET"))
+              renta_liquida_antes,
+              "Suma de la renta líquida de cada subcédula, menos las pérdidas "
+              "compensadas, más los pagos en efectivo no deducibles",
+              "Art. 336 ET"))
 
     # --- Conceptos sujetos al límite --------------------------------------
     limitables = [c for c in insumos.conceptos_depuracion if c.sujeto_a_limite_general]
@@ -589,30 +771,11 @@ def liquidar(
             "confírmala contra el certificado y la doctrina vigente antes de presentar."
         )
 
-    # --- Base gravable y tabla del art. 241 --------------------------------
-    base_ordinaria = renta_liquida_cg + renta_liquida_pensiones + renta_liquida_dividendos
-    presuntiva = insumos.renta_presuntiva
-    base_241 = max(base_ordinaria, presuntiva)
-    if presuntiva > CERO:
-        R(Renglon("RENTA-PRESUNTIVA", "Renta presuntiva", presuntiva,
-                  f"Tarifa vigente: {(parametros.tarifa_renta_presuntiva * 100).normalize()}%",
-                  parametros.fuente_renta_presuntiva))
-        if presuntiva > base_ordinaria:
-            liq.diagnosticos.append(
-                f"La renta presuntiva (${presuntiva.quantize(_CENTAVO)}) superó la renta "
-                f"ordinaria (${base_ordinaria.quantize(_CENTAVO)}) y pasó a ser la base "
-                f"del impuesto."
-            )
-
-    R(Renglon("BASE-GRAVABLE", "Renta líquida gravable total", base_241,
-              "Mayor entre la suma de las rentas líquidas cedulares y la renta presuntiva",
-              "Arts. 241, 331 y 188 ET"))
-
-    impuesto_renta, formula_impuesto, _ = aplicar_tabla(base_241, parametros.tabla_renta, uvt)
-    R(Renglon("IMP-RENTA", "Impuesto sobre la renta líquida gravable", impuesto_renta,
-              formula_impuesto, parametros.fuente_tabla_renta))
-
-    # --- Ganancias ocasionales ---------------------------------------------
+    # --- Ganancias ocasionales --------------------------------------------
+    #
+    # Se calculan antes de la base ordinaria porque la comparación patrimonial
+    # necesita la ganancia ocasional neta para saber qué parte del incremento
+    # del patrimonio está explicada.
     go = insumos.ganancias_ocasionales
     base_go = _no_negativo(go.ingresos - go.costos - go.ganancia_exenta)
     impuesto_go = redondear_pesos(base_go * parametros.tarifa_ganancia_ocasional)
@@ -625,12 +788,59 @@ def liquidar(
                   "Arts. 299 a 311-1 ET"))
         R(Renglon("GO-IMPUESTO", "Impuesto de ganancias ocasionales",
                   impuesto_go + impuesto_loterias,
-                  f"{(parametros.tarifa_ganancia_ocasional * 100).normalize()}% × "
+                  f"{porcentaje(parametros.tarifa_ganancia_ocasional)}% × "
                   f"${base_go.quantize(_CENTAVO)}"
-                  + (f" + {(parametros.tarifa_ganancia_ocasional_loterias * 100).normalize()}% × "
+                  + (f" + {porcentaje(parametros.tarifa_ganancia_ocasional_loterias)}% × "
                      f"${go.loterias_rifas_apuestas.quantize(_CENTAVO)} (loterías, rifas y apuestas)"
                      if go.loterias_rifas_apuestas > CERO else ""),
                   parametros.fuente_ganancia_ocasional))
+
+    # --- Base gravable y tabla del art. 241 --------------------------------
+    base_ordinaria = renta_liquida_cg + renta_liquida_pensiones + renta_liquida_dividendos
+
+    # --- Renta por comparación patrimonial (arts. 236 a 239 ET) -----------
+    comparacion = calcular_comparacion_patrimonial(
+        insumos.comparacion_patrimonial,
+        insumos.patrimonio.patrimonio_liquido,
+        base_ordinaria,
+        aceptado + exenta_pensiones,
+        base_go,
+    )
+    liq.diagnosticos.extend(comparacion.diagnosticos)
+    renta_comparacion = CERO
+    if comparacion.aplica and comparacion.diferencia > CERO:
+        R(Renglon("COMP-PATRIMONIAL", "Diferencia patrimonial no justificada",
+                  comparacion.diferencia, comparacion.formula,
+                  "Arts. 236 a 239 ET; art. 1.2.1.19.2 del DUR 1625 de 2016"))
+        if insumos.comparacion_patrimonial.aceptar_como_renta_gravable:
+            renta_comparacion = comparacion.diferencia
+            R(Renglon("COMP-PATRIMONIAL-GRAVADA",
+                      "Renta gravable por comparación patrimonial", renta_comparacion,
+                      "Incorporada a la base por decisión del contador: el art. 236 "
+                      "admite prueba en contrario y no se incorpora sola",
+                      "Art. 236 ET"))
+
+    presuntiva = insumos.renta_presuntiva
+    base_241 = max(base_ordinaria + renta_comparacion, presuntiva)
+    if presuntiva > CERO:
+        R(Renglon("RENTA-PRESUNTIVA", "Renta presuntiva", presuntiva,
+                  f"Tarifa vigente: {porcentaje(parametros.tarifa_renta_presuntiva)}%",
+                  parametros.fuente_renta_presuntiva))
+        if presuntiva > base_ordinaria + renta_comparacion:
+            liq.diagnosticos.append(
+                f"La renta presuntiva (${presuntiva.quantize(_CENTAVO)}) superó la renta "
+                f"ordinaria (${(base_ordinaria + renta_comparacion).quantize(_CENTAVO)}) "
+                f"y pasó a ser la base del impuesto."
+            )
+
+    R(Renglon("BASE-GRAVABLE", "Renta líquida gravable total", base_241,
+              "Mayor entre la suma de las rentas líquidas cedulares (más la renta por "
+              "comparación patrimonial, si se aceptó) y la renta presuntiva",
+              "Arts. 241, 331 y 188 ET"))
+
+    impuesto_renta, formula_impuesto, _ = aplicar_tabla(base_241, parametros.tabla_renta, uvt)
+    R(Renglon("IMP-RENTA", "Impuesto sobre la renta líquida gravable", impuesto_renta,
+              formula_impuesto, parametros.fuente_tabla_renta))
 
     total_a_cargo = impuesto_renta + impuesto_go + impuesto_loterias
     R(Renglon("TOTAL-A-CARGO", "Total impuesto a cargo", total_a_cargo,
@@ -646,7 +856,7 @@ def liquidar(
     if descuento_dividendos > CERO:
         R(Renglon("DESC-DIVIDENDOS", "Descuento tributario por dividendos",
                   descuento_dividendos,
-                  f"{(parametros.descuento_dividendos.porcentaje * 100).normalize()}% × "
+                  f"{porcentaje(parametros.descuento_dividendos.porcentaje)}% × "
                   f"el exceso de la renta líquida cedular de dividendos sobre "
                   f"{parametros.descuento_dividendos.tope_uvt} UVT "
                   f"(${umbral_descuento.quantize(_CENTAVO)})",
@@ -675,20 +885,92 @@ def liquidar(
               "Retenciones del año, incluidas las de dividendos y ganancias ocasionales",
               "Art. 373 ET"))
 
+    # --- Anticipo del año siguiente (art. 807 ET) -------------------------
+    #
+    # La norma permite dos procedimientos y el contribuyente escoge libremente,
+    # pudiendo cambiar de año en año. Casi siempre conviene el menor, así que
+    # el motor calcula los dos y deja elegir —incluida la opción "MENOR", que
+    # toma automáticamente el que resulte más bajo—.
     porcentaje_anticipo = {
         1: parametros.anticipo_primer_anio,
         2: parametros.anticipo_segundo_anio,
     }.get(insumos.anios_declarando, parametros.anticipo_siguientes)
-    anticipo = _no_negativo(
+    pct_texto = f"{porcentaje(porcentaje_anticipo)}%"
+
+    directo = _no_negativo(
         redondear_pesos(impuesto_neto * porcentaje_anticipo - retenciones)
     )
+    formula_directo = (
+        f"{pct_texto} × impuesto neto ${impuesto_neto.quantize(_CENTAVO)} − retenciones "
+        f"${retenciones.quantize(_CENTAVO)}"
+    )
+
+    promedio_base = (impuesto_neto + insumos.impuesto_neto_anio_anterior) / Decimal(2)
+    promedio = _no_negativo(
+        redondear_pesos(promedio_base * porcentaje_anticipo - retenciones)
+    )
+    formula_promedio = (
+        f"{pct_texto} × promedio de los dos últimos años "
+        f"(${impuesto_neto.quantize(_CENTAVO)} y "
+        f"${insumos.impuesto_neto_anio_anterior.quantize(_CENTAVO)}) = "
+        f"${promedio_base.quantize(_CENTAVO)} − retenciones "
+        f"${retenciones.quantize(_CENTAVO)}"
+    )
+
+    metodo = (insumos.metodo_anticipo or "DIRECTO").upper()
+    # Sin impuesto neto del año anterior registrado, el promedio sería
+    # (neto + 0) / 2: la mitad del anticipo que corresponde. Eso no es un
+    # ahorro, es un dato faltante, y declararlo así expondría al contribuyente
+    # a una sanción por anticipo insuficiente. Se cae al método directo.
+    if (
+        metodo in {"PROMEDIO", "MENOR"}
+        and insumos.anios_declarando > 1
+        and insumos.impuesto_neto_anio_anterior <= CERO
+    ):
+        liq.diagnosticos.append(
+            "No hay impuesto neto del año anterior registrado, así que el método "
+            "del promedio del art. 807 daría la mitad del anticipo que corresponde. "
+            "Se usó el método directo; registre el impuesto neto del año anterior "
+            "para poder comparar los dos procedimientos."
+        )
+        metodo = "DIRECTO"
+    if metodo in {"PROMEDIO", "MENOR"} and insumos.anios_declarando <= 1:
+        liq.diagnosticos.append(
+            "Es la primera declaración, así que no hay impuesto neto del año "
+            "anterior para promediar: se usó el método directo. El art. 807 habla "
+            "del promedio de los dos últimos años y la DIAN discute su uso cuando "
+            "no existe el año anterior."
+        )
+        metodo = "DIRECTO"
+
+    if metodo == "PROMEDIO":
+        anticipo, formula_anticipo = promedio, formula_promedio
+    elif metodo == "MENOR":
+        if promedio < directo:
+            anticipo, formula_anticipo = promedio, formula_promedio
+        else:
+            anticipo, formula_anticipo = directo, formula_directo
+        formula_anticipo += (
+            f". Se escogió el menor entre el método directo (${directo}) y el del "
+            f"promedio (${promedio})"
+        )
+    else:
+        anticipo, formula_anticipo = directo, formula_directo
+
     R(Renglon("ANTICIPO-SIGUIENTE", "Anticipo del impuesto del año siguiente", anticipo,
-              f"{(porcentaje_anticipo * 100).normalize()}% × impuesto neto "
-              f"${impuesto_neto.quantize(_CENTAVO)} − retenciones "
-              f"${retenciones.quantize(_CENTAVO)}. Se aplicó el método directo; el "
-              f"art. 807 permite también el promedio de los dos últimos años, que "
-              f"puede dar menos",
-              parametros.fuente_anticipo))
+              formula_anticipo, parametros.fuente_anticipo))
+
+    if (
+        metodo == "DIRECTO"
+        and insumos.impuesto_neto_anio_anterior > CERO
+        and promedio < directo
+        and insumos.anios_declarando > 1
+    ):
+        liq.diagnosticos.append(
+            f"El método del promedio del art. 807 daría un anticipo de ${promedio} en "
+            f"vez de ${directo}: ${directo - promedio} menos. El contribuyente puede "
+            f"escoger el procedimiento, así que conviene revisarlo."
+        )
 
     # --- Saldo --------------------------------------------------------------
     neto = (

@@ -257,7 +257,10 @@ def test_liquida_un_asalariado_con_deducciones_y_activos(client):
     assert _valor(liq, "RETENCIONES") == D("9500000.00")
     assert _valor(liq, "SALDO-A-PAGAR") == D("0.00")
     assert _valor(liq, "SALDO-A-FAVOR") > D("0")
-    assert liq["diagnosticos"] == []
+    # Nada se recortó: lo solicitado cabía en el límite del art. 336. El único
+    # aviso es que no hay año anterior contra el cual comparar el patrimonio.
+    assert not any("límite" in d for d in liq["diagnosticos"])
+    assert [d for d in liq["diagnosticos"] if "comparación patrimonial" in d]
 
 
 def test_un_ingreso_sin_clasificar_no_entra_en_la_liquidacion_y_se_reporta(client):
