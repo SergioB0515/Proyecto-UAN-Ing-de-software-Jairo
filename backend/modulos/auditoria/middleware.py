@@ -25,6 +25,7 @@ ACCIONES_AUDITADAS = {
     "eliminar_fuente_ingreso": "Eliminó una fuente de ingreso",
     "importar_exogena": "Importó un archivo de exógena",
     "registrar_umbral": "Registró o cambió un umbral de declaración",
+    "cargar_umbral_oficial": "Cargó los topes oficiales para declarar",
     "reemplazar_plazos": "Cambió el calendario de vencimientos",
     "cargar_calendario_oficial": "Cargó el calendario oficial de vencimientos",
     "crear_categoria": "Creó una categoría",
@@ -42,6 +43,15 @@ ACCIONES_AUDITADAS = {
     "actualizar_adjunto": "Editó los datos de un soporte",
     "eliminar_adjunto": "Eliminó un soporte",
     "descargar_soportes": "Descargó los soportes de un año en ZIP",
+    # Liquidación. Se auditan también las decisiones profesionales —qué
+    # cédula se asignó a un ingreso, qué deducción se solicitó— porque son
+    # las que determinan el impuesto y son las que habría que poder
+    # reconstruir frente a una revisión de la DIAN.
+    "actualizar_hoja": "Actualizó la hoja de liquidación",
+    "crear_deduccion": "Solicitó una deducción o renta exenta",
+    "eliminar_deduccion": "Eliminó una deducción solicitada",
+    "clasificar_ingresos": "Clasificó fuentes de ingreso por cédula",
+    "exportar_liquidacion": "Exportó el borrador de liquidación",
 }
 
 

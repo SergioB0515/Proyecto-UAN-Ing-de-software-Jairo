@@ -161,3 +161,25 @@ def test_verificar_obligacion_sin_umbral_configurado_falla(client):
     )
 
     assert respuesta.status_code == 409
+
+
+def test_cargar_los_topes_oficiales_deja_la_obligacion_evaluable(client):
+    """Los topes los fija la ley: deben poder cargarse sin teclearlos."""
+    token = _crear_contador_y_token(client, "par-oficial@example.com")
+    h = _headers(token)
+
+    cargado = client.post("/parametros/umbrales/oficiales/2025", headers=h)
+
+    assert cargado.status_code == 201
+    cuerpo = cargado.json()
+    assert cuerpo["anio_gravable"] == 2025
+    assert cuerpo["valor_uvt"] == 49799
+    assert cuerpo["tope_ingresos_uvt"] == 1400
+    assert cuerpo["tope_patrimonio_uvt"] == 4500
+
+
+def test_cargar_topes_de_un_ano_sin_tabla_oficial_falla_con_la_lista_de_anios(client):
+    token = _crear_contador_y_token(client, "par-oficial-2@example.com")
+    respuesta = client.post("/parametros/umbrales/oficiales/2015", headers=_headers(token))
+    assert respuesta.status_code == 422
+    assert "disponibles" in respuesta.json()["detail"]

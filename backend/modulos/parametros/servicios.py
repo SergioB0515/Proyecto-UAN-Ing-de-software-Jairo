@@ -5,6 +5,7 @@ from typing import List, Optional
 from sqlmodel import Session, delete, select
 
 from core.excepciones import (
+    AnioGravableNoSoportadoError,
     CalendarioInvalidoError,
     CalendarioOficialNoDisponibleError,
     UmbralNoConfiguradoError,
@@ -14,6 +15,7 @@ from ..contribuyentes.servicios import obtener_periodo_fiscal
 from ..exogena.modelos import TopeExogena
 from ..exogena.servicios import obtener_reporte_mas_reciente
 from .calendario_oficial import CALENDARIOS_OFICIALES
+from .tablas_oficiales import ANIOS_SOPORTADOS, PARAMETROS_POR_ANIO
 from .modelos import (
     DetalleCriterio,
     EstadoVencimiento,
@@ -34,6 +36,36 @@ def registrar_umbral(
     session.commit()
     session.refresh(umbral)
     return umbral
+
+
+def cargar_umbral_oficial(session: Session, anio_gravable: int) -> UmbralDeclaracion:
+    """Carga los topes para declarar del año desde la tabla oficial.
+
+    Mismo patrón que `cargar_calendario_oficial`: los topes los fija la ley
+    (arts. 592 y 594-3 ET), no son una preferencia del contador, así que no
+    deberían teclearse a mano. El endpoint de umbrales sigue disponible para
+    sobrescribirlos si una norma cambia antes de que salga una versión nueva.
+    """
+    parametros = PARAMETROS_POR_ANIO.get(anio_gravable)
+    if parametros is None:
+        disponibles = ", ".join(str(a) for a in ANIOS_SOPORTADOS)
+        raise AnioGravableNoSoportadoError(
+            f"La aplicación no trae los topes oficiales de {anio_gravable} "
+            f"(disponibles: {disponibles}); regístralos a mano"
+        )
+    topes = parametros.topes_declarar_uvt
+    return registrar_umbral(
+        session,
+        UmbralDeclaracionCrear(
+            anio_gravable=anio_gravable,
+            valor_uvt=float(parametros.uvt),
+            tope_ingresos_uvt=float(topes["ingresos_brutos"]),
+            tope_patrimonio_uvt=float(topes["patrimonio_bruto"]),
+            tope_consumo_tc_uvt=float(topes["consumos_tarjeta_credito"]),
+            tope_compras_uvt=float(topes["compras_y_consumos"]),
+            tope_movimiento_uvt=float(topes["consignaciones_y_depositos"]),
+        ),
+    )
 
 
 def obtener_umbral_vigente(session: Session, anio_gravable: int) -> UmbralDeclaracion:

@@ -154,3 +154,11 @@ class EntidadAdjuntoNoEncontradaError(ErrorAplicacion):
 
 class EntidadSinAdjuntosError(ErrorAplicacion):
     pass
+
+
+class AnioGravableNoSoportadoError(ErrorAplicacion):
+    """El año gravable no tiene parámetros tributarios cargados."""
+
+
+class DeduccionNoEncontradaError(ErrorAplicacion):
+    pass

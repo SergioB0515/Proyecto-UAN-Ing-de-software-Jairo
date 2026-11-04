@@ -28,6 +28,7 @@ const routes = [
       { path: 'exogena', name: 'exogena', component: () => import('../views/ExogenaView.vue') },
       { path: 'conciliacion', name: 'conciliacion', component: () => import('../views/ConciliacionView.vue') },
       { path: 'borrador', name: 'borrador', component: () => import('../views/BorradorView.vue') },
+      { path: 'liquidacion', name: 'liquidacion', component: () => import('../views/LiquidacionView.vue') },
       { path: 'inventario', name: 'inventario', component: () => import('../views/InventarioView.vue') },
       { path: 'soportes', name: 'soportes', component: () => import('../views/SoportesView.vue') },
       { path: 'cierre', name: 'cierre', component: () => import('../views/CierreView.vue') },

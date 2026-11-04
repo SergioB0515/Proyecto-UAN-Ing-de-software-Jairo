@@ -115,6 +115,7 @@ const pestanas = computed(() => [
   { nombre: 'exogena', texto: 'Exógena' },
   { nombre: 'conciliacion', texto: 'Conciliación' },
   { nombre: 'borrador', texto: 'Borrador por renglón' },
+  { nombre: 'liquidacion', texto: 'Liquidación 210' },
   ...(manejaInventario.value ? [{ nombre: 'inventario', texto: 'Inventario' }] : []),
   { nombre: 'soportes', texto: 'Soportes' },
   { nombre: 'cierre', texto: 'Cierre y reportes' },

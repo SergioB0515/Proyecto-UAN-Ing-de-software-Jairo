@@ -32,7 +32,7 @@ y filtran por el contador del token.
 | `POST/GET /contribuyentes/{id}/periodos-fiscales` | — |
 | `POST /contribuyentes/{id}/periodos-fiscales/{pid}/exogena` (multipart, campo `archivo`) | HU-05 |
 | `GET /contribuyentes/{id}/reportes-exogena`, `.../{rid}/topes`, `.../{rid}/registros?concepto_code=&nit_reportante=` | HU-06 |
-| `POST/GET /parametros/umbrales`, `GET /parametros/contribuyentes/{id}/periodos-fiscales/{pid}/obligacion` | HU-07 |
+| `POST/GET /parametros/umbrales`, `POST /parametros/umbrales/oficiales/{anio}`, `GET /parametros/contribuyentes/{id}/periodos-fiscales/{pid}/obligacion` | HU-07 |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/conciliacion` | HU-08, HU-09 |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/borrador-renglones` | HU-10 |
 | `POST/GET /contribuyentes/{id}/categorias`, `DELETE .../categorias/{cid}` | HU-11 |
@@ -50,6 +50,7 @@ y filtran por el contador del token.
 | `GET/PUT /parametros/plazos/{anio}`, `POST /parametros/plazos/{anio}/calendario-oficial` | HU-25 |
 | `PATCH /contribuyentes/{id}/periodos-fiscales/{pid}` (`fecha_presentacion`, `fecha_vencimiento_manual`) | HU-26 |
 | `GET /cartera?orden=vencimiento`, `GET /cartera/exportar?formato=xlsx\|pdf` | HU-25, HU-27 |
+| `GET /liquidacion/cedulas`, `GET/PATCH /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}/hoja`, `POST/GET/DELETE .../deducciones`, `GET/PUT .../ingresos`, `GET /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}`, `GET .../exportar?formato=xlsx\|pdf` (ver [modulos/liquidacion](modulos/liquidacion/README.md)) | — |
 | `POST/GET /contribuyentes/{id}/adjuntos`, `GET .../adjuntos/resumen`, `GET/PATCH/DELETE .../adjuntos/{aid}`, `GET .../periodos-fiscales/{pid}/soportes/zip` (ver [modulos/adjuntos](modulos/adjuntos/README.md)) | — |
 
 Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el

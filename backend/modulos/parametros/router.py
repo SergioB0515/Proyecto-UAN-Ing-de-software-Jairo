@@ -5,6 +5,7 @@ from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
 from core.excepciones import (
+    AnioGravableNoSoportadoError,
     CalendarioInvalidoError,
     CalendarioOficialNoDisponibleError,
     ContribuyenteNoEncontradoError,
@@ -36,6 +37,23 @@ def registrar_umbral(
     session: Session = Depends(obtener_sesion),
 ):
     return servicios.registrar_umbral(session, datos)
+
+
+@router.post(
+    "/umbrales/oficiales/{anio_gravable}",
+    response_model=UmbralDeclaracionLeer,
+    status_code=status.HTTP_201_CREATED,
+)
+def cargar_umbral_oficial(
+    anio_gravable: int = Path(ge=2000, le=2100),
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Carga los topes para declarar del año desde la tabla oficial de la aplicación."""
+    try:
+        return servicios.cargar_umbral_oficial(session, anio_gravable)
+    except AnioGravableNoSoportadoError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/umbrales", response_model=List[UmbralDeclaracionLeer])
