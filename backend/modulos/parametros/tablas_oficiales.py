@@ -67,6 +67,26 @@ class LimiteUvt:
 
 
 @dataclass(frozen=True)
+class TopeDeduccion:
+    """Tope propio de una deducción o renta exenta, aparte del límite general.
+
+    `grupo` junta los conceptos que COMPARTEN un tope: los aportes voluntarios
+    a pensión y el ahorro en AFC no tienen 3.800 UVT cada uno, tienen 3.800 UVT
+    entre los dos. Tratarlos por separado duplicaría el beneficio.
+
+    `porcentaje_de_ingresos` es un segundo techo que se evalúa junto con el
+    tope en UVT: manda el menor de los dos.
+    """
+
+    codigo: str
+    tope_uvt: Optional[Decimal]
+    es_mensual: bool
+    porcentaje_de_ingresos: Optional[Decimal]
+    grupo: Optional[str]
+    fuente_legal: str
+
+
+@dataclass(frozen=True)
 class LimiteBancarizacion:
     """Límites del art. 771-5 para aceptar pagos en efectivo.
 
@@ -109,6 +129,9 @@ class ParametrosAnuales:
     tarifa_ganancia_ocasional_loterias: Decimal
     fuente_ganancia_ocasional: str
     exencion_go_vivienda_uvt: Decimal
+
+    # Topes propios de cada deducción, anteriores al límite general.
+    topes_deducciones: Dict[str, TopeDeduccion]
 
     # Pagos en efectivo (bancarización).
     bancarizacion: LimiteBancarizacion
@@ -191,6 +214,45 @@ _TASAS_DEPRECIACION = {
     "EQUIPO_DE_COMUNICACION": Decimal("0.2000"),
 }
 
+# ---------------------------------------------------------------------------
+# Topes propios de las deducciones y rentas exentas
+#
+# Se aplican ANTES del límite general del art. 336 num. 3: primero cada
+# concepto se recorta a su propio techo, y solo después la suma pasa por el
+# 40 % / 1.340 UVT. Invertir el orden acepta deducciones improcedentes cuando
+# el límite general no alcanza a morder.
+#
+# Los cuatro están en el instructivo oficial del formulario 210 de la DIAN.
+# ---------------------------------------------------------------------------
+
+_TOPES_DEDUCCIONES = {
+    "INTERESES_VIVIENDA": TopeDeduccion(
+        "INTERESES_VIVIENDA", Decimal("1200"), False, None, None,
+        "Art. 119 ET (1.200 UVT anuales)",
+    ),
+    "INTERESES_ICETEX": TopeDeduccion(
+        "INTERESES_ICETEX", Decimal("100"), False, None, None,
+        "Art. 119 ET (100 UVT anuales)",
+    ),
+    "MEDICINA_PREPAGADA": TopeDeduccion(
+        "MEDICINA_PREPAGADA", Decimal("16"), True, None, None,
+        "Art. 387 num. 1 ET (16 UVT mensuales)",
+    ),
+    "DEPENDIENTES_387": TopeDeduccion(
+        "DEPENDIENTES_387", Decimal("32"), True, Decimal("0.10"), None,
+        "Art. 387 num. 2 ET (10 % del ingreso, tope 32 UVT mensuales)",
+    ),
+    "APORTES_VOLUNTARIOS_PENSION": TopeDeduccion(
+        "APORTES_VOLUNTARIOS_PENSION", Decimal("3800"), False, Decimal("0.30"),
+        "AHORRO_PREVISIONAL",
+        "Art. 126-1 ET (30 % del ingreso, tope 3.800 UVT, compartido con AFC)",
+    ),
+    "AHORRO_AFC": TopeDeduccion(
+        "AHORRO_AFC", Decimal("3800"), False, Decimal("0.30"), "AHORRO_PREVISIONAL",
+        "Art. 126-4 ET (30 % del ingreso, tope 3.800 UVT, compartido con pensión voluntaria)",
+    ),
+}
+
 _TOPES_DECLARAR = {
     "patrimonio_bruto": Decimal("4500"),
     "ingresos_brutos": Decimal("1400"),
@@ -259,6 +321,7 @@ def _parametros_ley_2277(anio: int, uvt: str, fuente_uvt: str) -> ParametrosAnua
         tarifa_ganancia_ocasional_loterias=Decimal("0.20"),
         fuente_ganancia_ocasional="Arts. 313 a 317 ET, modificados por la Ley 2277 de 2022, arts. 32 a 35",
         exencion_go_vivienda_uvt=Decimal("5000"),
+        topes_deducciones=dict(_TOPES_DEDUCCIONES),
         bancarizacion=LimiteBancarizacion(
             porcentaje_de_pagos=Decimal("0.40"),
             tope_uvt=Decimal("40000"),

@@ -109,6 +109,10 @@ class ConceptoDepuracion:
     valor: Decimal
     sujeto_a_limite_general: bool = True
     fuente_legal: str = ""
+    # Código del catálogo de plantillas. Es lo que permite al motor saber qué
+    # tope propio le corresponde al concepto. Sin él no se aplica ninguno:
+    # para una deducción escrita a mano, el motor no puede adivinar su techo.
+    codigo_tope: Optional[str] = None
 
 
 @dataclass
@@ -379,6 +383,125 @@ def _renta_exenta_trabajo(
             "restar costos y gastos (art. 336 num. 4)"
         )
     return redondear_pesos(exenta), formula
+
+
+def _aplicar_topes_propios(
+    conceptos: List[ConceptoDepuracion],
+    parametros: ParametrosAnuales,
+    ingresos_base: Decimal,
+) -> Tuple[List[ConceptoDepuracion], List[Renglon], List[str]]:
+    """Recorta cada concepto a su propio tope, antes del límite general.
+
+    El orden es el de la ley y no es intercambiable: primero el techo propio de
+    cada concepto (1.200 UVT los intereses de vivienda, 16 UVT mensuales la
+    medicina prepagada, 3.800 UVT los aportes previsionales), y solo después la
+    suma pasa por el 40 % / 1.340 UVT del art. 336 num. 3.
+
+    Al revés, una deducción improcedente entra a la bolsa y el límite general
+    la tapa: el total parece razonable, la composición está mal y, si el límite
+    general no alcanza a morder, el impuesto sale más bajo de lo que debe.
+
+    Los conceptos que comparten tope —los aportes voluntarios a pensión y el
+    ahorro en AFC comparten 3.800 UVT entre los dos— se recortan como grupo y
+    a prorrata, no uno por uno.
+    """
+    ajustados: List[ConceptoDepuracion] = []
+    renglones: List[Renglon] = []
+    diagnosticos: List[str] = []
+
+    def tope_en_pesos(tope) -> Optional[Decimal]:
+        if tope.tope_uvt is None:
+            return None
+        meses = Decimal(12) if tope.es_mensual else Decimal(1)
+        absoluto = tope.tope_uvt * parametros.uvt * meses
+        if tope.porcentaje_de_ingresos is not None:
+            return min(absoluto, ingresos_base * tope.porcentaje_de_ingresos)
+        return absoluto
+
+    # Conceptos agrupados por tope compartido; None = tope individual.
+    grupos: dict = {}
+    for concepto in conceptos:
+        tope = parametros.topes_deducciones.get(concepto.codigo_tope or "")
+        clave = tope.grupo if tope and tope.grupo else None
+        grupos.setdefault(clave, []).append((concepto, tope))
+
+    for clave, miembros in grupos.items():
+        if clave is None:
+            for concepto, tope in miembros:
+                limite = tope_en_pesos(tope) if tope else None
+                if limite is None or concepto.valor <= limite:
+                    ajustados.append(concepto)
+                    continue
+                recorte = concepto.valor - limite
+                ajustados.append(
+                    ConceptoDepuracion(
+                        nombre=concepto.nombre,
+                        valor=redondear_pesos(limite),
+                        sujeto_a_limite_general=concepto.sujeto_a_limite_general,
+                        fuente_legal=concepto.fuente_legal,
+                        codigo_tope=concepto.codigo_tope,
+                    )
+                )
+                renglones.append(
+                    Renglon(
+                        f"CG-TOPE-{_slug(concepto.nombre)}",
+                        f"{concepto.nombre} — recortado a su tope propio",
+                        redondear_pesos(limite),
+                        f"solicitado ${concepto.valor.quantize(_CENTAVO)}, tope "
+                        f"${limite.quantize(_CENTAVO)}",
+                        tope.fuente_legal,
+                    )
+                )
+                diagnosticos.append(
+                    f"«{concepto.nombre}»: se solicitaron "
+                    f"${concepto.valor.quantize(_CENTAVO)} y el tope propio del "
+                    f"concepto es ${limite.quantize(_CENTAVO)} "
+                    f"({tope.fuente_legal}). Se recortaron "
+                    f"${recorte.quantize(_CENTAVO)} antes de aplicar el límite "
+                    f"general del art. 336."
+                )
+            continue
+
+        # Tope compartido: se evalúa sobre la suma del grupo.
+        tope = miembros[0][1]
+        limite = tope_en_pesos(tope)
+        solicitado = sum((c.valor for c, _ in miembros), CERO)
+        if limite is None or solicitado <= limite:
+            ajustados.extend(c for c, _ in miembros)
+            continue
+
+        factor = limite / solicitado
+        for concepto, _ in miembros:
+            ajustados.append(
+                ConceptoDepuracion(
+                    nombre=concepto.nombre,
+                    valor=redondear_pesos(concepto.valor * factor),
+                    sujeto_a_limite_general=concepto.sujeto_a_limite_general,
+                    fuente_legal=concepto.fuente_legal,
+                    codigo_tope=concepto.codigo_tope,
+                )
+            )
+        renglones.append(
+            Renglon(
+                f"CG-TOPE-GRUPO-{_slug(clave)}",
+                f"Tope compartido — {clave.replace('_', ' ').lower()}",
+                redondear_pesos(limite),
+                f"solicitado entre {len(miembros)} concepto(s) "
+                f"${solicitado.quantize(_CENTAVO)}, tope conjunto "
+                f"${limite.quantize(_CENTAVO)}, repartido a prorrata",
+                tope.fuente_legal,
+            )
+        )
+        diagnosticos.append(
+            f"Los conceptos que comparten el tope de "
+            f"{clave.replace('_', ' ').lower()} suman "
+            f"${solicitado.quantize(_CENTAVO)} y ese tope es "
+            f"${limite.quantize(_CENTAVO)} ({tope.fuente_legal}). No es un tope "
+            f"por concepto: se recortaron ${(solicitado - limite).quantize(_CENTAVO)} "
+            f"repartidos a prorrata."
+        )
+
+    return ajustados, renglones, diagnosticos
 
 
 def _aplicar_limite_general(
@@ -687,10 +810,18 @@ def liquidar(
               "compensadas, más los pagos en efectivo no deducibles",
               "Art. 336 ET"))
 
+    # --- Topes propios de cada concepto, antes del límite general ---------
+    conceptos, renglones_tope, diag_tope = _aplicar_topes_propios(
+        insumos.conceptos_depuracion, parametros, base_limite
+    )
+    for renglon in renglones_tope:
+        R(renglon)
+    liq.diagnosticos.extend(diag_tope)
+
     # --- Conceptos sujetos al límite --------------------------------------
-    limitables = [c for c in insumos.conceptos_depuracion if c.sujeto_a_limite_general]
+    limitables = [c for c in conceptos if c.sujeto_a_limite_general]
     no_limitables_informados = [
-        c for c in insumos.conceptos_depuracion if not c.sujeto_a_limite_general
+        c for c in conceptos if not c.sujeto_a_limite_general
     ]
     suma_limitables_informados = sum((c.valor for c in limitables), CERO)
 

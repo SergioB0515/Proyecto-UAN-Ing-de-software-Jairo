@@ -145,6 +145,9 @@ def crear_tablas() -> None:
             "cedula_depreciacion": "VARCHAR NOT NULL DEFAULT 'NO_LABORAL'",
         },
     )
+    _agregar_columnas_si_faltan(
+        engine, "deducciones_solicitadas", {"codigo_plantilla": "VARCHAR"}
+    )
 
 
 def obtener_sesion() -> Iterator[Session]:

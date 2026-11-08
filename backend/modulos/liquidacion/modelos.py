@@ -212,6 +212,10 @@ class DeduccionSolicitadaBase(SQLModel):
     valor: Decimal = Field(sa_type=Numeric(18, 2), ge=0)
     sujeto_a_limite_general: bool = Field(default=True)
     fuente_legal: str = Field(default="", max_length=200)
+    # De qué concepto del catálogo salió. Es lo que le permite al motor saber
+    # qué tope propio aplicarle: una deducción escrita a mano no tiene techo
+    # conocido y el motor no puede inventarle uno.
+    codigo_plantilla: Optional[str] = Field(default=None, max_length=60)
 
 
 class DeduccionSolicitada(DeduccionSolicitadaBase, table=True):

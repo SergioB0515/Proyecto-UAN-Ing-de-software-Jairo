@@ -431,6 +431,7 @@ def construir_insumos(
                 valor=_dec(d.valor),
                 sujeto_a_limite_general=d.sujeto_a_limite_general,
                 fuente_legal=d.fuente_legal,
+                codigo_tope=d.codigo_plantilla,
             )
             for d in deducciones
         ],
@@ -825,6 +826,7 @@ def crear_deduccion_desde_plantilla(
             valor=valor,
             sujeto_a_limite_general=plantilla.sujeto_a_limite_general,
             fuente_legal=plantilla.fuente_legal,
+            codigo_plantilla=plantilla.codigo,
         ),
     )
 
