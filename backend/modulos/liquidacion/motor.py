@@ -35,6 +35,19 @@ from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Tuple
 
 from ..parametros.tablas_oficiales import ParametrosAnuales, TramoTarifa
+from .cedula_general import (
+    CAPITAL,
+    DEDUCCION_OTRA,
+    DEDUCCION_VIVIENDA,
+    EXENTA_AFC,
+    EXENTA_OTRA,
+    NO_LABORAL,
+    SIN_VINCULO,
+    SUBCEDULAS,
+    TRABAJO,
+    casillas_de,
+)
+from .cedula_general import depurar as depurar_cedula_general
 from .calculos_empresariales import (
     ActivoDepreciable,
     InsumosBancarizacion,
@@ -49,6 +62,13 @@ from .calculos_empresariales import (
 CERO = Decimal("0")
 _CENTAVO = Decimal("0.01")
 _MIL = Decimal("1000")
+
+_NOMBRE_SUBCEDULA = {
+    TRABAJO: "rentas de trabajo",
+    SIN_VINCULO: "rentas de trabajo sin vínculo laboral",
+    CAPITAL: "rentas de capital",
+    NO_LABORAL: "rentas no laborales",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +133,19 @@ class ConceptoDepuracion:
     # tope propio le corresponde al concepto. Sin él no se aplica ninguno:
     # para una deducción escrita a mano, el motor no puede adivinar su techo.
     codigo_tope: Optional[str] = None
+    # Columna del formulario 210 a la que se imputa. El límite del art. 336
+    # num. 3 es uno solo para toda la cédula general, pero el formulario pide
+    # las exentas y deducciones separadas por subcédula (casillas 41, 53, 69 y
+    # 86), así que cada concepto tiene que saber a cuál pertenece.
+    #
+    # `None` significa que el contador no la fijó: el motor la reparte entre
+    # las columnas con renta líquida, en el orden del formulario. Fijarla es
+    # mejor cuando se sabe, porque la imputación cambia en qué casilla aparece.
+    subcedula: Optional[str] = None
+    # Fila del formulario. Los aportes voluntarios a AFC, FVP y AVC tienen
+    # casilla propia (35, 47, 63, 80), separada de las demás rentas exentas, y
+    # los intereses de vivienda también (38, 50, 66, 83).
+    tipo: str = EXENTA_OTRA
 
 
 @dataclass
@@ -154,14 +187,28 @@ class RentasPorSubcedula:
     """
 
     ingresos_brutos: Decimal = CERO
+    # Devoluciones, rebajas y descuentos en ventas (casilla 75 del 210). Solo
+    # las rentas no laborales tienen esta fila en el formulario.
+    devoluciones: Decimal = CERO
     ingresos_no_constitutivos: Decimal = CERO
     costos_y_gastos: Decimal = CERO
     costo_de_ventas: Decimal = CERO
     depreciacion: Decimal = CERO
+    # Costos que se restaron en los libros pero que la ley no acepta, hoy solo
+    # los pagos en efectivo que exceden el límite del art. 771-5. Se llevan en
+    # un campo propio para no alterar las cifras que vienen del kardex ni de la
+    # tabla de depreciación: así la casilla de costos del formulario queda con
+    # el valor procedente exacto y el origen de cada cifra sigue siendo visible.
+    costos_no_procedentes: Decimal = CERO
 
     @property
     def total_costos(self) -> Decimal:
-        return self.costos_y_gastos + self.costo_de_ventas + self.depreciacion
+        return _no_negativo(
+            self.costos_y_gastos
+            + self.costo_de_ventas
+            + self.depreciacion
+            - self.costos_no_procedentes
+        )
 
 
 @dataclass
@@ -263,6 +310,10 @@ class Renglon:
     valor: Decimal
     formula: str = ""
     fuente_legal: str = ""
+    # Número de casilla del formulario 210 cuando el renglón corresponde a una.
+    # Es lo que permite imprimir la grilla sin que nadie tenga que mantener un
+    # segundo mapa de códigos a casillas.
+    casilla: Optional[int] = None
 
     @property
     def valor_declarable(self) -> Decimal:
@@ -543,22 +594,27 @@ def _aplicar_limite_general(
 
 def _deducciones_fuera_del_limite(
     insumos: InsumosLiquidacion, parametros: ParametrosAnuales
-) -> Tuple[Decimal, List[Renglon]]:
+) -> Tuple[dict, List[Renglon]]:
     """Deducciones que la ley dejó por fuera del límite del 40 %.
 
     Son dos: la deducción por dependientes (72 UVT por cada uno, hasta cuatro,
     adicional al límite general) y el 1 % de las compras soportadas en factura
     electrónica, topado en 240 UVT (art. 336 num. 5).
+
+    Se devuelven separadas y no sumadas porque el formulario 210 las pide en
+    casillas distintas —139 y 28— y cada una tiene además su propio techo: la
+    de dependientes no puede exceder la renta líquida ordinaria de las rentas
+    de trabajo, y la del 1 % no puede dar lugar a pérdidas.
     """
     renglones: List[Renglon] = []
-    total = CERO
+    montos: dict = {}
 
     dependientes = max(0, min(insumos.numero_dependientes, parametros.max_dependientes))
     if dependientes:
         valor = redondear_pesos(
             Decimal(dependientes) * (parametros.deduccion_dependientes.tope_uvt or CERO) * parametros.uvt
         )
-        total += valor
+        montos["DEPENDIENTES_336"] = valor
         renglones.append(
             Renglon(
                 codigo="DED-DEPENDIENTES",
@@ -582,7 +638,7 @@ def _deducciones_fuera_del_limite(
         porcentual = insumos.compras_con_factura_electronica * (limite.porcentaje or CERO)
         tope = (limite.tope_uvt or CERO) * parametros.uvt
         valor = redondear_pesos(min(porcentual, tope))
-        total += valor
+        montos["COMPRAS_1_PCT"] = valor
         renglones.append(
             Renglon(
                 codigo="DED-COMPRAS-1PCT",
@@ -598,7 +654,7 @@ def _deducciones_fuera_del_limite(
             )
         )
 
-    return total, renglones
+    return montos, renglones
 
 
 # ---------------------------------------------------------------------------
@@ -656,139 +712,25 @@ def liquidar(
         destino = capital if insumos.cedula_depreciacion == "CAPITAL" else no_laborales
         destino.depreciacion += depreciacion.total
 
-    # --- Cédula general: ingresos e INCRNGO -------------------------------
-    ingresos_cg = (
-        trabajo.total_ingresos + capital.ingresos_brutos + no_laborales.ingresos_brutos
-    )
-    incrngo_cg = (
-        trabajo.total_incrngo
-        + capital.ingresos_no_constitutivos
-        + no_laborales.ingresos_no_constitutivos
-    )
-    # Base del 40 %: ingresos menos INCRNGO, antes de costos y gastos.
-    base_limite = _no_negativo(ingresos_cg - incrngo_cg)
-
-    R(Renglon("CG-INGRESOS", "Ingresos brutos de la cédula general", ingresos_cg,
-              "Rentas de trabajo + rentas de capital + rentas no laborales. "
-              "No incluye dividendos ni ganancias ocasionales",
-              "Arts. 335, 338 y 340 ET"))
-    R(Renglon("CG-INCRNGO", "Ingresos no constitutivos de renta ni ganancia ocasional",
-              incrngo_cg,
-              "Aportes obligatorios a salud y pensión y demás conceptos no constitutivos",
-              "Arts. 55 y 56 ET"))
-    R(Renglon("CG-BASE-LIMITE", "Base para el límite del 40 %", base_limite,
-              "Ingresos de la cédula general − ingresos no constitutivos",
-              parametros.limite_general.fuente_legal))
-
-    # --- Renta líquida por subcédula --------------------------------------
+    # --- Cédula general ----------------------------------------------------
     #
-    # Se calcula subcédula por subcédula y no en bloque, porque el art. 330
-    # exige que una pérdida solo se compense contra rentas del mismo tipo. Sin
-    # este detalle, la compensación se aplicaría contra el total y daría un
-    # impuesto menor al que corresponde.
+    # El formulario 210 no pide la cédula general como un total: la pide como
+    # una grilla de diecisiete filas por cuatro columnas, con una casilla en
+    # cada celda. El módulo `cedula_general` arma esa grilla y aplica el límite
+    # del art. 336 num. 3, que es uno solo para toda la cédula y se reparte
+    # entre las columnas en cascada, en el orden que fija el instructivo.
     costos_cg = capital.total_costos + no_laborales.total_costos
     if trabajo.opta_por_costos_y_gastos:
         costos_cg += trabajo.costos_y_gastos_sin_vinculo_laboral
 
-    R(Renglon("CG-COSTOS", "Costos y gastos procedentes", costos_cg,
-              "Imputables a rentas de capital y no laborales, incluidos el costo de "
-              "ventas del inventario y la depreciación. Los de honorarios sin vínculo "
-              "laboral solo si se optó por ellos en vez de la renta exenta del "
-              "art. 206 num. 10",
-              "Art. 336 num. 4 ET"))
-    if capital.costo_de_ventas + no_laborales.costo_de_ventas > CERO:
-        R(Renglon("CG-COSTO-VENTAS", "Costo de ventas del inventario",
-                  capital.costo_de_ventas + no_laborales.costo_de_ventas,
-                  "Calculado por el kardex del módulo de inventario con el método de "
-                  "costeo de cada producto",
-                  "Arts. 62 y 66 ET"))
-
-    # Las rentas líquidas negativas se truncan en cero, pero el exceso no
-    # desaparece: es una pérdida fiscal del ejercicio y el art. 147 permite
-    # compensarla en los doce años siguientes. Si no se reportara, el contador
-    # vería la deducción en el borrador, no la vería restada en ninguna parte y
-    # tampoco sabría que tiene una pérdida que registrar.
-    perdidas_del_ejercicio: dict = {}
-
-    def _renta_subcedula(tipo: str, ingresos: Decimal, incrngo: Decimal, costos: Decimal) -> Decimal:
-        bruta = ingresos - incrngo - costos
-        if bruta < CERO:
-            perdidas_del_ejercicio[tipo] = -bruta
-        return _no_negativo(bruta)
-
-    renta_por_tipo: dict = {}
-    if trabajo.opta_por_costos_y_gastos:
-        renta_por_tipo["TRABAJO_SIN_VINCULO"] = _renta_subcedula(
-            "TRABAJO_SIN_VINCULO",
-            trabajo.ingresos_sin_vinculo_laboral,
-            CERO,
-            trabajo.costos_y_gastos_sin_vinculo_laboral,
-        )
-        renta_trabajo_laboral = _no_negativo(
-            trabajo.ingresos_brutos - trabajo.total_incrngo
-        )
-    else:
-        renta_trabajo_laboral = _no_negativo(
-            trabajo.ingresos_brutos
-            + trabajo.ingresos_sin_vinculo_laboral
-            - trabajo.total_incrngo
-        )
-    renta_por_tipo["CAPITAL"] = _renta_subcedula(
-        "CAPITAL",
-        capital.ingresos_brutos,
-        capital.ingresos_no_constitutivos,
-        capital.total_costos,
-    )
-    renta_por_tipo["NO_LABORAL"] = _renta_subcedula(
-        "NO_LABORAL",
-        no_laborales.ingresos_brutos,
-        no_laborales.ingresos_no_constitutivos,
-        no_laborales.total_costos,
-    )
-
-    for tipo, perdida in perdidas_del_ejercicio.items():
-        R(Renglon(f"CG-PERDIDA-EJERCICIO-{tipo}",
-                  f"Pérdida del ejercicio — {tipo.replace('_', ' ').lower()}",
-                  perdida,
-                  "Los costos y deducciones de esta subcédula superaron sus ingresos. "
-                  "La renta líquida se trunca en cero y el exceso queda como pérdida",
-                  "Arts. 147 y 330 ET"))
-        liq.diagnosticos.append(
-            f"Los costos imputados a {tipo.replace('_', ' ').lower()} superan sus "
-            f"ingresos en ${perdida.quantize(_CENTAVO)}: esa parte NO se dedujo este "
-            f"año. Regístrela como pérdida fiscal de {insumos.anio_gravable} para "
-            f"poder compensarla en los próximos {parametros.anios_compensacion_perdidas} "
-            f"años, o revise si la depreciación y los costos están imputados a la "
-            f"subcédula correcta."
-        )
-
-    # --- Compensación de pérdidas de años anteriores ----------------------
-    compensacion = calcular_compensacion_perdidas(
-        insumos.perdidas_compensables, renta_por_tipo, insumos.anio_gravable, parametros
-    )
-    liq.diagnosticos.extend(compensacion.diagnosticos)
-    for nombre, valor, formula in compensacion.detalle:
-        R(Renglon(f"CG-PERD-{_slug(nombre)}", nombre, valor, formula,
-                  parametros.fuente_compensacion_perdidas))
-    total_compensado = sum(compensacion.por_tipo.values(), CERO)
-    if total_compensado > CERO:
-        R(Renglon("CG-COMPENSACION", "Compensación de pérdidas de años anteriores",
-                  total_compensado,
-                  "Imputadas contra la renta líquida del mismo tipo de renta; las "
-                  "rentas de trabajo con vínculo laboral no admiten compensación",
-                  parametros.fuente_compensacion_perdidas))
-
-    renta_liquida_antes = renta_trabajo_laboral + sum(
-        _no_negativo(renta - compensacion.por_tipo.get(tipo, CERO))
-        for tipo, renta in renta_por_tipo.items()
-    )
-
     # --- Bancarización (art. 771-5 ET) ------------------------------------
     #
-    # El efectivo rechazado se devuelve a la renta líquida: se restó como costo
-    # y la norma no lo acepta. Se muestra como renglón propio en vez de
-    # descontarlo del renglón de costos, para que el contador vea cuánto perdió
-    # por pagar en efectivo y pueda cambiar la práctica el año siguiente.
+    # El efectivo rechazado no es un costo procedente, así que se descuenta de
+    # los costos de la columna que lo originó en vez de sumarse de vuelta a la
+    # renta líquida: así la casilla de costos del formulario queda con la cifra
+    # que de verdad se declara. Se reparte a prorrata de los costos de cada
+    # columna porque el art. 771-5 fija un límite global y no identifica a qué
+    # subcédula pertenece cada pago.
     banca = calcular_bancarizacion(insumos.bancarizacion, costos_cg, parametros)
     liq.diagnosticos.extend(banca.diagnosticos)
     if banca.aplica:
@@ -797,20 +739,41 @@ def liquidar(
                   parametros.bancarizacion.fuente_legal))
         if banca.efectivo_rechazado > CERO:
             R(Renglon("CG-EFECTIVO-RECHAZADO",
-                      "Pagos en efectivo no deducibles (se devuelven a la renta)",
+                      "Pagos en efectivo no deducibles (excluidos de los costos)",
                       banca.efectivo_rechazado,
-                      "Exceso sobre el límite del art. 771-5: se suma de vuelta a la "
-                      "renta líquida porque no es un costo procedente",
+                      "Exceso sobre el límite del art. 771-5: se excluye de los costos "
+                      "procedentes de cada subcédula a prorrata, porque no es un costo "
+                      "aceptado fiscalmente",
                       parametros.bancarizacion.fuente_legal))
-            renta_liquida_antes += banca.efectivo_rechazado
-
-    R(Renglon("CG-RL-ANTES", "Renta líquida antes de rentas exentas y deducciones",
-              renta_liquida_antes,
-              "Suma de la renta líquida de cada subcédula, menos las pérdidas "
-              "compensadas, más los pagos en efectivo no deducibles",
-              "Art. 336 ET"))
+            if costos_cg > CERO:
+                rechazado_restante = banca.efectivo_rechazado
+                destinos = [
+                    (capital, capital.total_costos),
+                    (no_laborales, no_laborales.total_costos),
+                ]
+                con_costos = [(d, c) for d, c in destinos if c > CERO]
+                for indice, (destino, costos_destino) in enumerate(con_costos):
+                    if indice == len(con_costos) - 1:
+                        # La última absorbe el redondeo para que las partes
+                        # sumen exactamente el rechazo y no se pierda un peso.
+                        parte = rechazado_restante
+                    else:
+                        parte = (
+                            banca.efectivo_rechazado * costos_destino / costos_cg
+                        ).quantize(_CENTAVO)
+                        rechazado_restante -= parte
+                    destino.costos_no_procedentes += parte
+                costos_cg = _no_negativo(costos_cg - banca.efectivo_rechazado)
 
     # --- Topes propios de cada concepto, antes del límite general ---------
+    base_limite = _no_negativo(
+        trabajo.total_ingresos
+        + capital.ingresos_brutos
+        + no_laborales.ingresos_brutos
+        - trabajo.total_incrngo
+        - capital.ingresos_no_constitutivos
+        - no_laborales.ingresos_no_constitutivos
+    )
     conceptos, renglones_tope, diag_tope = _aplicar_topes_propios(
         insumos.conceptos_depuracion, parametros, base_limite
     )
@@ -818,49 +781,187 @@ def liquidar(
         R(renglon)
     liq.diagnosticos.extend(diag_tope)
 
-    # --- Conceptos sujetos al límite --------------------------------------
-    limitables = [c for c in conceptos if c.sujeto_a_limite_general]
-    no_limitables_informados = [
-        c for c in conceptos if not c.sujeto_a_limite_general
-    ]
-    suma_limitables_informados = sum((c.valor for c in limitables), CERO)
-
+    suma_limitables = sum(
+        (c.valor for c in conceptos if c.sujeto_a_limite_general), CERO
+    )
     exenta_trabajo, formula_exenta = _renta_exenta_trabajo(
-        insumos, parametros, suma_limitables_informados
+        insumos, parametros, suma_limitables
     )
     if exenta_trabajo > CERO:
         R(Renglon("CG-EXENTA-25", "Renta exenta del 25 % de rentas de trabajo",
                   exenta_trabajo, formula_exenta,
                   parametros.renta_exenta_trabajo.fuente_legal))
 
-    for concepto in limitables:
-        R(Renglon(f"CG-SOL-{_slug(concepto.nombre)}", concepto.nombre, concepto.valor,
-                  "Solicitado por el contribuyente, sujeto al límite del art. 336 num. 3",
-                  concepto.fuente_legal))
-
-    solicitado = suma_limitables_informados + exenta_trabajo
-    aceptado, formula_limite, diag_limite = _aplicar_limite_general(
-        solicitado, base_limite, parametros
-    )
-    liq.diagnosticos.extend(diag_limite)
-    R(Renglon("CG-EXENTAS-LIMITADAS",
-              "Rentas exentas y deducciones imputables (limitadas)", aceptado,
-              formula_limite, parametros.limite_general.fuente_legal))
-
-    # --- Conceptos fuera del límite ---------------------------------------
+    # --- Deducciones que la ley dejó fuera del límite del num. 3 ----------
     fuera_calculadas, renglones_fuera = _deducciones_fuera_del_limite(insumos, parametros)
     for renglon in renglones_fuera:
         R(renglon)
-    suma_no_limitables_informados = sum((c.valor for c in no_limitables_informados), CERO)
-    for concepto in no_limitables_informados:
-        R(Renglon(f"CG-NOLIM-{_slug(concepto.nombre)}", concepto.nombre, concepto.valor,
-                  "No sujeto al límite del art. 336 num. 3", concepto.fuente_legal))
-    fuera_del_limite = fuera_calculadas + suma_no_limitables_informados
+    dependientes_336 = fuera_calculadas.get("DEPENDIENTES_336", CERO)
+    compras_1_pct = fuera_calculadas.get("COMPRAS_1_PCT", CERO)
 
-    renta_liquida_cg = _no_negativo(renta_liquida_antes - aceptado - fuera_del_limite)
+    # --- La grilla ---------------------------------------------------------
+    cg = depurar_cedula_general(
+        trabajo,
+        capital,
+        no_laborales,
+        conceptos,
+        exenta_trabajo,
+        dependientes_336,
+        compras_1_pct,
+        CERO,
+        parametros,
+    )
+
+    # --- Compensación de pérdidas de años anteriores ----------------------
+    #
+    # Va después del límite y no antes: el formulario compensa contra la renta
+    # líquida ordinaria del ejercicio (casillas 87, 70, 54), que ya tiene
+    # restadas las rentas exentas y deducciones limitadas de la columna.
+    renta_por_tipo = {
+        "TRABAJO_SIN_VINCULO": cg.columnas[SIN_VINCULO].renta_liquida_ordinaria_ejercicio,
+        "CAPITAL": cg.columnas[CAPITAL].renta_liquida_ordinaria_ejercicio,
+        "NO_LABORAL": cg.columnas[NO_LABORAL].renta_liquida_ordinaria_ejercicio,
+    }
+    compensacion = calcular_compensacion_perdidas(
+        insumos.perdidas_compensables, renta_por_tipo, insumos.anio_gravable, parametros
+    )
+    liq.diagnosticos.extend(compensacion.diagnosticos)
+    for nombre, valor, formula in compensacion.detalle:
+        R(Renglon(f"CG-PERD-{_slug(nombre)}", nombre, valor, formula,
+                  parametros.fuente_compensacion_perdidas))
+    cg.columnas[SIN_VINCULO].compensaciones = compensacion.por_tipo.get(
+        "TRABAJO_SIN_VINCULO", CERO
+    )
+    cg.columnas[CAPITAL].compensaciones = compensacion.por_tipo.get("CAPITAL", CERO)
+    cg.columnas[NO_LABORAL].compensaciones = compensacion.por_tipo.get("NO_LABORAL", CERO)
+
+    liq.diagnosticos.extend(cg.diagnosticos)
+
+    # --- Totales agregados de la cédula general ---------------------------
+    #
+    # Se derivan de la grilla, no se calculan aparte: son la vista resumida que
+    # el contador lee primero y que usa el borrador en PDF. Calcularlos por
+    # separado sería tener dos verdades que con el tiempo se separan.
+    R(Renglon("CG-INGRESOS", "Ingresos brutos de la cédula general",
+              sum((c.ingresos_brutos for c in cg.columnas.values()), CERO),
+              "Casillas 32 + 43 + 58 + 74. No incluye dividendos ni ganancias "
+              "ocasionales",
+              "Arts. 335, 338 y 340 ET"))
+    R(Renglon("CG-INCRNGO", "Ingresos no constitutivos de renta ni ganancia ocasional",
+              sum((c.ingresos_no_constitutivos for c in cg.columnas.values()), CERO),
+              "Casillas 33 + 44 + 59 + 76", "Arts. 55 y 56 ET"))
+    devoluciones_cg = sum((c.devoluciones for c in cg.columnas.values()), CERO)
+    if devoluciones_cg > CERO:
+        R(Renglon("CG-DEVOLUCIONES", "Devoluciones, rebajas y descuentos",
+                  devoluciones_cg,
+                  "Casilla 75. Disminuyen los ingresos ordinarios del período",
+                  "Art. 340 ET"))
+    R(Renglon("CG-COSTOS", "Costos y gastos procedentes",
+              sum((c.costos_y_deducciones for c in cg.columnas.values()), CERO),
+              "Casillas 45 + 60 + 77. Incluye el costo de ventas del inventario y la "
+              "depreciación, y los de honorarios sin vínculo laboral solo si se optó "
+              "por ellos en vez de la renta exenta del art. 206 num. 10",
+              "Art. 336 num. 4 ET"))
+    if capital.costo_de_ventas + no_laborales.costo_de_ventas > CERO:
+        R(Renglon("CG-COSTO-VENTAS", "Costo de ventas del inventario",
+                  capital.costo_de_ventas + no_laborales.costo_de_ventas,
+                  "Calculado por el kardex del módulo de inventario con el método de "
+                  "costeo de cada producto",
+                  "Arts. 62 y 66 ET"))
+    R(Renglon("CG-RL-ANTES", "Renta líquida antes de rentas exentas y deducciones",
+              sum((c.renta_liquida for c in cg.columnas.values()), CERO),
+              "Casillas 34 + 46 + 61 + 78: suma de la renta líquida de cada subcédula",
+              "Art. 336 ET"))
+    for concepto in conceptos:
+        prefijo = "CG-SOL" if concepto.sujeto_a_limite_general else "CG-NOLIM"
+        nota = (
+            "Solicitado por el contribuyente, sujeto al límite del art. 336 num. 3"
+            if concepto.sujeto_a_limite_general
+            else "No sujeto al límite del art. 336 num. 3"
+        )
+        R(Renglon(f"{prefijo}-{_slug(concepto.nombre)}", concepto.nombre,
+                  concepto.valor, nota, concepto.fuente_legal))
+    R(Renglon("CG-EXENTAS-LIMITADAS",
+              "Rentas exentas y deducciones imputables (limitadas)",
+              cg.limitadas_total,
+              "Casillas 41 + 53 + 69 + 86: menor entre lo solicitado, el "
+              f"{porcentaje(parametros.limite_general.porcentaje or CERO)} % de la base "
+              f"y {parametros.limite_general.tope_uvt} UVT, más las rentas exentas que "
+              "la ley dejó fuera del límite",
+              parametros.limite_general.fuente_legal))
+    total_compensado = sum((c.compensaciones for c in cg.columnas.values()), CERO)
+    if total_compensado > CERO:
+        R(Renglon("CG-COMPENSACION", "Compensación de pérdidas de años anteriores",
+                  total_compensado,
+                  "Casillas 56 + 72 + 89. Imputadas contra la renta líquida ordinaria "
+                  "del ejercicio del mismo tipo de renta; las rentas de trabajo con "
+                  "vínculo laboral no admiten compensación",
+                  parametros.fuente_compensacion_perdidas))
+
+    # --- Los renglones de la grilla, cada uno con su casilla --------------
+    R(Renglon("CG-BASE-LIMITE", "Base para el límite del 40 %", cg.base_del_limite,
+              "Ingresos brutos de las cuatro subcédulas − ingresos no constitutivos. "
+              "Las devoluciones de la casilla 75 no se restan de esta base",
+              parametros.limite_general.fuente_legal))
+    for numero, nombre_fila, valor in casillas_de(cg):
+        R(Renglon(f"CG-C{numero}", f"[{numero}] {nombre_fila}", valor,
+                  f"Casilla {numero} del formulario 210",
+                  "Arts. 335, 336, 338 y 340 ET", casilla=numero))
+
+    # Las pérdidas del ejercicio no desaparecen al truncar en cero: el art. 147
+    # permite compensarlas en los años siguientes y el contador tiene que
+    # registrarlas para poder hacerlo.
+    for subcedula in SUBCEDULAS:
+        perdida = cg.columnas[subcedula].perdida_liquida
+        if perdida > CERO:
+            R(Renglon(f"CG-PERDIDA-EJERCICIO-{subcedula}",
+                      f"Pérdida del ejercicio — {_NOMBRE_SUBCEDULA[subcedula]}",
+                      perdida,
+                      "Los costos y deducciones de esta subcédula superaron sus "
+                      "ingresos. La renta líquida se trunca en cero y el exceso queda "
+                      "como pérdida compensable",
+                      "Arts. 147 y 330 ET"))
+            liq.diagnosticos.append(
+                f"Los costos imputados a {_NOMBRE_SUBCEDULA[subcedula]} superan sus "
+                f"ingresos en ${perdida.quantize(_CENTAVO)}: esa parte NO se dedujo "
+                f"este año. Regístrela como pérdida fiscal de {insumos.anio_gravable} "
+                f"para poder compensarla en los próximos "
+                f"{parametros.anios_compensacion_perdidas} años, o revise si la "
+                f"depreciación y los costos están imputados a la subcédula correcta."
+            )
+
+    if cg.deduccion_dependientes > CERO:
+        R(Renglon("CG-C139", "[139] Adición por dependientes a la casilla 92",
+                  cg.deduccion_dependientes,
+                  "72 UVT por dependiente, hasta cuatro, sin exceder la renta líquida "
+                  "ordinaria de las rentas de trabajo (casillas 42 y 57)",
+                  "Art. 336 num. 3 ET", casilla=139))
+    if cg.deduccion_compras > CERO:
+        R(Renglon("CG-C28", "[28] Uno por ciento (1 %) de compras con factura electrónica",
+                  cg.deduccion_compras,
+                  "1 % de las compras soportadas en factura electrónica, hasta 240 UVT, "
+                  "sin que pueda dar lugar a pérdidas",
+                  "Art. 336 num. 5 ET", casilla=28))
+
+    R(Renglon("CG-C91", "[91] Renta líquida cédula general", cg.casilla_91,
+              "Casillas 41 + 42 + 53 + 57 + 69 + 73 + 86 + 90",
+              "Art. 336 ET", casilla=91))
+    R(Renglon("CG-C92", "[92] Rentas exentas y deducciones imputables limitadas",
+              cg.casilla_92,
+              "Casillas 28 + 41 + 53 + 69 + 86 + 139",
+              parametros.limite_general.fuente_legal, casilla=92))
+    R(Renglon("CG-C93", "[93] Renta líquida ordinaria cédula general", cg.casilla_93,
+              "Casilla 91 − casilla 92", "Art. 336 ET", casilla=93))
+
+    # Alias estable del total de la cédula general. El resto del motor y las
+    # pruebas lo consultan por este código; la casilla 97 lo vuelve a emitir
+    # más abajo, una vez conocidas las rentas gravables por comparación
+    # patrimonial.
+    renta_liquida_cg = cg.casilla_93
     R(Renglon("CG-RENTA-LIQUIDA", "Renta líquida gravable de la cédula general",
               renta_liquida_cg,
-              "Renta líquida − exentas y deducciones limitadas − deducciones fuera del límite",
+              "Casilla 93: renta líquida de la cédula general menos las rentas "
+              "exentas y deducciones imputables limitadas",
               "Art. 336 ET"))
 
     # --- Cédula de pensiones ----------------------------------------------
@@ -934,7 +1035,7 @@ def liquidar(
         insumos.comparacion_patrimonial,
         insumos.patrimonio.patrimonio_liquido,
         base_ordinaria,
-        aceptado + exenta_pensiones,
+        cg.limitadas_total + exenta_pensiones,
         base_go,
     )
     liq.diagnosticos.extend(comparacion.diagnosticos)

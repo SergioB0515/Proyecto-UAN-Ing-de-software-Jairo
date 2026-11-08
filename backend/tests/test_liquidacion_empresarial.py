@@ -300,7 +300,12 @@ def test_la_compensacion_baja_la_renta_liquida_de_la_cedula_general():
         perdidas_compensables=[PerdidaCompensable(2023, "NO_LABORAL", D("25000000"))],
     )
     assert liq.valor("CG-COMPENSACION") == D("25000000.00")
-    assert liq.valor("CG-RL-ANTES") == D("75000000.00")
+    # La renta líquida «antes» es la de la columna, sin compensar: el formulario
+    # compensa después de las rentas exentas y deducciones limitadas (casillas
+    # 87 → 89 → 90), no antes. Lo que no cambia es el resultado final.
+    assert liq.valor("CG-RL-ANTES") == D("100000000.00")
+    assert liq.valor("CG-RENTA-LIQUIDA") == D("75000000.00")
+    assert liq.valor("CG-C90") == D("75000000.00")
 
 
 def test_las_rentas_de_trabajo_con_vinculo_no_admiten_compensacion():
@@ -495,11 +500,22 @@ def test_un_comerciante_con_todo_activado_liquida_de_forma_coherente():
 
     depreciacion = D("12000000.00")   # 120M ÷ 10 = 12M; tope 10 % = 12M
     assert liq.valor("DEP-TOTAL") == depreciacion
-    assert liq.valor("CG-COSTOS") == D("300000000") + D("50000000") + depreciacion
-    assert liq.valor("CG-COMPENSACION") == D("20000000.00")
     # Costos 362M: el 35 % (126,7M) manda sobre el 40 % de los pagos (160M).
     assert liq.valor("CG-EFECTIVO-ACEPTADO") == D("126700000.00")
     assert liq.valor("CG-EFECTIVO-RECHAZADO") == D("73300000.00")
+    # Los costos que llegan al formulario son los procedentes: el efectivo
+    # rechazado por el art. 771-5 ya no está ahí. Antes se dejaba dentro de los
+    # costos y se sumaba de vuelta a la renta líquida, lo que daba el mismo
+    # impuesto pero una casilla 77 que no se podía transcribir.
+    costos_contables = D("300000000") + D("50000000") + depreciacion
+    assert liq.valor("CG-COSTOS") == costos_contables - D("73300000.00")
+    assert liq.valor("CG-COMPENSACION") == D("20000000.00")
+    # Este contribuyente no tiene rentas de trabajo, así que no tiene derecho a
+    # la adición por dependientes de la casilla 139, que el instructivo topa en
+    # la suma de las casillas 42 y 57.
+    assert liq.valor("CG-C139") == D("0")
+    assert any("dependientes" in d and "casillas 42 y 57" in d
+               for d in liq.diagnosticos)
     assert liq.valor("GO-IMPUESTO") == D("12000000.00")   # 15 % de 80M
     assert liq.valor("PAT-LIQUIDO") == D("700000000")
     assert liq.valor("TOTAL-A-CARGO") == liq.valor("IMP-RENTA") + liq.valor("GO-IMPUESTO")

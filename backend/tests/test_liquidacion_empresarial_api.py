@@ -206,7 +206,10 @@ def test_la_perdida_registrada_se_compensa_en_la_liquidacion(client):
     liq = client.get(_base(cid, pid), headers=h).json()
 
     assert _valor(liq, "CG-COMPENSACION") == D("30000000.00")
-    assert _valor(liq, "CG-RL-ANTES") == D("70000000.00")
+    # Ver la nota del motor: la compensación va después del límite del 40 %,
+    # como en las casillas 87 → 89 → 90 del formulario.
+    assert _valor(liq, "CG-RL-ANTES") == D("100000000.00")
+    assert _valor(liq, "CG-RENTA-LIQUIDA") == D("70000000.00")
 
 
 def test_una_perdida_de_otro_contribuyente_no_se_borra(client):
