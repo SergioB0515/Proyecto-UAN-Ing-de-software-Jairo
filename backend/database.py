@@ -148,6 +148,11 @@ def crear_tablas() -> None:
     _agregar_columnas_si_faltan(
         engine, "deducciones_solicitadas", {"codigo_plantilla": "VARCHAR"}
     )
+    _agregar_columnas_si_faltan(
+        engine,
+        "registros_exogena",
+        {"renglones_son_condicionales": "BOOLEAN NOT NULL DEFAULT FALSE"},
+    )
 
 
 def obtener_sesion() -> Iterator[Session]:

@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
 
@@ -9,13 +9,16 @@ from ..contribuyentes.servicios import (
     listar_fuentes_ingreso,
     obtener_periodo_fiscal,
 )
-from ..exogena.modelos import RegistroExogena
+from ..exogena.modelos import RegistroExogena, TopeExogena
 from ..exogena.servicios import obtener_reporte_mas_reciente
+from ..liquidacion.formulario_210 import casilla_por_numero
 from .modelos import (
     BorradorRenglones,
     EstadoConciliacion,
     ItemConciliacion,
     OrigenItemConciliacion,
+    CuadreTope,
+    RegistroSinAsignar,
     RenglonSugerido,
     ResultadoConciliacion,
 )
@@ -176,7 +179,10 @@ def _numero_renglon(renglon: str) -> int:
 def generar_borrador_renglones(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> BorradorRenglones:
-    obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    anio_gravable = periodo.anio_gravable
     reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
 
     registros = session.exec(
@@ -184,10 +190,32 @@ def generar_borrador_renglones(
     ).all()
 
     acumulados: Dict[str, RenglonSugerido] = {}
+    sin_asignar: List[RegistroSinAsignar] = []
+
     for registro in registros:
         if not registro.renglones_sugeridos:
             continue
-        renglones = {r.strip() for r in registro.renglones_sugeridos.split(",") if r.strip()}
+        renglones = sorted(
+            {r.strip() for r in registro.renglones_sugeridos.split(",") if r.strip()},
+            key=_numero_renglon,
+        )
+
+        # Cuando la DIAN ofrece varios renglones posibles en vez de asignar
+        # uno ("según el bien o derecho reportado se puede usar en renglones
+        # como..."), sumar el valor en todos cuenta la misma plata varias
+        # veces: como patrimonio, como deuda y como ganancia ocasional a la
+        # vez. Se aparta para que lo asigne el contador.
+        if registro.renglones_son_condicionales:
+            sin_asignar.append(
+                RegistroSinAsignar(
+                    detalle=registro.detalle,
+                    valor=registro.valor,
+                    renglones_posibles=renglones,
+                    uso_sugerido=registro.uso_sugerido,
+                )
+            )
+            continue
+
         for renglon in renglones:
             acumulado = acumulados.setdefault(
                 renglon,
@@ -196,9 +224,78 @@ def generar_borrador_renglones(
             acumulado.valor_total += registro.valor
             acumulado.cantidad_registros += 1
 
+    # Nombre oficial de la casilla, del catálogo del formulario 210.
+    for acumulado in acumulados.values():
+        casilla = casilla_por_numero(_numero_renglon(acumulado.renglon), anio_gravable)
+        if casilla is not None:
+            acumulado.casilla = casilla.numero
+            acumulado.nombre_oficial = casilla.nombre
+
+    cuadres, diagnosticos = _cuadrar_contra_topes(session, reporte.id, acumulados)
+    if sin_asignar:
+        total = sum(r.valor for r in sin_asignar)
+        diagnosticos.insert(
+            0,
+            f"{len(sin_asignar)} registro(s) por ${total:,.0f} traen varios renglones "
+            f"posibles en vez de uno asignado. NO se sumaron a ningún renglón: "
+            f"asígnelos usted, porque repartirlos en todos contaría el mismo valor "
+            f"varias veces.",
+        )
+
     return BorradorRenglones(
         contribuyente_id=contribuyente_id,
         periodo_fiscal_id=periodo_fiscal_id,
         reporte_exogena_id=reporte.id,
         renglones=sorted(acumulados.values(), key=lambda r: _numero_renglon(r.renglon)),
+        sin_asignar=sin_asignar,
+        cuadres=cuadres,
+        diagnosticos=diagnosticos,
     )
+
+
+# Renglones del borrador que deben cuadrar contra un tope del mismo archivo.
+# El archivo de la DIAN trae las dos cosas, así que se puede verificar solo.
+_CUADRES = {"Tope 2 - Patrimonio": "R29"}
+
+
+def _cuadrar_contra_topes(
+    session: Session, reporte_id: int, acumulados: Dict[str, RenglonSugerido]
+) -> Tuple[List[CuadreTope], List[str]]:
+    """Contrasta el borrador contra los topes que viene en el propio archivo.
+
+    Es una verificación gratis: la DIAN informa el detalle y también el tope
+    consolidado, así que si el renglón armado con el detalle no coincide con
+    el tope, algo se contó de más o de menos. Antes nadie lo miraba.
+    """
+    cuadres: List[CuadreTope] = []
+    diagnosticos: List[str] = []
+    topes = session.exec(
+        select(TopeExogena).where(TopeExogena.reporte_exogena_id == reporte_id)
+    ).all()
+
+    for tope in topes:
+        renglon = _CUADRES.get(tope.etiqueta.strip())
+        if renglon is None:
+            continue
+        acumulado = acumulados.get(renglon)
+        valor = acumulado.valor_total if acumulado else 0.0
+        diferencia = round(valor - tope.valor, 2)
+        cuadra = abs(diferencia) < 1
+        cuadres.append(
+            CuadreTope(
+                etiqueta=tope.etiqueta,
+                valor_tope=tope.valor,
+                valor_borrador=valor,
+                diferencia=diferencia,
+                cuadra=cuadra,
+            )
+        )
+        if not cuadra:
+            sentido = "más" if diferencia > 0 else "menos"
+            diagnosticos.append(
+                f"El renglón {renglon} suma ${valor:,.0f} y el «{tope.etiqueta}» que "
+                f"reporta el mismo archivo es ${tope.valor:,.0f}: "
+                f"${abs(diferencia):,.0f} de {sentido}. Revise si algún registro se "
+                f"contó dos veces o si falta alguno."
+            )
+    return cuadres, diagnosticos

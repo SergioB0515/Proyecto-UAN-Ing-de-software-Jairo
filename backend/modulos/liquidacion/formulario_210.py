@@ -176,3 +176,16 @@ def casilla_de(codigo_motor: str, anio_gravable: int) -> Optional[CasillaOficial
     casillas = CASILLAS_POR_ANIO.get(anio_gravable) or CASILLAS_2024
     numero = mapeo.get(codigo_motor)
     return casillas.get(numero) if numero else None
+
+
+def casilla_por_numero(numero: Optional[int], anio_gravable: int) -> Optional[CasillaOficial]:
+    """Casilla por su número, para traducir los «R29» que trae la exógena.
+
+    El archivo de la DIAN ya dice a qué renglón va cada valor con esta misma
+    numeración, así que traducir el código al nombre oficial no requiere
+    ninguna inferencia: solo mirar el catálogo.
+    """
+    if numero is None:
+        return None
+    casillas = CASILLAS_POR_ANIO.get(anio_gravable) or CASILLAS_2024
+    return casillas.get(numero)

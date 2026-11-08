@@ -42,6 +42,32 @@ class RenglonSugerido(SQLModel):
     renglon: str
     valor_total: float
     cantidad_registros: int
+    casilla: Optional[int] = None
+    nombre_oficial: Optional[str] = None
+
+
+class RegistroSinAsignar(SQLModel):
+    """Un valor que la DIAN no asignó a un renglón concreto.
+
+    Trae el menú de renglones posibles para que el contador escoja. No se suma
+    a ninguno: la DIAN está diciendo «depende del bien», y repartirlo en todos
+    contaría la misma plata varias veces.
+    """
+
+    detalle: str
+    valor: float
+    renglones_posibles: List[str]
+    uso_sugerido: Optional[str] = None
+
+
+class CuadreTope(SQLModel):
+    """Contraste del borrador contra los topes que trae el mismo archivo."""
+
+    etiqueta: str
+    valor_tope: float
+    valor_borrador: float
+    diferencia: float
+    cuadra: bool
 
 
 class BorradorRenglones(SQLModel):
@@ -49,6 +75,9 @@ class BorradorRenglones(SQLModel):
     periodo_fiscal_id: int
     reporte_exogena_id: int
     renglones: List[RenglonSugerido]
+    sin_asignar: List[RegistroSinAsignar] = []
+    cuadres: List[CuadreTope] = []
+    diagnosticos: List[str] = []
     advertencia: str = (
         "Valores sugeridos a partir de la columna 'Uso declaración Sugerida' "
         "de la exógena. Son un punto de partida editable, no el valor final "

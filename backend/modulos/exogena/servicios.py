@@ -31,6 +31,21 @@ PATRON_CONCEPTO = re.compile(r"\(Concepto:\s*(\d+)\)", re.IGNORECASE)
 
 PATRON_RENGLON = re.compile(r"\bR\d+\b")
 
+# La DIAN a veces no asigna el renglón: ofrece un menú de posibilidades y deja
+# la decisión al declarante ("Según el bien o derecho reportado se puede usar
+# en renglones como ... | R112 ... | R29 ... | R30 ..."). Tomarlos como
+# definitivos suma el mismo valor en varios renglones a la vez: la misma plata
+# contada como patrimonio, como deuda y como ganancia ocasional.
+PATRONES_CONDICIONALES = (
+    re.compile(r"se\s+puede(?:n)?\s+usar", re.IGNORECASE),
+    re.compile(r"seg[uú]n\s+el\s+(?:bien|tipo|concepto)", re.IGNORECASE),
+    re.compile(r"dependiendo\s+de", re.IGNORECASE),
+)
+
+
+def _es_sugerencia_condicional(uso: Optional[str]) -> bool:
+    return bool(uso) and any(p.search(uso) for p in PATRONES_CONDICIONALES)
+
 NIT_DIAN = "800197268"
 
 FIRMAS_EXCEL = (b"PK\x03\x04", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
@@ -122,6 +137,7 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
         detalle = detalle or ""
         uso = _texto(_col(fila, 6))
         match_concepto = PATRON_CONCEPTO.search(detalle)
+        condicional = _es_sugerencia_condicional(uso)
         renglones = PATRON_RENGLON.findall(uso or "")
 
         resultado.registros.append(
@@ -131,6 +147,7 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
                 detalle=detalle,
                 concepto_code=match_concepto.group(1) if match_concepto else None,
                 renglones_sugeridos=", ".join(renglones) if renglones else None,
+                renglones_son_condicionales=condicional,
                 valor=valor,
                 uso_sugerido=uso,
                 info_adicional=_texto(_col(fila, 7)),

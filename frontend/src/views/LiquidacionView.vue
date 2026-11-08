@@ -94,6 +94,31 @@ const bloques = computed(() => {
 
 const DESTACADOS = new Set(['CG-RENTA-LIQUIDA', 'BASE-GRAVABLE', 'IMP-NETO', 'SALDO-A-PAGAR', 'SALDO-A-FAVOR'])
 
+// Cifras que el contador busca primero al abrir la pestaña. Van arriba, no al
+// fondo: hasta ahora había que bajar toda la página para saber en qué terminó
+// la liquidación y dónde estaban las descargas.
+const valorDe = (codigo) =>
+  Number(resultado.value?.renglones.find((r) => r.codigo === codigo)?.valor ?? 0)
+
+const resumen = computed(() => {
+  if (!resultado.value) return null
+  const aPagar = valorDe('SALDO-A-PAGAR')
+  const aFavor = valorDe('SALDO-A-FAVOR')
+  return {
+    baseGravable: valorDe('BASE-GRAVABLE'),
+    impuestoNeto: valorDe('IMP-NETO'),
+    retenciones: valorDe('RETENCIONES'),
+    anticipo: valorDe('ANTICIPO-SIGUIENTE'),
+    aPagar,
+    aFavor,
+    esAFavor: aFavor > 0,
+  }
+})
+
+function irAlDetalle() {
+  document.getElementById('borrador-210')?.scrollIntoView({ behavior: 'smooth' })
+}
+
 const sinClasificar = computed(() => ingresos.value.filter((i) => i.cedula === 'SIN_CLASIFICAR'))
 
 // Secciones de la hoja. Se declaran como datos para que agregar un campo sea
@@ -361,6 +386,68 @@ onMounted(cargar)
       {{ anioNoSoportado }}
     </EstadoVacio>
 
+    <!-- 0. Resultado y descargas, lo primero que se ve ------------------- -->
+    <section v-if="resumen" class="hoja border-l-4 border-libro p-5">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2>Declaración de renta {{ resultado.anio_gravable }}</h2>
+          <p class="mt-1 text-sm text-tinta-suave">
+            {{ contribuyente.nombre }} · NIT {{ contribuyente.rut }}
+          </p>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" class="boton" @click="exportarLiquidacion(cid, pid, 'pdf')">
+            Generar documento 210 (PDF)
+          </button>
+          <button type="button" class="boton-secundario" @click="exportarLiquidacion(cid, pid, 'xlsx')">
+            Excel
+          </button>
+          <button type="button" class="boton-secundario" @click="irAlDetalle">
+            Ver el detalle
+          </button>
+        </div>
+      </div>
+
+      <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+        <div>
+          <dt class="etiqueta">Renta líquida gravable</dt>
+          <dd class="cifra text-lg">{{ dinero(resumen.baseGravable) }}</dd>
+        </div>
+        <div>
+          <dt class="etiqueta">Impuesto neto</dt>
+          <dd class="cifra text-lg">{{ dinero(resumen.impuestoNeto) }}</dd>
+        </div>
+        <div>
+          <dt class="etiqueta">Retenciones</dt>
+          <dd class="cifra text-lg">{{ dinero(resumen.retenciones) }}</dd>
+        </div>
+        <div>
+          <dt class="etiqueta">Anticipo del año siguiente</dt>
+          <dd class="cifra text-lg">{{ dinero(resumen.anticipo) }}</dd>
+        </div>
+        <div
+          class="rounded px-3 py-2"
+          :class="resumen.esAFavor ? 'bg-estado-coincide-claro' : 'bg-estado-nodeclarado-claro'"
+        >
+          <dt class="etiqueta">{{ resumen.esAFavor ? 'Saldo a favor' : 'Saldo a pagar' }}</dt>
+          <dd class="cifra text-xl font-semibold">
+            {{ dinero(resumen.esAFavor ? resumen.aFavor : resumen.aPagar) }}
+          </dd>
+        </div>
+      </dl>
+
+      <p
+        v-if="resultado.diagnosticos.length"
+        class="mt-4 text-sm"
+      >
+        <button type="button" class="enlace" @click="irAlDetalle">
+          {{ resultado.diagnosticos.length }}
+          {{ resultado.diagnosticos.length === 1 ? 'diagnóstico' : 'diagnósticos' }} por revisar
+        </button>
+        antes de transcribir a MUISCA.
+      </p>
+    </section>
+
     <!-- 1. Clasificación por cédula ------------------------------------- -->
     <section class="hoja p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
@@ -589,7 +676,7 @@ onMounted(cargar)
 
     <!-- 5. Borrador de la liquidación ------------------------------------ -->
     <template v-if="resultado">
-      <section class="hoja p-5">
+      <section id="borrador-210" class="hoja p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2>Borrador de la liquidación — año gravable {{ resultado.anio_gravable }}</h2>
