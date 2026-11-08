@@ -11,7 +11,9 @@ from modulos.liquidacion.formulario_210 import (
     CASILLAS_2024,
     MAPEO_2024,
     SIN_MAPEO_POR_AGREGACION,
+    SUBCEDULAS,
     casilla_de,
+    casilla_de_subcedula,
 )
 from modulos.liquidacion.motor import InsumosLiquidacion, RentasDeTrabajo, liquidar
 from modulos.parametros.tablas_oficiales import PARAMETROS_POR_ANIO
@@ -25,18 +27,32 @@ def test_toda_casilla_declara_su_fuente():
     assert all(c.fuente for c in CASILLAS_2024.values())
 
 
-def test_las_casillas_del_pdf_oficial_estan_marcadas_como_verificadas():
-    """Las 29 a 76 se transcribieron del PDF publicado por la DIAN."""
-    del_pdf = [c for n, c in CASILLAS_2024.items() if 29 <= n <= 76]
-    assert len(del_pdf) == 40
-    assert all(c.verificado for c in del_pdf)
-    assert all("DIAN" in c.fuente for c in del_pdf)
+def test_todas_las_casillas_vienen_del_formulario_oficial():
+    assert len(CASILLAS_2024) == 114
+    assert all(c.verificado for c in CASILLAS_2024.values())
+    assert all("DIAN" in c.fuente for c in CASILLAS_2024.values())
 
 
-def test_las_casillas_no_verificadas_lo_dicen_en_su_fuente():
-    sin_verificar = [c for c in CASILLAS_2024.values() if not c.verificado]
-    assert sin_verificar
-    assert all("PENDIENTE" in c.fuente for c in sin_verificar)
+def test_la_grilla_de_la_cedula_general_tiene_las_cuatro_subcedulas():
+    """Cada fila conceptual se repite en una columna por subcédula."""
+    assert [
+        casilla_de_subcedula("Ingresos brutos", s) for s in SUBCEDULAS
+    ] == [32, 43, 58, 74]
+    assert [
+        casilla_de_subcedula("Rentas exentas y/o deducciones imputables (limitadas)", s)
+        for s in SUBCEDULAS
+    ] == [41, 53, 69, 86]
+
+
+def test_las_rentas_de_trabajo_con_vinculo_no_tienen_casilla_de_costos():
+    """No es un hueco del catálogo: la ley no permite restarlos ahí."""
+    assert casilla_de_subcedula("Costos y deducciones procedentes", "TRABAJO") is None
+    assert casilla_de_subcedula("Costos y deducciones procedentes", "CAPITAL") == 60
+
+
+def test_una_fila_o_subcedula_inexistente_devuelve_none_sin_reventar():
+    assert casilla_de_subcedula("Fila inventada", "CAPITAL") is None
+    assert casilla_de_subcedula("Ingresos brutos", "SUBCEDULA_INVENTADA") is None
 
 
 def test_todo_codigo_mapeado_apunta_a_una_casilla_que_existe():

@@ -13,12 +13,8 @@ igual que los parámetros tributarios.
 
 Estado de la verificación
 -------------------------
-- Casillas 29 a 76: transcritas del PDF oficial del formulario 210 publicado
-  por la DIAN para el año gravable 2024.
-- Casillas 91 a 137: tomadas de una guía especializada, no del PDF oficial (la
-  extracción del PDF se corta en la casilla 76). Marcadas `verificado=False`:
-  hay que confirmarlas contra el instructivo oficial antes de imprimirlas en un
-  documento que alguien vaya a transcribir.
+- Todas las casillas se transcribieron del formulario 210 del año gravable
+  2024 y de su instructivo, publicados por la DIAN.
 - Año gravable 2025: **no verificado**. Mientras no se confirme la resolución
   del 210 de 2025, se usa la numeración de 2024 y el exportado lo advierte.
 """
@@ -35,91 +31,127 @@ class CasillaOficial:
     fuente: str
 
 
-_OFICIAL_2024 = "Formulario 210 AG 2024 publicado por la DIAN (PDF oficial)"
-_SECUNDARIA = "Guía especializada — PENDIENTE de confirmar contra el instructivo oficial"
+_OFICIAL_2024 = "Formulario 210 AG 2024 e instructivo, publicados por la DIAN"
 
 
 def _c(numero: int, nombre: str, verificado: bool = True) -> CasillaOficial:
-    return CasillaOficial(
-        numero=numero,
-        nombre=nombre,
-        verificado=verificado,
-        fuente=_OFICIAL_2024 if verificado else _SECUNDARIA,
-    )
+    return CasillaOficial(numero=numero, nombre=nombre, verificado=verificado,
+                          fuente=_OFICIAL_2024)
 
 
-# Casillas del formulario, por número. Es el catálogo de referencia completo:
-# sirve para mostrarle al contador el nombre oficial de cada casilla aunque el
-# motor todavía no produzca el valor de todas.
-CASILLAS_2024: Dict[int, CasillaOficial] = {
-    # Patrimonio
-    29: _c(29, "Total patrimonio bruto"),
-    30: _c(30, "Deudas"),
-    31: _c(31, "Total patrimonio líquido"),
-    # Cédula general — rentas de trabajo
-    32: _c(32, "Ingresos brutos de las rentas de trabajo"),
-    33: _c(33, "Ingresos no constitutivos de renta de las rentas de trabajo"),
-    34: _c(34, "Renta líquida de las rentas de trabajo"),
-    35: _c(35, "Rentas exentas — aportes voluntarios AFC, FVP y/o AVC"),
-    36: _c(36, "Rentas exentas — otras rentas exentas"),
-    37: _c(37, "Total rentas exentas de las rentas de trabajo"),
-    38: _c(38, "Deducciones imputables — intereses de vivienda"),
-    39: _c(39, "Deducciones imputables — otras deducciones imputables"),
-    40: _c(40, "Total deducciones imputables a las rentas de trabajo"),
-    41: _c(41, "Rentas exentas y/o deducciones imputables a las rentas de trabajo (limitadas)"),
-    42: _c(42, "Renta líquida ordinaria de las rentas de trabajo"),
-    # Rentas de trabajo sin relación laboral
-    43: _c(43, "Ingresos brutos de las rentas de trabajo sin relación laboral"),
-    44: _c(44, "Ingresos no constitutivos de renta — sin relación laboral"),
-    45: _c(45, "Costos y deducciones procedentes — sin relación laboral"),
-    46: _c(46, "Renta líquida de las rentas de trabajo sin relación laboral"),
-    49: _c(49, "Total rentas exentas — sin relación laboral"),
-    52: _c(52, "Total deducciones imputables — sin relación laboral"),
-    53: _c(53, "Rentas exentas y/o deducciones imputables (limitadas) — sin relación laboral"),
-    54: _c(54, "Renta líquida ordinaria del ejercicio — sin relación laboral"),
-    55: _c(55, "Pérdida líquida ordinaria del ejercicio — sin relación laboral"),
-    56: _c(56, "Compensaciones por pérdidas — sin relación laboral"),
-    57: _c(57, "Renta líquida ordinaria — sin relación laboral"),
-    # Rentas de capital
-    58: _c(58, "Ingresos brutos de las rentas de capital"),
-    59: _c(59, "Ingresos no constitutivos de renta de las rentas de capital"),
-    60: _c(60, "Costos y deducciones procedentes de las rentas de capital"),
-    61: _c(61, "Renta líquida de las rentas de capital"),
-    62: _c(62, "Rentas líquidas pasivas — ECE de las rentas de capital"),
-    65: _c(65, "Total rentas exentas de las rentas de capital"),
-    68: _c(68, "Total deducciones imputables a las rentas de capital"),
-    69: _c(69, "Rentas exentas y/o deducciones imputables a las rentas de capital (limitadas)"),
-    70: _c(70, "Renta líquida ordinaria del ejercicio de las rentas de capital"),
-    71: _c(71, "Pérdida líquida del ejercicio de las rentas de capital"),
-    72: _c(72, "Compensaciones por pérdidas de las rentas de capital"),
-    73: _c(73, "Renta líquida ordinaria de las rentas de capital"),
-    # Rentas no laborales
-    74: _c(74, "Ingresos brutos de las rentas no laborales"),
-    75: _c(75, "Devoluciones, rebajas y descuentos de las rentas no laborales"),
-    76: _c(76, "Ingresos no constitutivos de renta de las rentas no laborales"),
-    # Cierre de la cédula general y siguientes (pendientes de confirmar)
-    91: _c(91, "Renta líquida bruta de la cédula general", False),
-    93: _c(93, "Renta líquida ordinaria de la cédula general", False),
-    97: _c(97, "Renta líquida gravable de la cédula general", False),
-    98: _c(98, "Renta presuntiva", False),
-    103: _c(103, "Renta líquida gravable de pensiones", False),
-    107: _c(107, "Dividendos y participaciones — primera subcédula", False),
-    108: _c(108, "Dividendos y participaciones — segunda subcédula", False),
-    111: _c(111, "Base gravable conjunta del art. 241", False),
-    115: _c(115, "Ganancias ocasionales gravables", False),
-    116: _c(116, "Impuesto del art. 241 (renta ordinaria mayor que la presuntiva)", False),
-    121: _c(121, "Total impuesto sobre las rentas líquidas gravables", False),
-    125: _c(125, "Total descuentos tributarios", False),
-    126: _c(126, "Impuesto neto de renta", False),
-    127: _c(127, "Impuesto de ganancias ocasionales", False),
-    129: _c(129, "Total impuesto a cargo", False),
-    130: _c(130, "Anticipo liquidado en la declaración del año anterior", False),
-    131: _c(131, "Saldo a favor del año anterior sin devolución ni compensación", False),
-    132: _c(132, "Total retenciones en la fuente del año gravable", False),
-    133: _c(133, "Anticipo para el año gravable siguiente", False),
-    136: _c(136, "Total saldo a pagar", False),
-    137: _c(137, "Total saldo a favor", False),
+# La cédula general es una grilla: las mismas filas conceptuales repetidas en
+# cuatro columnas, una por subcédula. Se declara así, como grilla, porque es
+# como está impresa en el formulario y porque deja ver de un vistazo qué
+# conceptos NO existen en una subcédula (las rentas de trabajo con vínculo
+# laboral no admiten costos, así que esa celda no tiene casilla).
+#
+# Orden de las columnas: trabajo · trabajo sin vínculo · capital · no laborales
+_GRILLA_CEDULA_GENERAL = {
+    "Ingresos brutos": (32, 43, 58, 74),
+    "Devoluciones, rebajas y descuentos": (None, None, None, 75),
+    "Ingresos no constitutivos de renta": (33, 44, 59, 76),
+    "Costos y deducciones procedentes": (None, 45, 60, 77),
+    "Renta líquida": (34, 46, 61, 78),
+    "Rentas líquidas pasivas — ECE": (None, None, 62, 79),
+    "Rentas exentas — aportes voluntarios AFC, FVP y AVC": (35, 47, 63, 80),
+    "Rentas exentas — otras rentas exentas": (36, 48, 64, 81),
+    "Total rentas exentas": (37, 49, 65, 82),
+    "Deducciones imputables — intereses de vivienda": (38, 50, 66, 83),
+    "Deducciones imputables — otras deducciones imputables": (39, 51, 67, 84),
+    "Total deducciones imputables": (40, 52, 68, 85),
+    "Rentas exentas y/o deducciones imputables (limitadas)": (41, 53, 69, 86),
+    "Renta líquida ordinaria del ejercicio": (None, 54, 70, 87),
+    "Pérdida líquida del ejercicio": (None, 55, 71, 88),
+    "Compensaciones por pérdidas": (None, 56, 72, 89),
+    "Renta líquida ordinaria": (42, 57, 73, 90),
 }
+
+SUBCEDULAS = ("TRABAJO", "TRABAJO_SIN_VINCULO", "CAPITAL", "NO_LABORAL")
+
+_ETIQUETA_SUBCEDULA = {
+    "TRABAJO": "rentas de trabajo",
+    "TRABAJO_SIN_VINCULO": "rentas de trabajo sin relación laboral",
+    "CAPITAL": "rentas de capital",
+    "NO_LABORAL": "rentas no laborales",
+}
+
+_RESTO = {
+    91: "Renta líquida cédula general",
+    92: "Rentas exentas y deducciones imputables (limitadas) de la cédula general",
+    93: "Renta líquida ordinaria de la cédula general",
+    94: "Compensación por pérdidas de años gravables 2018 y anteriores",
+    95: "Compensación por exceso de renta presuntiva",
+    96: "Rentas gravables",
+    97: "Renta líquida gravable de la cédula general",
+    98: "Renta presuntiva",
+    99: "Ingresos brutos por rentas de pensiones del país y del exterior",
+    100: "Ingresos no constitutivos de renta de la cédula de pensiones",
+    101: "Renta líquida de la cédula de pensiones",
+    102: "Rentas exentas de pensiones",
+    103: "Renta líquida gravable de la cédula de pensiones",
+    104: "Dividendos y participaciones 2016 y anteriores, y otros",
+    105: "Ingresos no constitutivos de renta de la cédula de dividendos",
+    106: "Renta líquida ordinaria año 2016 y anteriores",
+    107: "1a subcédula años 2017 y siguientes, numeral 3 art. 49 ET",
+    108: "2a subcédula años 2017 y siguientes, parágrafo 2 art. 49 ET",
+    109: "Dividendos y participaciones recibidos del exterior",
+    110: "Rentas exentas de la casilla 109",
+    111: "Renta líquida gravable (cédula general o renta presuntiva, de pensiones y de dividendos, art. 241 ET)",
+    112: "Ingresos por ganancias ocasionales del país y del exterior",
+    113: "Costos por ganancias ocasionales",
+    114: "Ganancias ocasionales no gravadas y exentas",
+    115: "Ganancias ocasionales gravables",
+    116: "Impuesto sobre las rentas líquidas gravables — cédula general y de pensiones",
+    117: "Impuesto sobre las rentas líquidas gravables — renta presuntiva",
+    118: "Impuesto por dividendos y participaciones 2017 y siguientes, 2a subcédula (art. 240 ET)",
+    119: "Impuesto por dividendos y participaciones año 2016",
+    120: "Impuesto por dividendos y participaciones recibidos del exterior",
+    121: "Total impuesto sobre las rentas líquidas gravables",
+    122: "Descuento por impuestos pagados en el exterior",
+    123: "Descuento por donaciones",
+    124: "Descuento por dividendos, participaciones y otros",
+    125: "Total descuentos tributarios",
+    126: "Impuesto neto de renta",
+    127: "Impuesto de ganancias ocasionales",
+    128: "Descuento por impuestos pagados en el exterior por ganancias ocasionales",
+    129: "Total impuesto a cargo",
+    130: "Anticipo de renta liquidado en el año gravable anterior",
+    131: "Saldo a favor del año gravable anterior sin solicitud de devolución o compensación",
+    132: "Retenciones del año gravable a declarar",
+    133: "Anticipo de renta para el año gravable siguiente",
+    134: "Saldo a pagar por impuesto",
+    135: "Sanciones",
+    136: "Total saldo a pagar",
+    137: "Total saldo a favor",
+    138: "Número de dependientes económicos",
+    139: "Adición por dependientes a la casilla 92",
+    140: "Superó el tope indicativo del art. 336-1 ET",
+    141: "Aporte voluntario",
+    29: "Total patrimonio bruto",
+    30: "Deudas",
+    31: "Total patrimonio líquido",
+    28: "Uno por ciento (1 %) de compras con factura electrónica",
+}
+
+CASILLAS_2024: Dict[int, CasillaOficial] = {n: _c(n, nombre) for n, nombre in _RESTO.items()}
+for _fila, _numeros in _GRILLA_CEDULA_GENERAL.items():
+    for _sub, _num in zip(SUBCEDULAS, _numeros):
+        if _num is not None:
+            CASILLAS_2024[_num] = _c(_num, f"{_fila} — {_ETIQUETA_SUBCEDULA[_sub]}")
+
+
+def casilla_de_subcedula(fila: str, subcedula: str) -> Optional[int]:
+    """Número de casilla de una fila de la grilla en una subcédula concreta.
+
+    Devuelve None cuando esa combinación no existe en el formulario, que es
+    información y no un error: las rentas de trabajo con vínculo laboral no
+    tienen casilla de costos porque la ley no permite restarlos.
+    """
+    numeros = _GRILLA_CEDULA_GENERAL.get(fila)
+    if numeros is None or subcedula not in SUBCEDULAS:
+        return None
+    return numeros[SUBCEDULAS.index(subcedula)]
+
 
 # Código del motor → casilla oficial.
 #
