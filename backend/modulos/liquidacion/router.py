@@ -21,6 +21,7 @@ from core.excepciones import (
 from database import obtener_sesion
 from modulos.contadores.modelos import Contador
 
+from ..contribuyentes.servicios import obtener_contribuyente
 from . import clasificador, servicios
 from ..reportes.exportacion import DocumentoReporte, Seccion, a_excel, a_pdf
 from ..reportes.modelos import FormatoReporte
@@ -225,10 +226,16 @@ def exportar_liquidacion(
     except Exception as exc:
         raise _traducir(exc)
 
+    # El encabezado lleva nombre y NIT, no el id interno: este archivo es el
+    # papel de trabajo que el contador archiva y entrega, y un número de base
+    # de datos no identifica a nadie.
+    datos_contribuyente = obtener_contribuyente(session, contador.id, contribuyente_id)
+
     documento = DocumentoReporte(
         titulo="Borrador de liquidación — impuesto de renta personas naturales",
         encabezado=[
-            f"Contribuyente ID {liq.contribuyente_id} — año gravable {liq.anio_gravable}",
+            f"{datos_contribuyente.nombre} — NIT {datos_contribuyente.rut}",
+            f"Año gravable {liq.anio_gravable}",
             f"Régimen aplicado: {liq.parametros.regimen} — UVT ${liq.parametros.uvt}",
             f"Fuente de la UVT: {liq.parametros.fuente_uvt}",
         ],
