@@ -163,7 +163,7 @@ página. Las casillas que el motor no calcula (94, 95, 104–106, 109, 110,
 - **Escenarios (`GET …/escenarios`).** Vuelve a liquidar con una sola decisión
   cambiada: costos contra renta exenta del 25 % en honorarios, método del
   anticipo, cupo sin usar del art. 336. Son cálculos, no recomendaciones.
-- **Imputación de deducciones (`PATCH …/deducciones/{id}/imputacion`).** Fija
+- **Imputación de deducciones (`PATCH …/deducciones/{id}`).** Fija
   la columna y la fila del formulario de cada deducción.
 - **Arrastre.** Al copiar la hoja del año anterior, las pérdidas del ejercicio
   quedan registradas como compensables.
