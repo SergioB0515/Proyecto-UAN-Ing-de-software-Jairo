@@ -31,7 +31,10 @@ class CasillaOficial:
     fuente: str
 
 
-_OFICIAL_2024 = "Formulario 210 AG 2024 e instructivo, publicados por la DIAN"
+_OFICIAL_2024 = (
+    "Formulario 210 e instructivo publicados por la DIAN (Resolución 000044 de "
+    "2024, para el año gravable 2023 y siguientes)"
+)
 
 
 def _c(numero: int, nombre: str, verificado: bool = True) -> CasillaOficial:
@@ -194,17 +197,48 @@ SIN_MAPEO_POR_AGREGACION = {
     "CG-RENTA-LIQUIDA": "El formulario la arma por subcédula (42, 57, 73) y la consolida en 93 y 97.",
 }
 
-# La numeración de 2025 no se ha confirmado contra la resolución del año.
-# Reutilizarla sin decirlo produciría un documento que parece oficial y no lo es.
-MAPEO_POR_ANIO: Dict[int, Dict[str, int]] = {2024: MAPEO_2024}
-CASILLAS_POR_ANIO: Dict[int, Dict[int, CasillaOficial]] = {2024: CASILLAS_2024}
+# Años gravables cubiertos por esta numeración.
+#
+# La Resolución DIAN 000044 del 14 de marzo de 2024 prescribió el formulario 210
+# «para el año gravable 2023 y siguientes», y su instructivo lo ajustó la
+# Resolución 000120 de 2024; ambas quedaron compiladas en la Resolución Única
+# 000227 de 2025. Para el año gravable 2025 no se prescribió una estructura
+# nueva. Las casillas se transcribieron del PDF del año gravable 2024; el de
+# 2025 no se comparó casilla por casilla, se confía en que la resolución es la
+# misma.
+#
+# Un año posterior no entra aquí hasta que se sepa que la DIAN no cambió el
+# formulario: reutilizar la numeración sin decirlo produciría un documento que
+# parece oficial y no lo es.
+ANIOS_CON_NUMERACION_VERIFICADA = frozenset({2023, 2024, 2025})
+
+MAPEO_POR_ANIO: Dict[int, Dict[str, int]] = {
+    anio: MAPEO_2024 for anio in ANIOS_CON_NUMERACION_VERIFICADA
+}
+CASILLAS_POR_ANIO: Dict[int, Dict[int, CasillaOficial]] = {
+    anio: CASILLAS_2024 for anio in ANIOS_CON_NUMERACION_VERIFICADA
+}
 
 ADVERTENCIA_ANIO_NO_VERIFICADO = (
-    "La numeración de casillas mostrada es la del formulario 210 del año "
-    "gravable 2024. La DIAN puede renumerar el formulario cada año: confirme "
-    "los números contra la resolución que prescribe el formulario del año que "
-    "está declarando antes de transcribir."
+    "La numeración de casillas mostrada es la del formulario 210 prescrito por "
+    "la Resolución DIAN 000044 de 2024, vigente para los años gravables 2023 a "
+    "2025. No se ha confirmado que la DIAN la mantenga para el año que se está "
+    "declarando: verifique los números contra la resolución de ese año antes "
+    "de transcribir."
 )
+
+
+def numeracion_verificada(anio_gravable: int) -> bool:
+    return anio_gravable in ANIOS_CON_NUMERACION_VERIFICADA
+
+
+def nota_de_numeracion(anio_gravable: int) -> str:
+    if numeracion_verificada(anio_gravable):
+        return (
+            "Los números de casilla son los del formulario 210 prescrito por la "
+            "Resolución DIAN 000044 de 2024 para el año gravable 2023 y siguientes."
+        )
+    return ADVERTENCIA_ANIO_NO_VERIFICADO
 
 
 def casilla_de(codigo_motor: str, anio_gravable: int) -> Optional[CasillaOficial]:

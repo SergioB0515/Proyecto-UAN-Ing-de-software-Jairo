@@ -12,6 +12,8 @@ import {
   listarPlantillas,
   eliminarDeduccion,
   descargarBorrador210,
+  imputarDeduccion,
+  obtenerEscenarios,
   exportarLiquidacion,
   liquidar,
   listarCedulas,
@@ -39,6 +41,7 @@ const ingresos = ref([])
 const hoja = ref(null)
 const deducciones = ref([])
 const resultado = ref(null)
+const escenarios = ref([])
 
 const guardando = reactive({ ingresos: false, hoja: false, deduccion: false, copia: false })
 const plantillas = ref([])
@@ -73,7 +76,7 @@ const BLOQUES = [
   { titulo: 'Base e impuesto', prefijos: ['RENTA-PRESUNTIVA', 'BASE-', 'IMP-RENTA', 'IMP-TOTAL'] },
   { titulo: 'Ganancias ocasionales', prefijos: ['GO-'] },
   { titulo: 'Impuesto a cargo y descuentos', prefijos: ['TOTAL-', 'DESC-', 'IMP-NETO'] },
-  { titulo: 'Retenciones, anticipo y saldo', prefijos: ['RETENCIONES', 'ANTICIPO-', 'SALDO-'] },
+  { titulo: 'Retenciones, anticipo y saldo', prefijos: ['RETENCIONES', 'ANTICIPO-', 'SANCIONES', 'SALDO-'] },
 ]
 
 const bloques = computed(() => {
@@ -110,6 +113,7 @@ const resumen = computed(() => {
     impuestoNeto: valorDe('IMP-NETO'),
     retenciones: valorDe('RETENCIONES'),
     anticipo: valorDe('ANTICIPO-SIGUIENTE'),
+    sancion: valorDe('SANCIONES'),
     aPagar,
     aFavor,
     esAFavor: aFavor > 0,
@@ -146,6 +150,23 @@ const SECCIONES_HOJA = [
     campos: [
       { clave: 'opta_por_costos_y_gastos', etiqueta: 'Optar por costos y gastos', tipo: 'checkbox' },
       { clave: 'costos_y_gastos_sin_vinculo_laboral', etiqueta: 'Costos y gastos imputables' },
+    ],
+  },
+  {
+    titulo: 'Rentas de capital',
+    ayuda: 'Arriendos, intereses y rendimientos. Los costos y gastos son los procedentes para producir esa renta (casilla 60).',
+    campos: [
+      { clave: 'ingresos_no_constitutivos_capital', etiqueta: 'Ingresos no constitutivos' },
+      { clave: 'costos_y_gastos_capital', etiqueta: 'Costos y gastos procedentes' },
+    ],
+  },
+  {
+    titulo: 'Rentas no laborales',
+    ayuda: 'El costo de ventas sale del inventario y la depreciación de los activos. Aquí van los demás gastos del negocio (arriendo, nómina, servicios) y las devoluciones en ventas.',
+    campos: [
+      { clave: 'devoluciones_no_laborales', etiqueta: 'Devoluciones, rebajas y descuentos' },
+      { clave: 'ingresos_no_constitutivos_no_laborales', etiqueta: 'Ingresos no constitutivos' },
+      { clave: 'costos_y_gastos_no_laborales', etiqueta: 'Otros costos y gastos procedentes' },
     ],
   },
   {
@@ -230,6 +251,16 @@ const SECCIONES_HOJA = [
         ],
       },
       {
+        clave: 'reduccion_sancion',
+        etiqueta: 'Reducción de la sanción (art. 640)',
+        tipo: 'select',
+        opciones: [
+          { valor: 'NINGUNA', etiqueta: 'Sin reducción' },
+          { valor: 'AL_75', etiqueta: 'Al 75 %: sin extemporaneidad en el último año' },
+          { valor: 'AL_50', etiqueta: 'Al 50 %: sin extemporaneidad en dos años' },
+        ],
+      },
+      {
         clave: 'cedula_depreciacion',
         etiqueta: 'Subcédula de la depreciación',
         tipo: 'select',
@@ -246,6 +277,10 @@ async function recalcular() {
   anioNoSoportado.value = ''
   try {
     resultado.value = await liquidar(cid.value, pid.value)
+    // Los escenarios son un complemento: si fallan, la liquidación sigue.
+    obtenerEscenarios(cid.value, pid.value)
+      .then((e) => { escenarios.value = e.escenarios })
+      .catch(() => { escenarios.value = [] })
   } catch (e) {
     resultado.value = null
     if (e.response?.status === 422) anioNoSoportado.value = mensajeDeError(e)
@@ -333,6 +368,40 @@ async function agregarDeduccion() {
   }
 }
 
+const COLUMNAS_210 = [
+  { valor: '', etiqueta: 'Reparto automático' },
+  { valor: 'TRABAJO', etiqueta: 'Rentas de trabajo' },
+  { valor: 'TRABAJO_SIN_VINCULO', etiqueta: 'Trabajo sin vínculo laboral' },
+  { valor: 'CAPITAL', etiqueta: 'Rentas de capital' },
+  { valor: 'NO_LABORAL', etiqueta: 'Rentas no laborales' },
+]
+const FILAS_210 = [
+  { valor: 'DEDUCCION_OTRA', etiqueta: 'Otra deducción' },
+  { valor: 'DEDUCCION_VIVIENDA', etiqueta: 'Intereses de vivienda' },
+  { valor: 'EXENTA_AFC', etiqueta: 'Renta exenta: AFC, FVP o AVC' },
+  { valor: 'EXENTA_OTRA', etiqueta: 'Otra renta exenta' },
+]
+
+// La fila por omisión de una deducción vieja, igual que la resuelve el motor.
+function filaDe(d) {
+  if (d.fila_formulario) return d.fila_formulario
+  return plantillas.value.find((p) => p.codigo === d.codigo_plantilla)?.fila ?? 'DEDUCCION_OTRA'
+}
+
+async function imputar(d, cambios) {
+  error.value = ''
+  try {
+    await imputarDeduccion(cid.value, pid.value, d.id, {
+      subcedula: (cambios.subcedula ?? d.subcedula) || null,
+      fila_formulario: cambios.fila_formulario ?? filaDe(d),
+    })
+    deducciones.value = await listarDeducciones(cid.value, pid.value)
+    await recalcular()
+  } catch (e) {
+    error.value = mensajeDeError(e)
+  }
+}
+
 async function quitarDeduccion(id) {
   error.value = ''
   try {
@@ -412,6 +481,14 @@ onMounted(cargar)
         </div>
       </div>
 
+      <p
+        v-if="resumen.sancion > 0"
+        class="mt-4 rounded bg-estado-discrepancia-claro px-4 py-3 text-sm text-estado-discrepancia"
+        role="status"
+      >
+        El saldo incluye <strong>{{ dinero(resumen.sancion) }}</strong> de sanción por
+        extemporaneidad (casilla 135). El detalle está en los diagnósticos.
+      </p>
       <dl class="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <div>
           <dt class="etiqueta">Renta líquida gravable</dt>
@@ -431,7 +508,7 @@ onMounted(cargar)
         </div>
         <div
           class="rounded px-3 py-2"
-          :class="resumen.esAFavor ? 'bg-estado-coincide-claro' : 'bg-estado-nodeclarado-claro'"
+          :class="resumen.esAFavor ? 'bg-libro-claro' : 'bg-estado-nodeclarado-claro'"
         >
           <dt class="etiqueta">{{ resumen.esAFavor ? 'Saldo a favor' : 'Saldo a pagar' }}</dt>
           <dd class="cifra text-xl font-semibold">
@@ -593,14 +670,19 @@ onMounted(cargar)
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">
         Marque si cada concepto está sujeto al límite del 40 % con tope de 1.340 UVT (art. 336
         num. 3). Confundir eso es el error de liquidación más común y cambia el impuesto.
+        La columna y la fila deciden en qué casilla del formulario 210 aparece; con
+        «reparto automático» se imputa a las subcédulas con renta, en el orden del formulario.
       </p>
 
-      <table v-if="deducciones.length" class="mt-4">
+<div v-if="deducciones.length" class="mt-4 overflow-x-auto">
+      <table>
         <thead>
           <tr>
             <th>Concepto</th>
             <th class="text-right">Valor</th>
             <th>Límite del 40 %</th>
+            <th>Columna del 210</th>
+            <th>Fila del 210</th>
             <th>Fuente legal</th>
             <th></th>
           </tr>
@@ -610,6 +692,26 @@ onMounted(cargar)
             <td>{{ d.nombre }}</td>
             <td class="cifra">{{ dinero(d.valor) }}</td>
             <td>{{ d.sujeto_a_limite_general ? 'Sujeto' : 'No sujeto' }}</td>
+            <td>
+              <select
+                class="campo py-1 text-sm"
+                :value="d.subcedula ?? ''"
+                :aria-label="`Columna del formulario para ${d.nombre}`"
+                @change="imputar(d, { subcedula: $event.target.value })"
+              >
+                <option v-for="o in COLUMNAS_210" :key="o.valor" :value="o.valor">{{ o.etiqueta }}</option>
+              </select>
+            </td>
+            <td>
+              <select
+                class="campo py-1 text-sm"
+                :value="filaDe(d)"
+                :aria-label="`Fila del formulario para ${d.nombre}`"
+                @change="imputar(d, { fila_formulario: $event.target.value })"
+              >
+                <option v-for="o in FILAS_210" :key="o.valor" :value="o.valor">{{ o.etiqueta }}</option>
+              </select>
+            </td>
             <td class="text-xs text-tinta-suave">{{ d.fuente_legal || '—' }}</td>
             <td>
               <button type="button" class="text-sm underline hover:text-estado-nodeclarado" @click="quitarDeduccion(d.id)">
@@ -619,6 +721,7 @@ onMounted(cargar)
           </tr>
         </tbody>
       </table>
+      </div>
 
       <form class="mt-4 flex flex-wrap items-end gap-3 rounded border border-papel-linea bg-papel-hondo/40 p-3" @submit.prevent="agregarDesdePlantilla">
         <div class="min-w-72 flex-1">
@@ -677,6 +780,48 @@ onMounted(cargar)
       :activos="activos"
       @cambio="recalcular"
     />
+
+    <!-- Escenarios: la misma liquidación con una decisión cambiada -------- -->
+    <section v-if="escenarios.length" class="hoja p-5">
+      <h2>Escenarios</h2>
+      <p class="mt-1 max-w-prose text-sm text-tinta-suave">
+        Cada fila vuelve a liquidar con una sola decisión cambiada y todo lo demás igual.
+        Son cálculos, no recomendaciones: no dicen si el contribuyente cumple los requisitos
+        ni si tiene los soportes. Nada de esto modifica lo guardado.
+      </p>
+      <div class="mt-4 overflow-x-auto">
+        <table>
+          <thead>
+            <tr>
+              <th>Decisión</th>
+              <th class="text-right">Impuesto hoy</th>
+              <th class="text-right">Impuesto con la alternativa</th>
+              <th class="text-right">Diferencia en impuesto</th>
+              <th class="text-right">Diferencia en el saldo</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="e in escenarios" :key="e.clave">
+              <td>
+                <span class="font-medium">{{ e.titulo }}</span>
+                <p class="text-sm text-tinta-suave">
+                  Hoy: {{ e.opcion_actual }}. Alternativa: {{ e.opcion_alterna }}.
+                </p>
+                <p class="mt-1 max-w-2xl text-xs text-tinta-tenue">{{ e.explicacion }}</p>
+              </td>
+              <td class="cifra">{{ dinero(e.actual.impuesto) }}</td>
+              <td class="cifra">{{ dinero(e.alterna.impuesto) }}</td>
+              <td class="cifra" :class="Number(e.ahorro_en_impuesto) > 0 ? 'font-semibold text-libro-oscuro' : ''">
+                {{ Number(e.ahorro_en_impuesto) > 0 ? '−' : Number(e.ahorro_en_impuesto) < 0 ? '+' : '' }}{{ dinero(Math.abs(Number(e.ahorro_en_impuesto))) }}
+              </td>
+              <td class="cifra" :class="Number(e.ahorro_en_saldo) > 0 ? 'font-semibold text-libro-oscuro' : ''">
+                {{ Number(e.ahorro_en_saldo) > 0 ? '−' : Number(e.ahorro_en_saldo) < 0 ? '+' : '' }}{{ dinero(Math.abs(Number(e.ahorro_en_saldo))) }}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- 5. Borrador de la liquidación ------------------------------------ -->
     <template v-if="resultado">

@@ -5,3 +5,4 @@ const periodo = (cid, pid) => `/contribuyentes/${cid}/periodos-fiscales/${pid}`
 export const conciliar = (cid, pid) => obtener(`${periodo(cid, pid)}/conciliacion`)
 export const obtenerBorradorRenglones = (cid, pid) =>
   obtener(`${periodo(cid, pid)}/borrador-renglones`)
+export const obtenerCruceDian = (cid, pid) => obtener(`${periodo(cid, pid)}/cruce-dian`)

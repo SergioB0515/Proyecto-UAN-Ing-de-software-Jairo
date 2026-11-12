@@ -76,14 +76,15 @@ def test_panel_ordena_por_alertas(client):
     nombres = [f["nombre"] for f in cuerpo["contribuyentes"]]
     assert nombres == ["Diego con exógena", "Carla con exógena", "Ana sin periodo", "Beto sin exógena"]
     filas = {f["nombre"]: f for f in cuerpo["contribuyentes"]}
-    assert filas["Diego con exógena"]["alertas_no_declarado"] == 5
-    assert filas["Carla con exógena"]["alertas_no_declarado"] == 3
+    # El total de movimientos en cuentas ya no cuenta como alerta: es un flujo.
+    assert filas["Diego con exógena"]["alertas_no_declarado"] == 4
+    assert filas["Carla con exógena"]["alertas_no_declarado"] == 2
     assert filas["Diego con exógena"]["obligado"] is False
     assert filas["Beto sin exógena"]["obligado"] is None
     assert filas["Beto sin exógena"]["avisos"]
     assert filas["Ana sin periodo"]["periodo_fiscal_id"] is None
     assert cuerpo["total_contribuyentes"] == 4
-    assert cuerpo["total_alertas"] == 8
+    assert cuerpo["total_alertas"] == 6
 
 
 def test_panel_ordena_por_nombre(client):

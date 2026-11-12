@@ -30,7 +30,7 @@ Decisiones de diseño
    revisión de la DIAN.
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Tuple
 
@@ -48,6 +48,7 @@ from .cedula_general import (
     casillas_de,
 )
 from .cedula_general import depurar as depurar_cedula_general
+from .formulario_210 import nota_de_numeracion
 from .calculos_empresariales import (
     ActivoDepreciable,
     InsumosBancarizacion,
@@ -225,13 +226,19 @@ class Dividendos:
     """Dividendos y participaciones de residentes.
 
     Los valores se toman del certificado que expide la sociedad, incluida la
-    retención. El motor no deduce el impuesto societario por su cuenta: la
-    certificación es la fuente y asumir una tarifa produciría cifras falsas.
+    retención.
+
+    A los gravados (par. 2 del art. 49) se les aplica primero la tarifa del art.
+    240 —casilla 118— y solo el remanente entra a la tabla del art. 241. La
+    tarifa general es del 35 %; el art. 240 tiene tarifas diferenciales para
+    ciertas sociedades y el servicio de la DIAN deja digitarla, así que se
+    puede fijar aquí cuando el certificado indique otra.
     """
 
     no_gravados: Decimal = CERO
     gravados: Decimal = CERO
     retencion_practicada: Decimal = CERO
+    tarifa_gravados: Optional[Decimal] = None
 
 
 @dataclass
@@ -277,6 +284,12 @@ class InsumosLiquidacion:
     otros_descuentos_tributarios: Decimal = CERO
     anticipo_pagado_anio_anterior: Decimal = CERO
     saldo_a_favor_anio_anterior: Decimal = CERO
+    # Sanciones que el contribuyente se liquida a sí mismo (casilla 135), hoy la
+    # de extemporaneidad. El motor no la calcula: depende de fechas y del
+    # calendario, y esta función no mira el reloj. La calcula `sanciones.py`
+    # y llega aquí ya resuelta, con su fórmula.
+    sanciones: Decimal = CERO
+    formula_sanciones: str = ""
     anios_declarando: int = 3  # 1 = primer año, 2 = segundo, 3 o más = régimen pleno
 
     # Parte empresarial
@@ -700,7 +713,13 @@ def liquidar(
               "Patrimonio bruto − deudas", "Art. 282 ET", casilla=31))
 
     # --- Depreciación (arts. 128 a 131 y 137 ET) --------------------------
-    trabajo, capital, no_laborales = insumos.trabajo, insumos.capital, insumos.no_laborales
+    # Se trabaja sobre copias: más abajo se les suma la depreciación y se les
+    # descuentan los costos no procedentes, y liquidar dos veces los mismos
+    # insumos —como hace el simulador de escenarios— no puede dar resultados
+    # distintos la segunda vez.
+    trabajo = insumos.trabajo
+    capital = replace(insumos.capital)
+    no_laborales = replace(insumos.no_laborales)
 
     depreciacion = calcular_depreciacion(insumos.activos_depreciables, parametros)
     liq.diagnosticos.extend(depreciacion.diagnosticos)
@@ -1021,7 +1040,18 @@ def liquidar(
 
     # --- Dividendos --------------------------------------------------------
     div = insumos.dividendos
-    renta_liquida_dividendos = div.no_gravados + div.gravados
+    tarifa_240 = (
+        div.tarifa_gravados
+        if div.tarifa_gravados is not None
+        else parametros.tarifa_dividendos_gravados
+    )
+    impuesto_dividendos_gravados = redondear_pesos(div.gravados * tarifa_240)
+    # Lo que entra a la tabla del art. 241: los no gravados completos y los
+    # gravados una vez restado su propio impuesto (casilla 111 = … + 107 + 108
+    # − 118). Llevarlos completos gravaría dos veces la parte que ya pagó el 35 %.
+    renta_liquida_dividendos = (
+        div.no_gravados + div.gravados - impuesto_dividendos_gravados
+    )
     if div.no_gravados > CERO:
         R(Renglon("DIV-NO-GRAVADOS", "Dividendos — 1a subcédula (no gravados)",
                   div.no_gravados,
@@ -1032,25 +1062,26 @@ def liquidar(
                   div.gravados,
                   "Dividendos distribuidos como gravados según el certificado de la "
                   "sociedad", "Art. 49 par. 2 ET", casilla=108))
-        liq.notas.append(
-            "El borrador no calcula la casilla 118 (impuesto del art. 240 sobre los "
-            "dividendos gravados de la 2a subcédula) ni la resta en la casilla 111: "
-            "hay dividendos gravados, así que esas dos casillas deben revisarse a "
-            "mano contra el certificado de la sociedad."
-        )
+        R(Renglon("DIV-IMPUESTO-GRAVADOS",
+                  "Impuesto por dividendos gravados, 2a subcédula",
+                  impuesto_dividendos_gravados,
+                  f"{porcentaje(tarifa_240)}% × ${div.gravados.quantize(_CENTAVO)}. "
+                  "Se resta de la base de la tabla del art. 241 y se suma al "
+                  "impuesto en la casilla 121",
+                  parametros.fuente_dividendos_gravados, casilla=118))
+        if div.tarifa_gravados is None:
+            liq.notas.append(
+                f"A los dividendos gravados se les aplicó la tarifa general del art. "
+                f"240 ({porcentaje(tarifa_240)}%). Si el certificado de la sociedad "
+                f"indica una tarifa diferencial, hay que usar esa."
+            )
     if renta_liquida_dividendos > CERO:
         R(Renglon("DIV-RENTA-LIQUIDA", "Renta líquida cedular de dividendos y participaciones",
                   renta_liquida_dividendos,
-                  "Dividendos no gravados + gravados, según el certificado de la sociedad. "
-                  "Integran la base de la tabla del art. 241",
+                  "Dividendos no gravados + gravados − impuesto del art. 240 sobre los "
+                  "gravados (casillas 107 + 108 − 118). Es lo que entra a la tabla "
+                  "del art. 241",
                   "Arts. 242 y 331 ET, modificados por la Ley 2277 de 2022"))
-        liq.notas.append(
-            "Los dividendos se integraron completos a la base del art. 241 y el "
-            "impuesto societario y la retención se imputan como retenciones. Existe "
-            "una lectura alternativa que integra solo el remanente de los dividendos "
-            "gravados después del impuesto societario; cambia el resultado, así que "
-            "confírmala contra el certificado y la doctrina vigente antes de presentar."
-        )
 
     # --- Ganancias ocasionales --------------------------------------------
     #
@@ -1123,28 +1154,41 @@ def liquidar(
               "Art. 336 ET", casilla=97))
 
     presuntiva = insumos.renta_presuntiva
-    base_241 = max(base_ordinaria + renta_comparacion, presuntiva)
+    # La presuntiva se compara solo contra la cédula general (casillas 97 y
+    # 98); pensiones y dividendos se suman después, gane quien gane: casilla
+    # 111 = mayor(97, 98) + 103 + 107 + 108 − 118.
+    casilla_97 = renta_liquida_cg + renta_comparacion
+    por_presuntiva = presuntiva > casilla_97
+    base_241 = (
+        max(casilla_97, presuntiva)
+        + renta_liquida_pensiones
+        + renta_liquida_dividendos
+    )
     if presuntiva > CERO:
         R(Renglon("RENTA-PRESUNTIVA", "Renta presuntiva", presuntiva,
                   f"Tarifa vigente: {porcentaje(parametros.tarifa_renta_presuntiva)}%",
                   parametros.fuente_renta_presuntiva, casilla=98))
-        if presuntiva > base_ordinaria + renta_comparacion:
+        if por_presuntiva:
             liq.diagnosticos.append(
                 f"La renta presuntiva (${presuntiva.quantize(_CENTAVO)}) superó la renta "
-                f"ordinaria (${(base_ordinaria + renta_comparacion).quantize(_CENTAVO)}) "
-                f"y pasó a ser la base del impuesto."
+                f"líquida gravable de la cédula general "
+                f"(${casilla_97.quantize(_CENTAVO)}) y la reemplazó en la base del "
+                f"impuesto; las rentas de pensiones y de dividendos se suman igual."
             )
 
     R(Renglon("BASE-GRAVABLE", "Renta líquida gravable total", base_241,
-              "Mayor entre la suma de las rentas líquidas cedulares (más la renta por "
-              "comparación patrimonial, si se aceptó) y la renta presuntiva",
+              "Mayor entre la renta líquida gravable de la cédula general (casilla "
+              "97) y la renta presuntiva (98), más pensiones (103) y dividendos "
+              "(107 + 108 − 118)",
               "Arts. 241, 331 y 188 ET", casilla=111))
 
     impuesto_renta, formula_impuesto, _ = aplicar_tabla(base_241, parametros.tabla_renta, uvt)
-    por_presuntiva = presuntiva > base_ordinaria + renta_comparacion
     R(Renglon("IMP-RENTA", "Impuesto sobre la renta líquida gravable", impuesto_renta,
               formula_impuesto, parametros.fuente_tabla_renta,
               casilla=117 if por_presuntiva else 116))
+    # Desde aquí «impuesto de renta» es el total de la casilla 121: el de la
+    # tabla más el del art. 240 sobre los dividendos gravados.
+    impuesto_renta = impuesto_renta + impuesto_dividendos_gravados
     R(Renglon("IMP-TOTAL-RENTA", "Total impuesto sobre las rentas líquidas gravables",
               impuesto_renta, "Casillas 116 + 117 + 118 + 119 + 120",
               parametros.fuente_tabla_renta, casilla=121))
@@ -1298,29 +1342,34 @@ def liquidar(
         )
 
     # --- Saldo --------------------------------------------------------------
-    neto = (
+    por_impuesto = (
         impuesto_neto
         + anticipo
         - retenciones
         - insumos.anticipo_pagado_anio_anterior
         - insumos.saldo_a_favor_anio_anterior
     )
+    R(Renglon("SALDO-POR-IMPUESTO", "Saldo a pagar por impuesto",
+              _no_negativo(por_impuesto),
+              "Casillas 129 + 133 − 130 − 131 − 132, sin sanciones", "Art. 807 ET",
+              casilla=134))
+    if insumos.sanciones > CERO:
+        R(Renglon("SANCIONES", "Sanciones", insumos.sanciones,
+                  insumos.formula_sanciones or "Sanciones liquidadas por el declarante",
+                  "Arts. 639, 640 y 641 ET", casilla=135))
+    neto = por_impuesto + insumos.sanciones
     saldo_a_pagar = _no_negativo(neto)
     saldo_a_favor = _no_negativo(-neto)
-    R(Renglon("SALDO-A-PAGAR", "Saldo a pagar por impuesto", saldo_a_pagar,
-              "Impuesto neto + anticipo del año siguiente − retenciones − anticipo "
-              "pagado el año anterior − saldo a favor del año anterior",
+    R(Renglon("SALDO-A-PAGAR", "Total saldo a pagar", saldo_a_pagar,
+              "Impuesto neto + anticipo del año siguiente + sanciones − retenciones − "
+              "anticipo pagado el año anterior − saldo a favor del año anterior",
               "Art. 807 ET", casilla=136))
     R(Renglon("SALDO-A-FAVOR", "Total saldo a favor", saldo_a_favor,
               "Resultado negativo de la misma operación; puede solicitarse en "
               "devolución o compensación",
               "Arts. 850 y 815 ET", casilla=137))
 
-    liq.notas.append(
-        "Los números de casilla son los del formulario 210 del año gravable 2024. "
-        "La DIAN puede renumerar el formulario cada año: confírmelos contra la "
-        "resolución que prescribe el del año que se declara antes de transcribir."
-    )
+    liq.notas.append(nota_de_numeracion(insumos.anio_gravable))
     return liq
 
 

@@ -1,6 +1,21 @@
+"""Costeo del inventario: PEPS y promedio ponderado.
+
+La aritmética se hace en `Decimal`, no en `float`
+-------------------------------------------------
+Las cantidades y los valores entran y salen como `float` porque así están en la
+base de datos y en la API, y cambiar eso es una migración de esquema aparte.
+Pero el cálculo intermedio —acumular saldos, promediar, repartir capas— es donde
+el binario pierde centavos: un promedio ponderado recalculado en cada salida
+arrastra el error de todas las anteriores, y ese costo de ventas es el que
+termina en la declaración. Cada valor se convierte con `Decimal(str(x))`, que
+toma el número tal como se digitó, y solo al final se redondea, a la mitad
+hacia arriba como en el resto de la liquidación.
+"""
+
 from collections import deque
 from dataclasses import dataclass
 from datetime import date
+from decimal import ROUND_HALF_UP, Decimal
 from typing import Iterable, List, Optional
 
 from core.excepciones import StockInsuficienteError
@@ -8,7 +23,19 @@ from core.excepciones import StockInsuficienteError
 from ..inventario.modelos import MetodoCosteo
 from .modelos import LineaKardex, TipoMovimiento
 
-EPSILON = 1e-9
+EPSILON = Decimal("0.000000001")
+CERO = Decimal("0")
+_CENTAVO = Decimal("0.01")
+_MICRO = Decimal("0.000001")
+
+
+def _d(valor) -> Decimal:
+    """`float` → `Decimal` sin heredar el error binario: 0.1 entra como 0.1."""
+    return valor if isinstance(valor, Decimal) else Decimal(str(valor))
+
+
+def _pesos(valor: Decimal) -> float:
+    return float(valor.quantize(_CENTAVO, rounding=ROUND_HALF_UP))
 
 
 @dataclass
@@ -33,17 +60,18 @@ def ordenar(movimientos: Iterable[MovimientoCosteo]) -> List[MovimientoCosteo]:
 
 
 def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> float:
-    saldo = 0.0
+    saldo = CERO
     for mov in ordenar(movimientos):
+        cantidad = _d(mov.cantidad)
         if mov.tipo == TipoMovimiento.ENTRADA:
-            saldo += mov.cantidad
+            saldo += cantidad
             continue
-        if mov.cantidad > saldo + EPSILON:
+        if cantidad > saldo + EPSILON:
             raise StockInsuficienteError(
                 f"Stock insuficiente al {mov.fecha.isoformat()}: se intentan "
-                f"sacar {mov.cantidad:g} unidades y solo hay {saldo:g} disponibles"
+                f"sacar {mov.cantidad:g} unidades y solo hay {float(saldo):g} disponibles"
             )
-        saldo -= mov.cantidad
+        saldo -= cantidad
     return _limpiar(saldo)
 
 
@@ -60,12 +88,13 @@ def _kardex_peps(movimientos: List[MovimientoCosteo]) -> List[LineaCalculada]:
     lineas: List[LineaCalculada] = []
 
     for mov in movimientos:
+        cantidad, unitario = _d(mov.cantidad), _d(mov.valor_unitario)
         if mov.tipo == TipoMovimiento.ENTRADA:
-            capas.append([mov.cantidad, mov.valor_unitario])
-            costo_total = mov.cantidad * mov.valor_unitario
+            capas.append([cantidad, unitario])
+            costo_total = cantidad * unitario
         else:
-            restante = mov.cantidad
-            costo_total = 0.0
+            restante = cantidad
+            costo_total = CERO
             while restante > EPSILON:
                 if not capas:
                     raise StockInsuficienteError(
@@ -80,8 +109,8 @@ def _kardex_peps(movimientos: List[MovimientoCosteo]) -> List[LineaCalculada]:
                 if capa[0] <= EPSILON:
                     capas.popleft()
 
-        saldo_cantidad = sum(c[0] for c in capas)
-        saldo_valor = sum(c[0] * c[1] for c in capas)
+        saldo_cantidad = sum((c[0] for c in capas), CERO)
+        saldo_valor = sum((c[0] * c[1] for c in capas), CERO)
         lineas.append(_linea(mov, costo_total, saldo_cantidad, saldo_valor))
 
     return lineas
@@ -90,28 +119,29 @@ def _kardex_peps(movimientos: List[MovimientoCosteo]) -> List[LineaCalculada]:
 def _kardex_promedio_ponderado(
     movimientos: List[MovimientoCosteo],
 ) -> List[LineaCalculada]:
-    saldo_cantidad = 0.0
-    saldo_valor = 0.0
+    saldo_cantidad = CERO
+    saldo_valor = CERO
     lineas: List[LineaCalculada] = []
 
     for mov in movimientos:
+        cantidad = _d(mov.cantidad)
         if mov.tipo == TipoMovimiento.ENTRADA:
-            costo_total = mov.cantidad * mov.valor_unitario
-            saldo_cantidad += mov.cantidad
+            costo_total = cantidad * _d(mov.valor_unitario)
+            saldo_cantidad += cantidad
             saldo_valor += costo_total
         else:
-            if mov.cantidad > saldo_cantidad + EPSILON:
+            if cantidad > saldo_cantidad + EPSILON:
                 raise StockInsuficienteError(
                     f"Stock insuficiente al {mov.fecha.isoformat()} para "
                     f"costear la salida del movimiento {mov.movimiento_id}"
                 )
             costo_promedio = saldo_valor / saldo_cantidad
-            costo_total = mov.cantidad * costo_promedio
-            saldo_cantidad -= mov.cantidad
+            costo_total = cantidad * costo_promedio
+            saldo_cantidad -= cantidad
             saldo_valor -= costo_total
             if saldo_cantidad <= EPSILON:
-                saldo_cantidad = 0.0
-                saldo_valor = 0.0
+                saldo_cantidad = CERO
+                saldo_valor = CERO
 
         lineas.append(_linea(mov, costo_total, saldo_cantidad, saldo_valor))
 
@@ -119,7 +149,10 @@ def _kardex_promedio_ponderado(
 
 
 def _linea(
-    mov: MovimientoCosteo, costo_total: float, saldo_cantidad: float, saldo_valor: float
+    mov: MovimientoCosteo,
+    costo_total: Decimal,
+    saldo_cantidad: Decimal,
+    saldo_valor: Decimal,
 ) -> LineaCalculada:
     es_salida = mov.tipo == TipoMovimiento.SALIDA
     return LineaCalculada(
@@ -128,16 +161,16 @@ def _linea(
             fecha=mov.fecha,
             tipo=mov.tipo,
             cantidad=mov.cantidad,
-            costo_unitario=round(costo_total / mov.cantidad, 2),
-            costo_total=round(costo_total, 2),
+            costo_unitario=_pesos(costo_total / _d(mov.cantidad)),
+            costo_total=_pesos(costo_total),
             saldo_cantidad=_limpiar(saldo_cantidad),
-            saldo_valor=round(_limpiar(saldo_valor), 2),
+            saldo_valor=_pesos(saldo_valor),
             precio_venta_unitario=mov.valor_unitario if es_salida else None,
         ),
         periodo_fiscal_id=mov.periodo_fiscal_id,
     )
 
 
-def _limpiar(valor: float) -> float:
-    redondeado = round(valor, 6)
-    return 0.0 if abs(redondeado) < EPSILON else redondeado
+def _limpiar(valor: Decimal) -> float:
+    redondeado = _d(valor).quantize(_MICRO, rounding=ROUND_HALF_UP)
+    return 0.0 if abs(redondeado) < EPSILON else float(redondeado)

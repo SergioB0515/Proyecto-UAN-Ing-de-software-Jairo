@@ -37,8 +37,10 @@ CONSULTANTE_ID = "1015442308"
 CONSULTANTE_NOMBRE = "SANDRA MILENA OSORIO PEÑA"
 
 TOPES = [
-    ("Tope 1 - Ingresos", 64_800_000),
-    ("Tope 2 - Patrimonio", 72_650_000),
+    # Cada tope es la suma de sus registros, como en un archivo real; el de
+    # patrimonio es el mayor entre esa suma y lo declarado el año anterior.
+    ("Tope 1 - Ingresos", 74_400_000),
+    ("Tope 2 - Patrimonio", 69_400_000),
     ("Tope 3 - Consumo TC", 7_200_000),
     ("Tope 4 - Movimiento", 81_300_000),
     ("Tope 5 - Compras", 6_400_000),
@@ -58,7 +60,7 @@ REGISTROS = [
     # No lo declaró -> NO_DECLARADO.
     ("830025281", "ARRENDAMIENTOS LA COLINA S A S",
      "Arrendamientos de bienes inmuebles (Concepto: 5008)", 9_600_000,
-     "Tope 1: Ingresos brutos | R47 Rentas no laborales",
+     "Tope 1: Ingresos brutos | R58 Ingresos brutos rentas de capital",
      "Fecha de la Transacción: 20251130"),
     ("890903938", "BANCOLOMBIA S A",
      "Total consumos o gastos con tarjeta Crédito o Débito (Concepto: 1023)",
@@ -68,7 +70,17 @@ REGISTROS = [
      "R132 Retenciones año gravable a declarar", None),
     (CONSULTANTE_ID, CONSULTANTE_NOMBRE,
      "Total patrimonio bruto declarado en el año anterior", 69_400_000,
-     None, None),
+     "El Tope 2 - Patrimonio, toma el mayor valor entre la suma de variables "
+     "del año gravable reportadas en la exógena y el valor de patrimonio bruto "
+     "declarado en el año anterior", None),
+    ("890903938", "BANCOLOMBIA S A",
+     "Valor total de los movimientos en cuentas corrientes y de ahorros  "
+     "(Titular principal)", 81_300_000,
+     "Tope 4: Consignaciones e inversiones",
+     "Concepto Códigos Tributaria: *1* Cuenta de ahorro"),
+    ("800197268", "DIAN",
+     "Suma valor total facturas tras ajustes por notas", 6_400_000,
+     "Tope 5: Compras registradas en Factura Electrónica", None),
 ]
 
 ENCABEZADOS = [

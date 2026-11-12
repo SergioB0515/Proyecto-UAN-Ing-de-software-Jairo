@@ -135,6 +135,12 @@ def crear_tablas() -> None:
         "hojas_liquidacion",
         {
             "metodo_anticipo": "VARCHAR NOT NULL DEFAULT 'DIRECTO'",
+            "reduccion_sancion": "VARCHAR NOT NULL DEFAULT 'NINGUNA'",
+            "ingresos_no_constitutivos_capital": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "costos_y_gastos_capital": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "ingresos_no_constitutivos_no_laborales": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "devoluciones_no_laborales": "NUMERIC(18,2) NOT NULL DEFAULT 0",
+            "costos_y_gastos_no_laborales": "NUMERIC(18,2) NOT NULL DEFAULT 0",
             "impuesto_neto_anio_anterior": "NUMERIC(18,2) NOT NULL DEFAULT 0",
             "total_pagos_del_anio": "NUMERIC(18,2) NOT NULL DEFAULT 0",
             "pagos_en_efectivo": "NUMERIC(18,2) NOT NULL DEFAULT 0",

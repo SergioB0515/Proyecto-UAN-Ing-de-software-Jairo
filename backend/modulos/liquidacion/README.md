@@ -148,3 +148,30 @@ líquida en el orden del formulario.
 servicios en línea de la DIAN, y el documento va marcado como borrador en cada
 página. Las casillas que el motor no calcula (94, 95, 104–106, 109, 110,
 118–120, 122, 123, 128, 135) se imprimen como «no calculada», no en cero.
+
+## Dividendos gravados, sanciones, escenarios y arrastre
+
+- **Dividendos gravados (casilla 118).** A los de la 2a subcédula se les aplica
+  la tarifa del art. 240 (general 35 %, configurable por certificado) y solo el
+  remanente entra a la tabla del art. 241: casilla 111 = mayor(97, 98) + 103 +
+  107 + 108 − 118. La renta presuntiva se compara solo contra la cédula general.
+- **Sanción por extemporaneidad (casilla 135, `sanciones.py`).** Art. 641 con
+  la sanción mínima del 639 y las reducciones del 640, a partir de la fecha de
+  vencimiento y de presentación del periodo. No cubre la sanción posterior al
+  emplazamiento (art. 642) ni los intereses de mora, que dependen de la tasa
+  que certifica la Superfinanciera cada mes.
+- **Escenarios (`GET …/escenarios`).** Vuelve a liquidar con una sola decisión
+  cambiada: costos contra renta exenta del 25 % en honorarios, método del
+  anticipo, cupo sin usar del art. 336. Son cálculos, no recomendaciones.
+- **Imputación de deducciones (`PATCH …/deducciones/{id}/imputacion`).** Fija
+  la columna y la fila del formulario de cada deducción.
+- **Arrastre.** Al copiar la hoja del año anterior, las pérdidas del ejercicio
+  quedan registradas como compensables.
+- **Numeración.** La Resolución DIAN 000044 de 2024 prescribe el formulario
+  «para el año gravable 2023 y siguientes» (compilada en la Resolución 227 de
+  2025): la numeración vale para 2023 a 2025. Un año posterior se marca como
+  no verificado.
+
+El costeo del inventario (PEPS y promedio) hace su aritmética en `Decimal`. Los
+campos de dinero de los módulos anteriores siguen guardados como `float` en la
+base de datos; migrarlos es un cambio de esquema pendiente.

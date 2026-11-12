@@ -123,6 +123,10 @@ class ParametrosAnuales:
 
     # Dividendos (residentes).
     descuento_dividendos: LimiteUvt      # art. 254-1
+    # Tarifa general del art. 240 que el art. 242 inc. 2 aplica a los dividendos
+    # gravados (par. 2 del art. 49) antes de llevarlos a la tabla del art. 241.
+    tarifa_dividendos_gravados: Decimal
+    fuente_dividendos_gravados: str
 
     # Ganancias ocasionales.
     tarifa_ganancia_ocasional: Decimal
@@ -316,6 +320,11 @@ def _parametros_ley_2277(anio: int, uvt: str, fuente_uvt: str) -> ParametrosAnua
             porcentaje=Decimal("0.19"),
             tope_uvt=Decimal("1090"),  # umbral: el descuento aplica sobre el exceso
             fuente_legal="Art. 254-1 ET, adicionado por la Ley 2277 de 2022, art. 12",
+        ),
+        tarifa_dividendos_gravados=Decimal("0.35"),
+        fuente_dividendos_gravados=(
+            "Art. 242 inc. 2 ET y art. 240 ET (tarifa general del 35 % desde el "
+            "año gravable 2023); instructivo del formulario 210, casillas 111 y 118"
         ),
         tarifa_ganancia_ocasional=Decimal("0.15"),
         tarifa_ganancia_ocasional_loterias=Decimal("0.20"),

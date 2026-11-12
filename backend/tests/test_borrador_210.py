@@ -129,3 +129,62 @@ def test_las_casillas_que_el_motor_no_calcula_no_se_imprimen_en_cero():
     casillas = borrador_210.construir_casillas(liq.renglones)
     for numero in borrador_210.CASILLAS_NO_CALCULADAS:
         assert numero not in casillas
+
+
+# ---------------------------------------------------------------------------
+# Dividendos gravados y renta presuntiva
+# ---------------------------------------------------------------------------
+
+
+def test_los_dividendos_gravados_pagan_el_35_y_solo_el_remanente_va_a_la_tabla():
+    """Instructivo: casilla 118 = tarifa del art. 240 sobre la casilla 108;
+    casilla 111 = mayor(97, 98) + 103 + 107 + 108 − 118; casilla 121 = 116 + … + 118.
+    """
+    from modulos.liquidacion.motor import Dividendos
+
+    liq = _liq(
+        trabajo=RentasDeTrabajo(ingresos_brutos=D("100000000")),
+        dividendos=Dividendos(no_gravados=D("20000000"), gravados=D("40000000")),
+    )
+    c = {r.casilla: r.valor for r in liq.renglones if r.casilla}
+    assert c[107] == D("20000000")
+    assert c[108] == D("40000000")
+    assert c[118] == D("14000000")                       # 35 % de 40.000.000
+    assert c[111] == c[97] + c[107] + c[108] - c[118]
+    assert c[121] == c[116] + c[118]
+
+
+def test_la_tarifa_de_los_dividendos_gravados_se_puede_fijar():
+    from modulos.liquidacion.motor import Dividendos
+
+    liq = _liq(dividendos=Dividendos(gravados=D("10000000"), tarifa_gravados=D("0.20")))
+    c = {r.casilla: r.valor for r in liq.renglones if r.casilla}
+    assert c[118] == D("2000000")
+    assert not any("tarifa general" in n for n in liq.notas)
+
+
+def test_la_presuntiva_solo_compite_con_la_cedula_general():
+    """Casilla 111: se toma el mayor entre la 97 y la 98, y las pensiones y los
+    dividendos se suman después, gane quien gane.
+    """
+    from modulos.liquidacion.motor import Dividendos
+
+    liq = _liq(
+        trabajo=RentasDeTrabajo(ingresos_brutos=D("20000000")),
+        dividendos=Dividendos(no_gravados=D("100000000")),
+        renta_presuntiva=D("50000000"),
+    )
+    c = {r.casilla: r.valor for r in liq.renglones if r.casilla}
+    assert c[98] > c[97]
+    assert c[111] == c[98] + c[107]
+    assert 117 in c and 116 not in c
+
+
+def test_la_numeracion_solo_se_da_por_buena_en_los_anos_de_la_resolucion():
+    from modulos.liquidacion.formulario_210 import (
+        ADVERTENCIA_ANIO_NO_VERIFICADO, nota_de_numeracion, numeracion_verificada,
+    )
+    assert all(numeracion_verificada(a) for a in (2023, 2024, 2025))
+    assert not numeracion_verificada(2026)
+    assert nota_de_numeracion(2026) == ADVERTENCIA_ANIO_NO_VERIFICADO
+    assert "000044" in nota_de_numeracion(2025)

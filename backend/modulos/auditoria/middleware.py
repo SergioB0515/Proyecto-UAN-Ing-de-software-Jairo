@@ -50,6 +50,7 @@ ACCIONES_AUDITADAS = {
     "actualizar_hoja": "Actualizó la hoja de liquidación",
     "crear_deduccion": "Solicitó una deducción o renta exenta",
     "eliminar_deduccion": "Eliminó una deducción solicitada",
+    "imputar_deduccion": "Cambió la casilla del formulario de una deducción",
     "clasificar_ingresos": "Clasificó fuentes de ingreso por cédula",
     "exportar_liquidacion": "Exportó el borrador de liquidación",
     "guardar_depreciacion": "Registró datos de depreciación de activos",

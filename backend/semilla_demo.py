@@ -150,6 +150,85 @@ def _reg(
     )
 
 
+_USO_PATRIMONIO_ANTERIOR = (
+    "El Tope 2 - Patrimonio, toma el mayor valor entre la suma de variables del "
+    "año gravable reportadas en la exógena y el valor de patrimonio bruto "
+    "declarado en el año anterior"
+)
+
+
+def _completar_detalle(
+    topes: Sequence[Tuple[str, float]], registros: List[dict]
+) -> List[dict]:
+    """Deja la exógena de ejemplo coherente consigo misma, como una real.
+
+    En el archivo de la DIAN cada tope sale de su detalle: es la suma de los
+    registros marcados con ese tope, y el de patrimonio es el mayor entre esa
+    suma y lo declarado el año anterior. Los casos de la semilla fijan los
+    topes a mano para contar una historia, así que aquí se agrega el detalle
+    que les falta. Sin esto el cruce con la DIAN, que reconstruye cada tope,
+    marcaría los cinco como descuadrados en todos los contribuyentes de la demo.
+    """
+    def suma(numero: int) -> float:
+        return sum(
+            r["valor"] for r in registros
+            if (r.get("uso_sugerido") or "").startswith(f"Tope {numero}:")
+        )
+
+    # El registro de patrimonio del año anterior trae siempre este texto.
+    for r in registros:
+        if "declarado en el año anterior" in r["detalle"]:
+            r["uso_sugerido"] = _USO_PATRIMONIO_ANTERIOR
+
+    for etiqueta, valor in topes:
+        numero = int(etiqueta.split()[1])
+        falta = valor - suma(numero)
+        if numero == 1:
+            if abs(falta) >= 1:
+                raise ValueError(
+                    f"{etiqueta} es {valor:,.0f} y sus registros suman "
+                    f"{suma(1):,.0f}: en una exógena real son iguales."
+                )
+            continue
+        if numero == 2:
+            anterior = next(
+                (r for r in registros if "declarado en el año anterior" in r["detalle"]),
+                None,
+            )
+            if falta >= 1 and anterior is None:
+                registros.append(_reg(
+                    "", "", "Total patrimonio bruto declarado en el año anterior",
+                    valor, _USO_PATRIMONIO_ANTERIOR, auto_reportado=True,
+                ))
+            elif falta >= 1:
+                anterior["valor"] = valor
+            continue
+        if falta < 1:
+            continue
+        if numero == 3:
+            registros.append(_reg(
+                "890903938", "BANCOLOMBIA S A",
+                "Total consumos o gastos con tarjeta Crédito o Débito (Concepto: 1023)",
+                falta, "Tope 3: Consumos TC", "Clase de Tarjeta: *1* Crédito",
+                concepto="1023",
+            ))
+        elif numero == 4:
+            registros.append(_reg(
+                "890903938", "BANCOLOMBIA S A",
+                "Valor total de los movimientos en cuentas corrientes y de ahorros  "
+                "(Titular principal)",
+                falta, "Tope 4: Consignaciones e inversiones",
+                "Concepto Códigos Tributaria: *1* Cuenta de ahorro",
+            ))
+        elif numero == 5:
+            registros.append(_reg(
+                NIT_DIAN, "DIAN",
+                "Suma valor total facturas tras ajustes por notas",
+                falta, "Tope 5: Compras registradas en Factura Electrónica",
+            ))
+    return registros
+
+
 def _crear_exogena(
     session: Session,
     contribuyente_id: int,
@@ -158,6 +237,7 @@ def _crear_exogena(
     topes: Sequence[Tuple[str, float]],
     registros: Iterable[dict],
 ) -> ReporteExogena:
+    registros = _completar_detalle(topes, list(registros))
     reporte = ReporteExogena(
         contribuyente_id=contribuyente_id,
         periodo_fiscal_id=periodo_id,
@@ -532,7 +612,9 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
     _crear_exogena(
         session, cid, periodo, "exogena_beltran_gomez_2025.xlsx",
         topes=[
-            _tope("Tope 1 - Ingresos", 168_700_000),
+            # La suma de lo que reportan los terceros: el negocio vende más
+            # de lo que la exógena alcanza a ver, y eso no infla el tope.
+            _tope("Tope 1 - Ingresos", 119_240_000),
             _tope("Tope 2 - Patrimonio", 310_000_000),
             _tope("Tope 3 - Consumo TC", 18_600_000),
             _tope("Tope 4 - Movimiento", 204_000_000),
@@ -542,7 +624,7 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
             _reg("901234567", "SERVITECA LA SEPTIMA S A S",
                  "Pagos o abonos en cuenta por compras (Concepto: 5005)",
                  112_400_000,
-                 "Tope 1: Ingresos brutos | R47 Rentas no laborales",
+                 "Tope 1: Ingresos brutos | R74 Ingresos brutos rentas no laborales",
                  concepto="5005"),
             _reg("860034313", "BANCO DAVIVIENDA S A",
                  "Saldo de cuentas de ahorro y corrientes a 31 de diciembre "
@@ -559,7 +641,7 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
             _reg("860002503", "SEGUROS BOLIVAR S A",
                  "Rendimientos financieros e intereses (Concepto: 1301)",
                  6_840_000,
-                 "Tope 1: Ingresos brutos | R48 Rentas no laborales",
+                 "Tope 1: Ingresos brutos | R58 Ingresos brutos rentas de capital",
                  concepto="1301"),
             _reg("901234567", "SERVITECA LA SEPTIMA S A S",
                  "Retención en la fuente practicada por compras", 2_810_000,
@@ -1042,6 +1124,23 @@ def borrar_demo(session: Session) -> bool:
                     TopeExogena.reporte_exogena_id.in_(reportes)
                 )
             )
+        # Las tablas de la liquidación cuelgan de los periodos y de los
+        # activos: se borran antes, o la llave foránea impide borrar lo demás.
+        from modulos.liquidacion.modelos import (
+            ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
+            HojaLiquidacion, PagoEfectivo, PerdidaFiscal,
+        )
+        periodos = list(
+            session.exec(
+                select(PeriodoFiscal.id).where(PeriodoFiscal.contribuyente_id.in_(ids))
+            ).all()
+        )
+        if periodos:
+            for modelo in (ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
+                           PagoEfectivo, HojaLiquidacion):
+                session.exec(delete(modelo).where(modelo.periodo_fiscal_id.in_(periodos)))
+        session.exec(delete(PerdidaFiscal).where(PerdidaFiscal.contribuyente_id.in_(ids)))
+
         for modelo in (
             ReporteExogena, Adjunto, Movimiento, CierrePeriodo, DocumentoSoporte,
             Proveedor, Producto, Categoria, Activo, FuenteIngreso, PeriodoFiscal,

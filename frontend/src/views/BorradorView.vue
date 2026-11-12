@@ -74,7 +74,7 @@ onMounted(async () => {
               {{ c.etiqueta }}
               <span
                 class="ml-2 rounded px-2 py-0.5 text-xs font-medium"
-                :class="c.cuadra ? 'bg-estado-coincide-claro text-estado-coincide' : 'bg-estado-discrepancia-claro text-estado-discrepancia'"
+                :class="c.cuadra ? 'bg-libro-claro text-libro-oscuro' : 'bg-estado-discrepancia-claro text-estado-discrepancia'"
               >
                 {{ c.cuadra ? 'Cuadra' : 'No cuadra' }}
               </span>

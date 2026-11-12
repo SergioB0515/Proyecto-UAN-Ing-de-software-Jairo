@@ -103,3 +103,27 @@ def test_validar_stock_detecta_saldo_negativo_en_el_pasado():
 
 def test_validar_stock_devuelve_el_saldo_final():
     assert validar_stock(MOVIMIENTOS) == 5
+
+
+def test_el_promedio_ponderado_no_arrastra_error_binario():
+    """Con `float`, 0,1 + 0,2 ya no es 0,3; un promedio recalculado en cada
+    salida arrastra ese error y lo lleva al costo de ventas. En Decimal, mil
+    entradas de 0,1 unidades a $0,7 valen exactamente $70.
+    """
+    from datetime import date
+    from modulos.inventario.modelos import MetodoCosteo
+    from modulos.movimientos.costeo import MovimientoCosteo, calcular_kardex
+    from modulos.movimientos.modelos import TipoMovimiento
+
+    movimientos = [
+        MovimientoCosteo(date(2025, 1, 1), float(i), TipoMovimiento.ENTRADA, 0.1, 0.7, i)
+        for i in range(1000)
+    ]
+    lineas = calcular_kardex(MetodoCosteo.PROMEDIO_PONDERADO, movimientos)
+    assert lineas[-1].linea.saldo_cantidad == 100.0
+    assert lineas[-1].linea.saldo_valor == 70.0
+    # La misma acumulación en binario, como la hacía el kardex, no da 100:
+    acumulado = 0.0
+    for _ in range(1000):
+        acumulado += 0.1
+    assert acumulado != 100.0

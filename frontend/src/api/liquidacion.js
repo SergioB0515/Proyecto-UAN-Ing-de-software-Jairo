@@ -16,6 +16,14 @@ export const listarDeducciones = (cid, pid) => obtener(`${base(cid, pid)}/deducc
 export const crearDeduccion = (cid, pid, datos) =>
   enviar(`${base(cid, pid)}/deducciones`, datos)
 
+export async function imputarDeduccion(cid, pid, id, datos) {
+  const { data } = await cliente.patch(`${base(cid, pid)}/deducciones/${id}`, datos)
+  return data
+}
+
+// La misma liquidación con una sola decisión cambiada a la vez.
+export const obtenerEscenarios = (cid, pid) => obtener(`${base(cid, pid)}/escenarios`)
+
 export const eliminarDeduccion = (cid, pid, id) =>
   cliente.delete(`${base(cid, pid)}/deducciones/${id}`)
 

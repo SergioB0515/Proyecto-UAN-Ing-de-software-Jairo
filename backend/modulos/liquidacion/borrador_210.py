@@ -35,6 +35,7 @@ from .formulario_210 import (
     CASILLAS_2024,
     SUBCEDULAS,
     _GRILLA_CEDULA_GENERAL,
+    numeracion_verificada,
 )
 
 CERO = Decimal("0")
@@ -67,13 +68,11 @@ CASILLAS_NO_CALCULADAS = {
     106: "dividendos de 2016 y anteriores",
     109: "dividendos del exterior",
     110: "dividendos del exterior",
-    118: "impuesto del art. 240 sobre dividendos gravados",
     119: "dividendos de 2016 y anteriores",
     120: "dividendos del exterior",
     122: "impuestos pagados en el exterior",
     123: "donaciones",
     128: "impuestos pagados en el exterior",
-    135: "sanciones",
 }
 
 
@@ -92,17 +91,13 @@ class Borrador210:
 def construir_casillas(renglones) -> Dict[int, Decimal]:
     """Casilla → valor a declarar, a partir de los renglones del motor.
 
-    Solo entran los renglones que el motor marcó con su número de casilla. La
-    134 (saldo a pagar por impuesto) repite la 136 porque el borrador no
-    liquida sanciones.
+    Solo entran los renglones que el motor marcó con su número de casilla.
     """
     casillas: Dict[int, Decimal] = {}
     for renglon in renglones:
         numero = getattr(renglon, "casilla", None)
         if numero:
             casillas[numero] = Decimal(renglon.valor_declarable)
-    if 136 in casillas:
-        casillas[134] = casillas[136]
     return casillas
 
 
@@ -261,7 +256,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
                     if n not in borrador.casillas)
         + "). Si aplican al contribuyente, deben liquidarse aparte.",
     ]
-    if borrador.anio_gravable != 2024:
+    if not numeracion_verificada(borrador.anio_gravable):
         avisos.append(ADVERTENCIA_ANIO_NO_VERIFICADO)
     avisos.append(
         "La responsabilidad de la declaración es del contribuyente y del contador "

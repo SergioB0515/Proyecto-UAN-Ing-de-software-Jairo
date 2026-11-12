@@ -28,6 +28,8 @@ from ..reportes.exportacion import DocumentoReporte, Seccion, a_excel, a_pdf
 from ..reportes.modelos import FormatoReporte
 from ..reportes.servicios import _MEDIA_TYPES
 from .modelos import (
+    DeduccionImputacion,
+    EscenariosLeer,
     ClasificacionIngresoDatos,
     DatosDepreciacionGuardar,
     DatosDepreciacionLeer,
@@ -136,6 +138,26 @@ def crear_deduccion(
     try:
         return servicios.crear_deduccion(
             session, contador.id, contribuyente_id, periodo_fiscal_id, datos
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.patch(
+    f"{_BASE}/deducciones/{{deduccion_id}}", response_model=DeduccionSolicitadaLeer
+)
+def imputar_deduccion(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    deduccion_id: int,
+    datos: DeduccionImputacion,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Fija a qué columna y fila del formulario 210 va la deducción."""
+    try:
+        return servicios.imputar_deduccion(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, deduccion_id, datos
         )
     except Exception as exc:
         raise _traducir(exc)
@@ -261,6 +283,22 @@ def exportar_liquidacion(
         media_type=_MEDIA_TYPES[formato],
         headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
+
+
+@router.get(f"{_BASE}/escenarios", response_model=EscenariosLeer)
+def escenarios(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Compara la liquidación con una sola decisión cambiada a la vez."""
+    try:
+        return servicios.simular_escenarios(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
 
 
 @router.get(f"{_BASE}/formulario-210", response_class=Response)

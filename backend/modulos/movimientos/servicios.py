@@ -310,8 +310,16 @@ def calcular_costo_ventas(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     ):
         salidas = [l for l in kardex.lineas if l.tipo == TipoMovimiento.SALIDA]
-        ingresos = round(sum(l.cantidad * (l.precio_venta_unitario or 0) for l in salidas), 2)
-        costo = round(sum(l.costo_total for l in salidas), 2)
+        # Las sumas se hacen en Decimal: sumar cientos de líneas en binario
+        # acumula un error de centavos que termina en la declaración.
+        ingresos_d = sum(
+            (costeo._d(l.cantidad) * costeo._d(l.precio_venta_unitario or 0)
+             for l in salidas),
+            costeo.CERO,
+        )
+        costo_d = sum((costeo._d(l.costo_total) for l in salidas), costeo.CERO)
+        ingresos = costeo._pesos(ingresos_d)
+        costo = costeo._pesos(costo_d)
         resultado.append(
             CostoVentasProducto(
                 producto_id=kardex.producto_id,
@@ -321,14 +329,16 @@ def calcular_costo_ventas(
                 cantidad_vendida=sum(l.cantidad for l in salidas),
                 ingresos_ventas=ingresos,
                 costo_ventas=costo,
-                utilidad_bruta=round(ingresos - costo, 2),
+                utilidad_bruta=costeo._pesos(ingresos_d - costo_d),
                 saldo_final_cantidad=kardex.saldo_final_cantidad,
                 saldo_final_valor=kardex.saldo_final_valor,
             )
         )
 
-    total_ingresos = round(sum(p.ingresos_ventas for p in resultado), 2)
-    total_costo = round(sum(p.costo_ventas for p in resultado), 2)
+    total_ingresos_d = sum((costeo._d(p.ingresos_ventas) for p in resultado), costeo.CERO)
+    total_costo_d = sum((costeo._d(p.costo_ventas) for p in resultado), costeo.CERO)
+    total_ingresos = costeo._pesos(total_ingresos_d)
+    total_costo = costeo._pesos(total_costo_d)
     return CostoVentasPeriodo(
         contribuyente_id=contribuyente_id,
         periodo_fiscal_id=periodo.id,
@@ -336,6 +346,8 @@ def calcular_costo_ventas(
         productos=resultado,
         total_ingresos_ventas=total_ingresos,
         total_costo_ventas=total_costo,
-        total_utilidad_bruta=round(total_ingresos - total_costo, 2),
-        total_inventario_final=round(sum(p.saldo_final_valor for p in resultado), 2),
+        total_utilidad_bruta=costeo._pesos(total_ingresos_d - total_costo_d),
+        total_inventario_final=costeo._pesos(
+            sum((costeo._d(p.saldo_final_valor) for p in resultado), costeo.CERO)
+        ),
     )

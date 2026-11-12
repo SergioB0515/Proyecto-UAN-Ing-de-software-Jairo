@@ -8,7 +8,9 @@ el error binario del float, `Decimal(str(0.1))` no. Toda conversión ocurre aqu�
 y nada más abajo vuelve a ver un float.
 """
 
-from datetime import datetime, timezone
+from core.formato import pesos
+from dataclasses import replace
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
@@ -39,7 +41,7 @@ from ..parametros.tablas_oficiales import (
 )
 from ..inventario.servicios import TIPOS_CON_INVENTARIO
 from ..movimientos.servicios import calcular_costo_ventas
-from . import clasificador, motor, plantillas
+from . import clasificador, motor, plantillas, sanciones
 from .calculos_empresariales import (
     ActivoDepreciable,
     InsumosBancarizacion,
@@ -49,6 +51,10 @@ from .calculos_empresariales import (
     calcular_depreciacion,
 )
 from .modelos import (
+    DeduccionImputacion,
+    CifrasEscenario,
+    EscenarioLeer,
+    EscenariosLeer,
     CERO,
     CategoriaDepreciacion,
     Cedula,
@@ -61,6 +67,7 @@ from .modelos import (
     PerdidaFiscal,
     PerdidaFiscalCrear,
     PerdidaFiscalLeer,
+    TipoRentaPerdida,
     ClasificacionIngreso,
     ClasificacionIngresoDatos,
     DeduccionSolicitada,
@@ -179,6 +186,29 @@ def crear_deduccion(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
     deduccion = DeduccionSolicitada(**datos.model_dump(), periodo_fiscal_id=periodo.id)
+    session.add(deduccion)
+    session.commit()
+    session.refresh(deduccion)
+    return deduccion
+
+
+def imputar_deduccion(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    deduccion_id: int,
+    datos: DeduccionImputacion,
+) -> DeduccionSolicitada:
+    """Fija la columna y la fila del formulario 210 de una deducción."""
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    deduccion = session.get(DeduccionSolicitada, deduccion_id)
+    if deduccion is None or deduccion.periodo_fiscal_id != periodo.id:
+        raise DeduccionNoEncontradaError(f"No existe la deducción {deduccion_id}")
+    deduccion.subcedula = datos.subcedula.value if datos.subcedula else None
+    deduccion.fila_formulario = datos.fila_formulario.value
     session.add(deduccion)
     session.commit()
     session.refresh(deduccion)
@@ -400,9 +430,16 @@ def construir_insumos(
             ),
             opta_por_costos_y_gastos=bool(hoja.opta_por_costos_y_gastos),
         ),
-        capital=motor.RentasPorSubcedula(ingresos_brutos=totales[Cedula.CAPITAL]),
+        capital=motor.RentasPorSubcedula(
+            ingresos_brutos=totales[Cedula.CAPITAL],
+            ingresos_no_constitutivos=_dec(hoja.ingresos_no_constitutivos_capital),
+            costos_y_gastos=_dec(hoja.costos_y_gastos_capital),
+        ),
         no_laborales=motor.RentasPorSubcedula(
             ingresos_brutos=totales[Cedula.NO_LABORAL],
+            devoluciones=_dec(hoja.devoluciones_no_laborales),
+            ingresos_no_constitutivos=_dec(hoja.ingresos_no_constitutivos_no_laborales),
+            costos_y_gastos=_dec(hoja.costos_y_gastos_no_laborales),
             costo_de_ventas=costo_de_ventas,
         ),
         pensiones=motor.Pensiones(
@@ -488,6 +525,96 @@ def _patrimonio_liquido_anterior(
     return bruto - deudas
 
 
+# Casillas de ingresos brutos de todas las cédulas y de ganancias ocasionales.
+_CASILLAS_DE_INGRESOS = (32, 43, 58, 74, 99, 104, 107, 108, 109, 112)
+
+
+def _sancion_por_extemporaneidad(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo: PeriodoFiscal,
+    resultado: motor.Liquidacion,
+    hoy: Optional[date] = None,
+) -> Tuple[sanciones.ResultadoSancion, List[str]]:
+    """Sanción del art. 641 si la declaración se presentó, o está, vencida.
+
+    Si ya se presentó, se cuenta hasta la fecha de presentación. Si no se ha
+    presentado y el plazo ya pasó, se cuenta hasta hoy: es lo que costaría
+    presentarla hoy, y sube cada mes que pase.
+    """
+    # Import tardío: el módulo de parámetros carga modelos que dependen de este.
+    from ..parametros.servicios import calcular_vencimiento, hoy_colombia
+
+    contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
+    vencimiento = calcular_vencimiento(
+        session,
+        contribuyente.rut,
+        periodo.anio_gravable,
+        periodo.fecha_vencimiento_manual,
+        periodo.fecha_presentacion,
+    )
+    if vencimiento.fecha is None:
+        return sanciones.ResultadoSancion(), []
+
+    presentada = periodo.fecha_presentacion is not None
+    corte = periodo.fecha_presentacion or hoy or hoy_colombia()
+    if corte <= vencimiento.fecha:
+        return sanciones.ResultadoSancion(), []
+
+    # La UVT de la sanción es la del año en que se presenta, no la del año
+    # gravable: la sanción mínima y el tope de 2.500 UVT se liquidan con la
+    # vigente al momento de declarar.
+    avisos: List[str] = []
+    parametros_corte = PARAMETROS_POR_ANIO.get(corte.year)
+    if parametros_corte is None:
+        parametros_corte = obtener_parametros(periodo.anio_gravable)
+        avisos.append(
+            f"No hay UVT cargada para {corte.year}; la sanción mínima y sus topes se "
+            f"calcularon con la UVT de {periodo.anio_gravable}. Verifíquela."
+        )
+
+    casillas = {r.casilla: r.valor for r in resultado.renglones if r.casilla}
+    hoja = session.get(HojaLiquidacion, periodo.id)
+    reduccion = hoja.reduccion_sancion.value if hoja is not None else "NINGUNA"
+    sancion = sanciones.calcular_extemporaneidad(
+        vencimiento=vencimiento.fecha,
+        presentacion=corte,
+        impuesto_a_cargo=casillas.get(129, CERO),
+        ingresos_brutos=sum(
+            (casillas.get(n, CERO) for n in _CASILLAS_DE_INGRESOS), CERO
+        ),
+        patrimonio_liquido_anterior=_patrimonio_liquido_anterior(
+            session, contador_id, contribuyente_id, periodo.anio_gravable
+        ),
+        saldo_a_favor=casillas.get(137, CERO),
+        uvt=parametros_corte.uvt,
+        reduccion=reduccion,
+    )
+    if sancion.valor > CERO:
+        cuando = (
+            f"se presentó el {corte.isoformat()}"
+            if presentada
+            else f"no se ha presentado y hoy es {corte.isoformat()}"
+        )
+        avisos.insert(
+            0,
+            f"La declaración venció el {vencimiento.fecha.isoformat()} y {cuando}: "
+            f"{sancion.meses} mes(es) o fracción de retardo. Se liquidó una sanción "
+            f"por extemporaneidad de {pesos(sancion.valor)} en la casilla 135"
+            + ("" if presentada else ", que aumenta con cada mes que pase")
+            + ". Los intereses de mora sobre el impuesto no están incluidos: dependen "
+            "de la tasa que certifica la Superintendencia Financiera cada mes."
+            + (
+                " Si el contribuyente no ha presentado tarde en los últimos dos años, "
+                "puede aplicar la reducción del art. 640 ET."
+                if reduccion == "NINGUNA"
+                else ""
+            ),
+        )
+    return sancion, avisos
+
+
 def _fila_de(deduccion: DeduccionSolicitada) -> str:
     """Fila del formulario 210 de una deducción guardada.
 
@@ -515,7 +642,18 @@ def liquidar_periodo(
     )
     resultado = motor.liquidar(insumos, parametros)
 
-    diagnosticos = list(resultado.diagnosticos)
+    # La sanción por extemporaneidad depende del impuesto a cargo, así que se
+    # liquida una vez sin ella, se calcula, y se vuelve a liquidar con la
+    # sanción puesta en la casilla 135.
+    sancion, avisos_sancion = _sancion_por_extemporaneidad(
+        session, contador_id, contribuyente_id, periodo, resultado
+    )
+    if sancion.valor > CERO:
+        insumos.sanciones = sancion.valor
+        insumos.formula_sanciones = sancion.formula
+        resultado = motor.liquidar(insumos, parametros)
+
+    diagnosticos = avisos_sancion + list(resultado.diagnosticos)
     if sin_clasificar:
         total = sum((i.valor_anual for i in sin_clasificar), CERO)
         diagnosticos.insert(
@@ -555,6 +693,143 @@ def liquidar_periodo(
         notas=resultado.notas,
         casillas_marcadas=resultado.casillas_marcadas,
         ingresos_sin_clasificar=sin_clasificar,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Escenarios
+# ---------------------------------------------------------------------------
+
+
+def _cifras(liq: motor.Liquidacion) -> CifrasEscenario:
+    return CifrasEscenario(
+        impuesto=liq.valor("IMP-NETO"),
+        anticipo=liq.valor("ANTICIPO-SIGUIENTE"),
+        saldo_a_pagar=liq.valor("SALDO-A-PAGAR"),
+        saldo_a_favor=liq.valor("SALDO-A-FAVOR"),
+    )
+
+
+def _escenario(clave, titulo, actual_txt, alterna_txt, base, alterna, explicacion):
+    a, b = _cifras(base), _cifras(alterna)
+    return EscenarioLeer(
+        clave=clave, titulo=titulo, opcion_actual=actual_txt, opcion_alterna=alterna_txt,
+        actual=a, alterna=b,
+        ahorro_en_impuesto=a.impuesto - b.impuesto,
+        ahorro_en_saldo=(a.saldo_a_pagar - a.saldo_a_favor)
+        - (b.saldo_a_pagar - b.saldo_a_favor),
+        explicacion=explicacion,
+    )
+
+
+def simular_escenarios(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> EscenariosLeer:
+    """Vuelve a liquidar cambiando una decisión a la vez.
+
+    El motor es una función pura, así que comparar dos opciones es liquidar dos
+    veces. Solo se simulan decisiones que la ley deja en manos del
+    contribuyente; nada de esto cambia los datos guardados.
+    """
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    parametros = obtener_parametros(periodo.anio_gravable)
+    insumos, _ = construir_insumos(session, contador_id, contribuyente_id, periodo.id)
+    base = motor.liquidar(insumos, parametros)
+    escenarios: List[EscenarioLeer] = []
+
+    # --- Honorarios: costos y gastos, o renta exenta del 25 % --------------
+    trabajo = insumos.trabajo
+    if (
+        trabajo.ingresos_sin_vinculo_laboral > CERO
+        and trabajo.costos_y_gastos_sin_vinculo_laboral > CERO
+    ):
+        alterna = motor.liquidar(
+            replace(insumos, trabajo=replace(
+                trabajo, opta_por_costos_y_gastos=not trabajo.opta_por_costos_y_gastos
+            )),
+            parametros,
+        )
+        con_costos = "Restar costos y gastos de los honorarios"
+        con_exenta = "Tomar la renta exenta del 25 %"
+        actual_txt, alterna_txt = (
+            (con_costos, con_exenta) if trabajo.opta_por_costos_y_gastos
+            else (con_exenta, con_costos)
+        )
+        escenarios.append(_escenario(
+            "HONORARIOS", "Honorarios: costos y gastos o renta exenta",
+            actual_txt, alterna_txt, base, alterna,
+            "El art. 336 num. 4 ET deja escoger a quien recibe honorarios o "
+            "compensaciones por servicios personales: o resta los costos y gastos "
+            "procedentes, o toma la renta exenta del 25 % del art. 206 num. 10. No "
+            "se pueden tomar las dos. Restar costos exige tenerlos soportados y, si "
+            "superan el 60 % del ingreso, marcar la casilla 140.",
+        ))
+
+    # --- Anticipo: procedimiento directo o promedio ------------------------
+    if insumos.anios_declarando > 1 and insumos.impuesto_neto_anio_anterior > CERO:
+        actual_metodo = (insumos.metodo_anticipo or "DIRECTO").upper()
+        nombres = {
+            "DIRECTO": "Sobre el impuesto neto de este año",
+            "PROMEDIO": "Sobre el promedio de los dos últimos años",
+            "MENOR": "El que resulte menor",
+        }
+        otro = "PROMEDIO" if actual_metodo == "DIRECTO" else "DIRECTO"
+        alterna = motor.liquidar(replace(insumos, metodo_anticipo=otro), parametros)
+        escenarios.append(_escenario(
+            "ANTICIPO", "Anticipo del año siguiente",
+            nombres.get(actual_metodo, actual_metodo), nombres[otro], base, alterna,
+            "El art. 807 ET permite calcular el anticipo sobre el impuesto neto del "
+            "año o sobre el promedio de los dos últimos, a elección del "
+            "contribuyente. No cambia el impuesto: cambia cuánto se paga ahora a "
+            "cuenta del año siguiente.",
+        ))
+
+    # --- Cupo sin usar del límite del art. 336 num. 3 ----------------------
+    limite = parametros.limite_general
+    base_limite = base.valor("CG-BASE-LIMITE")
+    techo = min(
+        base_limite * (limite.porcentaje or CERO),
+        (limite.tope_uvt or CERO) * parametros.uvt,
+    )
+    sin_limite = sum(
+        (r.valor for r in base.renglones if r.codigo.startswith("CG-NOLIM-")), CERO
+    )
+    usado = base.valor("CG-EXENTAS-LIMITADAS") - sin_limite
+    cupo = (techo - usado).quantize(Decimal("1"))
+    if cupo > CERO and base.valor("CG-RENTA-LIQUIDA") > CERO:
+        adicional = motor.ConceptoDepuracion(
+            nombre="Simulación: cupo restante del art. 336",
+            valor=cupo,
+            sujeto_a_limite_general=True,
+            fuente_legal="Art. 336 num. 3 ET",
+            tipo=motor.EXENTA_AFC,
+        )
+        alterna = motor.liquidar(
+            replace(insumos, conceptos_depuracion=[*insumos.conceptos_depuracion, adicional]),
+            parametros,
+        )
+        escenarios.append(_escenario(
+            "CUPO_336", "Cupo sin usar de rentas exentas y deducciones",
+            f"Se usan {pesos(usado)} de un cupo de {pesos(techo)}",
+            f"Usar los {pesos(cupo)} restantes",
+            base, alterna,
+            f"El art. 336 num. 3 ET admite rentas exentas y deducciones hasta el "
+            f"{motor.porcentaje(limite.porcentaje or CERO)} % de los ingresos "
+            f"depurados, sin pasar de {limite.tope_uvt} UVT. Quedan {pesos(cupo)} sin "
+            f"usar. La cifra es el máximo teórico: lo usual para ocuparlo son aportes "
+            f"voluntarios a pensión o a cuentas AFC, que además tienen su propio "
+            f"tope (30 % del ingreso y 3.800 UVT) y deben haberse hecho dentro del "
+            f"año gravable. Si la renta exenta del 25 % aplica, baja al aumentar las "
+            f"deducciones, y el cálculo ya lo tiene en cuenta.",
+        ))
+
+    return EscenariosLeer(
+        contribuyente_id=contribuyente_id,
+        periodo_fiscal_id=periodo.id,
+        anio_gravable=periodo.anio_gravable,
+        escenarios=escenarios,
     )
 
 
@@ -867,7 +1142,49 @@ _NO_SE_COPIAN = {
     "saldo_a_favor_anio_anterior", "deudas", "aportes_obligatorios_salud",
     "aportes_obligatorios_pension", "otros_ingresos_no_constitutivos",
     "compras_con_factura_electronica", "costos_y_gastos_sin_vinculo_laboral",
+    "ingresos_no_constitutivos_capital", "costos_y_gastos_capital",
+    "ingresos_no_constitutivos_no_laborales", "devoluciones_no_laborales",
+    "costos_y_gastos_no_laborales", "reduccion_sancion",
 }
+
+
+_PREFIJO_PERDIDA = "CG-PERDIDA-EJERCICIO-"
+
+
+def _arrastrar_perdidas(
+    session: Session, contribuyente_id: int, anio_origen: int, liquidacion: LiquidacionLeer
+) -> None:
+    """Registra como compensables las pérdidas que dejó el año anterior.
+
+    La pérdida del ejercicio se trunca en cero al liquidar y solo sirve si se
+    registra para compensarla después (arts. 147 y 330 ET). Antes había que
+    acordarse de digitarla; si ya hay una registrada de ese año y ese tipo, se
+    respeta la que puso el contador.
+    """
+    tipos_validos = {t.value for t in TipoRentaPerdida}
+    for renglon in liquidacion.renglones:
+        if not renglon.codigo.startswith(_PREFIJO_PERDIDA) or renglon.valor <= CERO:
+            continue
+        tipo = renglon.codigo[len(_PREFIJO_PERDIDA):]
+        if tipo not in tipos_validos:
+            continue
+        existente = session.exec(
+            select(PerdidaFiscal).where(
+                PerdidaFiscal.contribuyente_id == contribuyente_id,
+                PerdidaFiscal.anio_origen == anio_origen,
+                PerdidaFiscal.tipo_renta == TipoRentaPerdida(tipo),
+            )
+        ).first()
+        if existente is None:
+            session.add(
+                PerdidaFiscal(
+                    contribuyente_id=contribuyente_id,
+                    anio_origen=anio_origen,
+                    tipo_renta=TipoRentaPerdida(tipo),
+                    valor=renglon.valor,
+                    nota=f"Arrastrada de la liquidación de {anio_origen}",
+                )
+            )
 
 
 def copiar_hoja_del_anio_anterior(
@@ -881,8 +1198,10 @@ def copiar_hoja_del_anio_anterior(
     del año pasado en la declaración nueva sin que nadie lo note, que es
     exactamente el error que esta facilidad debería evitar.
 
-    También arrastra el impuesto neto del año anterior, que es el dato que
-    habilita el método del promedio del art. 807.
+    Tres cifras sí se traen, porque no se copian de la hoja sino que salen de
+    la liquidación del año anterior: el impuesto neto (habilita el método del
+    promedio del art. 807), el anticipo liquidado (casilla 130 de este año) y
+    las pérdidas del ejercicio, que quedan registradas para compensar.
     """
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
@@ -920,6 +1239,18 @@ def copiar_hoja_del_anio_anterior(
         hoja.impuesto_neto_anio_anterior = next(
             (r.valor for r in liquidacion_anterior.renglones if r.codigo == "IMP-NETO"),
             CERO,
+        )
+        # El anticipo que se liquidó el año pasado (casilla 133) es, por
+        # definición, la casilla 130 de este: se trae con el valor aproximado
+        # con que se declaró. El saldo a favor NO se arrastra solo, porque pudo
+        # haberse pedido en devolución; el cruce con la exógena lo verifica.
+        hoja.anticipo_pagado_anio_anterior = next(
+            (r.valor_declarable for r in liquidacion_anterior.renglones
+             if r.codigo == "ANTICIPO-SIGUIENTE"),
+            CERO,
+        )
+        _arrastrar_perdidas(
+            session, contribuyente_id, anterior.anio_gravable, liquidacion_anterior
         )
     except AnioGravableNoSoportadoError:
         pass

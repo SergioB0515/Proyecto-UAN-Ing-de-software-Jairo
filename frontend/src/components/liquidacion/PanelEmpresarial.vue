@@ -171,7 +171,8 @@ onMounted(cargar)
         deducción al tope fiscal, avisándole cuando lo hace.
       </p>
 
-      <table v-if="depreciacion.length" class="mt-4">
+<div v-if="depreciacion.length" class="mt-4 overflow-x-auto">
+      <table>
         <thead>
           <tr>
             <th>Activo</th>
@@ -215,6 +216,7 @@ onMounted(cargar)
           </tr>
         </tbody>
       </table>
+      </div>
 
       <div v-if="depreciacion.length" class="mt-3">
         <button type="button" class="boton-secundario" :disabled="guardando.depreciacion" @click="guardarCambiosDepreciacion">

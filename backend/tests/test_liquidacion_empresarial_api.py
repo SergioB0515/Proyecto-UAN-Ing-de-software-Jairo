@@ -547,3 +547,210 @@ def test_la_liquidacion_expone_la_casilla_de_cada_renglon(client):
     assert casillas["PAT-BRUTO"] == 29
     assert casillas["SALDO-A-PAGAR"] == 136
     assert liq["casillas_marcadas"] == []
+
+
+# ---------------------------------------------------------------------------
+# Sanción por extemporaneidad y escenarios
+# ---------------------------------------------------------------------------
+
+
+def _asalariado(client, h, rut, ingreso=150000000, anio=2025):
+    cid = client.post("/contribuyentes", json={"nombre": "Asalariado", "rut": rut,
+                      "tipo_contribuyente": "ASALARIADO"}, headers=h).json()["id"]
+    pid = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                      json={"anio_gravable": anio}, headers=h).json()["id"]
+    fid = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                      json={"concepto": "Salario", "valor_anual": ingreso,
+                            "periodo_fiscal_id": pid}, headers=h).json()["id"]
+    client.put(f"{_base(cid, pid)}/ingresos",
+               json=[{"fuente_ingreso_id": fid, "cedula": "TRABAJO"}], headers=h)
+    return cid, pid
+
+
+def test_presentar_tarde_liquida_la_sancion_en_la_casilla_135(client):
+    h = _token(client, "emp-san1@example.com")
+    cid, pid = _asalariado(client, h, "900301")
+    a_tiempo = client.get(_base(cid, pid), headers=h).json()
+    assert _valor(a_tiempo, "SANCIONES") == D("0")
+    impuesto = _valor(a_tiempo, "IMP-NETO")
+    assert impuesto > 0
+
+    url = f"/contribuyentes/{cid}/periodos-fiscales/{pid}"
+    client.patch(url, json={"fecha_vencimiento_manual": "2026-08-12",
+                            "fecha_presentacion": "2026-10-20"}, headers=h)
+    tarde = client.get(_base(cid, pid), headers=h).json()
+
+    # Tres meses o fracción al 5 % del impuesto a cargo.
+    assert _valor(tarde, "SANCIONES") == (impuesto * D("0.15")).quantize(D("0.01"))
+    assert _valor(tarde, "SALDO-A-PAGAR") == \
+        _valor(tarde, "SALDO-POR-IMPUESTO") + _valor(tarde, "SANCIONES")
+    assert any("venció el 2026-08-12" in d for d in tarde["diagnosticos"])
+
+    # Con la reducción del art. 640 baja a la mitad.
+    r = client.patch(f"{_base(cid, pid)}/hoja", json={"reduccion_sancion": "AL_50"}, headers=h)
+    assert r.status_code == 200
+    reducida = client.get(_base(cid, pid), headers=h).json()
+    assert _valor(reducida, "SANCIONES") == (impuesto * D("0.075")).quantize(D("0.01"))
+
+
+def test_presentar_a_tiempo_no_genera_sancion(client):
+    h = _token(client, "emp-san2@example.com")
+    cid, pid = _asalariado(client, h, "900302")
+    client.patch(f"/contribuyentes/{cid}/periodos-fiscales/{pid}",
+                 json={"fecha_vencimiento_manual": "2026-08-12",
+                       "fecha_presentacion": "2026-08-12"}, headers=h)
+    liq = client.get(_base(cid, pid), headers=h).json()
+    assert _valor(liq, "SANCIONES") == D("0")
+
+
+def test_los_escenarios_muestran_el_cupo_sin_usar_y_no_cambian_nada(client):
+    h = _token(client, "emp-esc1@example.com")
+    cid, pid = _asalariado(client, h, "900303")
+    antes = client.get(_base(cid, pid), headers=h).json()
+
+    cuerpo = client.get(f"{_base(cid, pid)}/escenarios", headers=h).json()
+    por_clave = {e["clave"]: e for e in cuerpo["escenarios"]}
+    cupo = por_clave["CUPO_336"]
+    assert D(cupo["ahorro_en_impuesto"]) > 0
+    assert D(cupo["actual"]["impuesto"]) == _valor(antes, "IMP-NETO")
+    # Sin honorarios ni impuesto del año anterior, esos dos no aplican.
+    assert "HONORARIOS" not in por_clave
+    assert "ANTICIPO" not in por_clave
+
+    # Simular no guarda nada.
+    despues = client.get(_base(cid, pid), headers=h).json()
+    assert _valor(despues, "IMP-NETO") == _valor(antes, "IMP-NETO")
+
+
+def test_el_escenario_del_anticipo_aparece_con_impuesto_del_ano_anterior(client):
+    h = _token(client, "emp-esc2@example.com")
+    cid, pid = _asalariado(client, h, "900304")
+    r = client.patch(f"{_base(cid, pid)}/hoja",
+                     json={"impuesto_neto_anio_anterior": "1000000",
+                           "anios_declarando": 3}, headers=h)
+    assert r.status_code == 200
+    cuerpo = client.get(f"{_base(cid, pid)}/escenarios", headers=h).json()
+    anticipo = {e["clave"]: e for e in cuerpo["escenarios"]}["ANTICIPO"]
+    assert D(anticipo["ahorro_en_impuesto"]) == 0
+    assert D(anticipo["alterna"]["anticipo"]) < D(anticipo["actual"]["anticipo"])
+
+
+def test_los_escenarios_son_del_contador_dueno(client):
+    h = _token(client, "emp-esc3@example.com")
+    cid, pid = _asalariado(client, h, "900305")
+    otro = _token(client, "emp-esc4@example.com")
+    assert client.get(f"{_base(cid, pid)}/escenarios", headers=otro).status_code == 404
+
+
+def test_copiar_la_hoja_arrastra_el_anticipo_y_la_perdida_del_ano_anterior(client):
+    h = _token(client, "emp-cop9@example.com")
+    cid = client.post("/contribuyentes", json={"nombre": "Arrastre", "rut": "900401",
+                      "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]
+    pid_2024 = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                           json={"anio_gravable": 2024}, headers=h).json()["id"]
+    pid_2025 = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                           json={"anio_gravable": 2025}, headers=h).json()["id"]
+
+    # 2024: salario que genera impuesto y anticipo, y un negocio con pérdida.
+    salario = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                          json={"concepto": "Salario", "valor_anual": 180000000,
+                                "periodo_fiscal_id": pid_2024}, headers=h).json()["id"]
+    negocio = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                          json={"concepto": "Ventas", "valor_anual": 30000000,
+                                "periodo_fiscal_id": pid_2024}, headers=h).json()["id"]
+    client.put(f"{_base(cid, pid_2024)}/ingresos",
+               json=[{"fuente_ingreso_id": salario, "cedula": "TRABAJO"},
+                     {"fuente_ingreso_id": negocio, "cedula": "NO_LABORAL"}], headers=h)
+    r = client.patch(f"{_base(cid, pid_2024)}/hoja",
+                     json={"costos_y_gastos_no_laborales": "50000000"}, headers=h)
+    assert r.status_code == 200
+    liq_2024 = client.get(_base(cid, pid_2024), headers=h).json()
+    anticipo = next(D(r["valor_declarable"]) for r in liq_2024["renglones"]
+                    if r["codigo"] == "ANTICIPO-SIGUIENTE")
+    assert anticipo > 0
+    assert _valor(liq_2024, "CG-PERDIDA-EJERCICIO-NO_LABORAL") == D("20000000.00")
+
+    hoja = client.post(f"{_base(cid, pid_2025)}/hoja/copiar-del-anterior", headers=h).json()
+    assert D(hoja["anticipo_pagado_anio_anterior"]) == anticipo
+    assert D(hoja["saldo_a_favor_anio_anterior"]) == D("0")   # ese no se arrastra solo
+
+    perdidas = client.get(f"/liquidacion/contribuyentes/{cid}/perdidas?anio_gravable=2025",
+                          headers=h).json()
+    assert [(p["anio_origen"], p["tipo_renta"], D(p["valor"])) for p in perdidas] == \
+        [(2024, "NO_LABORAL", D("20000000.00"))]
+
+    # Copiar otra vez no la duplica.
+    client.post(f"{_base(cid, pid_2025)}/hoja/copiar-del-anterior", headers=h)
+    perdidas = client.get(f"/liquidacion/contribuyentes/{cid}/perdidas?anio_gravable=2025",
+                          headers=h).json()
+    assert len(perdidas) == 1
+
+
+def test_los_gastos_y_devoluciones_de_capital_y_no_laborales_llegan_a_sus_casillas(client):
+    """Antes solo entraban el costo de ventas del kardex y la depreciación: los
+    gastos de operación de un negocio no tenían dónde digitarse.
+    """
+    h = _token(client, "emp-gas1@example.com")
+    cid = client.post("/contribuyentes", json={"nombre": "Gastos", "rut": "900402",
+                      "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]
+    pid = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                      json={"anio_gravable": 2025}, headers=h).json()["id"]
+    arriendo = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                           json={"concepto": "Arriendo", "valor_anual": 40000000,
+                                 "periodo_fiscal_id": pid}, headers=h).json()["id"]
+    ventas = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                         json={"concepto": "Ventas", "valor_anual": 200000000,
+                               "periodo_fiscal_id": pid}, headers=h).json()["id"]
+    client.put(f"{_base(cid, pid)}/ingresos",
+               json=[{"fuente_ingreso_id": arriendo, "cedula": "CAPITAL"},
+                     {"fuente_ingreso_id": ventas, "cedula": "NO_LABORAL"}], headers=h)
+    r = client.patch(f"{_base(cid, pid)}/hoja", json={
+        "costos_y_gastos_capital": "6000000",
+        "devoluciones_no_laborales": "10000000",
+        "ingresos_no_constitutivos_no_laborales": "5000000",
+        "costos_y_gastos_no_laborales": "90000000",
+    }, headers=h)
+    assert r.status_code == 200
+
+    liq = client.get(_base(cid, pid), headers=h).json()
+    c = {r["casilla"]: D(r["valor"]) for r in liq["renglones"] if r["casilla"]}
+    assert c[60] == D("6000000")
+    assert c[61] == D("34000000")
+    assert c[75] == D("10000000")
+    assert c[76] == D("5000000")
+    assert c[77] == D("90000000")
+    assert c[78] == D("95000000")     # 200 − 10 − 5 − 90
+
+
+def test_una_deduccion_se_puede_reimputar_a_otra_columna_y_fila(client):
+    h = _token(client, "emp-imp1@example.com")
+    cid, pid = _asalariado(client, h, "900403")
+    arriendo = client.post(f"/contribuyentes/{cid}/fuentes-ingreso",
+                           json={"concepto": "Arriendo", "valor_anual": 60000000,
+                                 "periodo_fiscal_id": pid}, headers=h).json()["id"]
+    client.put(f"{_base(cid, pid)}/ingresos",
+               json=[{"fuente_ingreso_id": arriendo, "cedula": "CAPITAL"}], headers=h)
+    ded = client.post(
+        f"{_base(cid, pid)}/deducciones/desde-plantilla?codigo=INTERESES_VIVIENDA&valor=8000000",
+        headers=h,
+    ).json()
+    assert ded["fila_formulario"] == "DEDUCCION_VIVIENDA"
+    assert ded["subcedula"] is None
+
+    def casillas():
+        liq = client.get(_base(cid, pid), headers=h).json()
+        return {r["casilla"]: D(r["valor"]) for r in liq["renglones"] if r["casilla"]}
+
+    assert casillas()[38] == D("8000000")          # reparto automático: rentas de trabajo
+
+    r = client.patch(f"{_base(cid, pid)}/deducciones/{ded['id']}",
+                     json={"subcedula": "CAPITAL", "fila_formulario": "DEDUCCION_VIVIENDA"},
+                     headers=h)
+    assert r.status_code == 200
+    c = casillas()
+    assert c[66] == D("8000000") and 38 not in c   # ahora en rentas de capital
+
+    r = client.patch(f"{_base(cid, pid)}/deducciones/{ded['id']}",
+                     json={"subcedula": "OTRA", "fila_formulario": "DEDUCCION_OTRA"},
+                     headers=h)
+    assert r.status_code == 422

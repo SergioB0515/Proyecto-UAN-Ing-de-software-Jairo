@@ -111,8 +111,11 @@ def test_la_retencion_no_se_cruza_con_un_ingreso(client):
 def test_sin_datos_declarados_todo_lo_relevante_queda_no_declarado(client):
     token, cid, pid = _preparar(client, "conc-3@example.com")
     cuerpo = _conciliar(client, token, cid, pid).json()
-    assert cuerpo["resumen"]["NO_DECLARADO"] == 5
-    assert len(cuerpo["items"]) == 5
+    # Eran 5: el quinto era el total de movimientos en cuentas, que es un
+    # flujo y no un bien ni un ingreso que se pueda «declarar».
+    assert cuerpo["resumen"]["NO_DECLARADO"] == 4
+    assert len(cuerpo["items"]) == 4
+    assert not any("movimientos en cuentas" in i["concepto"] for i in cuerpo["items"])
 
 
 def test_conciliar_sin_exogena_importada_falla(client):

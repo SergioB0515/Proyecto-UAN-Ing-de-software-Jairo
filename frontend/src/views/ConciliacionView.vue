@@ -4,6 +4,7 @@ import { computed, onMounted, ref } from 'vue'
 import { mensajeDeError } from '../api/cliente'
 import { conciliar } from '../api/conciliacion'
 import Cargando from '../components/Cargando.vue'
+import CruceDian from '../components/CruceDian.vue'
 import DeclararDesdeExogena from '../components/DeclararDesdeExogena.vue'
 import EstadoConciliacion from '../components/EstadoConciliacion.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
@@ -19,6 +20,7 @@ const puedeDeclarar = computed(() => periodo.value.estado !== 'CERRADO')
 const sinExogena = ref(false)
 const error = ref('')
 const filtro = ref(null)
+const cruce = ref(null)
 
 const ORDEN = ['NO_DECLARADO', 'DISCREPANCIA', 'NO_REPORTADO_POR_TERCERO', 'COINCIDE']
 const EXPLICACION = {
@@ -57,6 +59,7 @@ async function cargar() {
 async function alDeclarar(item) {
   declarando.value = null
   await cargar()
+  cruce.value?.cargar()
   avisoDeclarado.value = `«${item.concepto}» quedó registrado y la conciliación se recalculó.`
 }
 
@@ -72,6 +75,8 @@ onMounted(cargar)
   <Cargando v-else-if="!resultado && !error" />
 
   <div v-else-if="resultado" class="space-y-5">
+    <CruceDian ref="cruce" :contribuyente-id="contribuyente.id" :periodo-id="periodo.id" />
+    <h2>Registro por registro</h2>
     <div class="flex flex-wrap gap-2" role="group" aria-label="Filtrar por estado">
       <button
         type="button"

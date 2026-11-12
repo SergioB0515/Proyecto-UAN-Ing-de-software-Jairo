@@ -226,7 +226,8 @@ def test_resumen_completo_con_exogena_y_umbral(client):
 
     assert cuerpo["inventario"]["inventario_final"] == 1000
     assert cuerpo["obligacion"]["obligado"] is False
-    assert cuerpo["conciliacion"]["NO_DECLARADO"] == 5
+    # El total de movimientos en cuentas ya no cuenta como alerta: es un flujo.
+    assert cuerpo["conciliacion"]["NO_DECLARADO"] == 4
 
 
 @pytest.mark.parametrize(

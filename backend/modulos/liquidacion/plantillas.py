@@ -200,6 +200,8 @@ def catalogo(uvt: Decimal) -> List[dict]:
                 "tope_anual_en_pesos": tope_pesos,
                 "nota": p.nota,
                 "lo_calcula_el_motor": p.codigo in CODIGOS_CALCULADOS_POR_EL_MOTOR,
+                "fila": p.fila,
+                "subcedula_sugerida": p.subcedula_sugerida,
             }
         )
     return salida

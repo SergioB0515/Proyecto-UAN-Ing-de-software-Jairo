@@ -59,6 +59,14 @@ class MetodoAnticipo(str, Enum):
     MENOR = "MENOR"
 
 
+class ReduccionSancion(str, Enum):
+    """Reducción del art. 640 ET para la sanción que liquida el contribuyente."""
+
+    NINGUNA = "NINGUNA"
+    AL_75 = "AL_75"   # sin la misma conducta en el último año
+    AL_50 = "AL_50"   # sin la misma conducta en los dos últimos años
+
+
 class TipoRentaPerdida(str, Enum):
     """Tipos de renta que admiten compensación de pérdidas.
 
@@ -100,6 +108,18 @@ class HojaLiquidacionBase(SQLModel):
     opta_por_costos_y_gastos: bool = Field(default=False)
     costos_y_gastos_sin_vinculo_laboral: Decimal = _dinero()
 
+    # Cédula general: rentas de capital y no laborales.
+    #
+    # El costo de ventas sale del kardex y la depreciación de los activos; lo
+    # que se captura aquí son los demás costos y gastos procedentes (arriendo,
+    # nómina, servicios, intereses) y las devoluciones en ventas, que no tienen
+    # otro lugar en la aplicación.
+    ingresos_no_constitutivos_capital: Decimal = _dinero()
+    costos_y_gastos_capital: Decimal = _dinero()
+    ingresos_no_constitutivos_no_laborales: Decimal = _dinero()
+    devoluciones_no_laborales: Decimal = _dinero()
+    costos_y_gastos_no_laborales: Decimal = _dinero()
+
     # Deducciones fuera del límite general
     numero_dependientes: int = Field(default=0, ge=0, le=20)
     compras_con_factura_electronica: Decimal = _dinero()
@@ -128,6 +148,7 @@ class HojaLiquidacionBase(SQLModel):
     saldo_a_favor_anio_anterior: Decimal = _dinero()
     anios_declarando: int = Field(default=3, ge=1, le=99)
     metodo_anticipo: MetodoAnticipo = Field(default=MetodoAnticipo.DIRECTO)
+    reduccion_sancion: ReduccionSancion = Field(default=ReduccionSancion.NINGUNA)
     impuesto_neto_anio_anterior: Decimal = _dinero()
 
     # Bancarización (art. 771-5). Se capturan los totales del año: la
@@ -172,6 +193,11 @@ class HojaLiquidacionActualizar(SQLModel):
     otros_ingresos_no_constitutivos: Optional[Decimal] = Field(default=None, ge=0)
     opta_por_costos_y_gastos: Optional[bool] = None
     costos_y_gastos_sin_vinculo_laboral: Optional[Decimal] = Field(default=None, ge=0)
+    ingresos_no_constitutivos_capital: Optional[Decimal] = Field(default=None, ge=0)
+    costos_y_gastos_capital: Optional[Decimal] = Field(default=None, ge=0)
+    ingresos_no_constitutivos_no_laborales: Optional[Decimal] = Field(default=None, ge=0)
+    devoluciones_no_laborales: Optional[Decimal] = Field(default=None, ge=0)
+    costos_y_gastos_no_laborales: Optional[Decimal] = Field(default=None, ge=0)
     numero_dependientes: Optional[int] = Field(default=None, ge=0, le=20)
     compras_con_factura_electronica: Optional[Decimal] = Field(default=None, ge=0)
     ingresos_pensiones: Optional[Decimal] = Field(default=None, ge=0)
@@ -191,6 +217,7 @@ class HojaLiquidacionActualizar(SQLModel):
     saldo_a_favor_anio_anterior: Optional[Decimal] = Field(default=None, ge=0)
     anios_declarando: Optional[int] = Field(default=None, ge=1, le=99)
     metodo_anticipo: Optional[MetodoAnticipo] = None
+    reduccion_sancion: Optional[ReduccionSancion] = None
     impuesto_neto_anio_anterior: Optional[Decimal] = Field(default=None, ge=0)
     total_pagos_del_anio: Optional[Decimal] = Field(default=None, ge=0)
     pagos_en_efectivo: Optional[Decimal] = Field(default=None, ge=0)
@@ -234,6 +261,31 @@ class DeduccionSolicitada(DeduccionSolicitadaBase, table=True):
 
 class DeduccionSolicitadaCrear(DeduccionSolicitadaBase):
     pass
+
+
+class SubcedulaFormulario(str, Enum):
+    TRABAJO = "TRABAJO"
+    TRABAJO_SIN_VINCULO = "TRABAJO_SIN_VINCULO"
+    CAPITAL = "CAPITAL"
+    NO_LABORAL = "NO_LABORAL"
+
+
+class FilaFormulario(str, Enum):
+    EXENTA_AFC = "EXENTA_AFC"
+    EXENTA_OTRA = "EXENTA_OTRA"
+    DEDUCCION_VIVIENDA = "DEDUCCION_VIVIENDA"
+    DEDUCCION_OTRA = "DEDUCCION_OTRA"
+
+
+class DeduccionImputacion(SQLModel):
+    """A qué columna y fila del formulario 210 va una deducción.
+
+    `subcedula` en nulo devuelve la imputación al motor, que la reparte entre
+    las columnas con renta líquida.
+    """
+
+    subcedula: Optional[SubcedulaFormulario] = None
+    fila_formulario: FilaFormulario
 
 
 class DeduccionSolicitadaLeer(DeduccionSolicitadaBase):
@@ -308,8 +360,45 @@ class LiquidacionLeer(SQLModel):
         "Borrador de liquidación generado a partir de los datos registrados. "
         "La responsabilidad de la declaración es del contribuyente y del "
         "contador que la firma (art. 581 ET): revise cada renglón, su fórmula y "
-        "su fuente legal antes de transcribirlo. Los números de renglón del "
-        "formulario 210 los fija la resolución de la DIAN de cada año."
+        "su fuente legal antes de transcribirlo."
+    )
+
+
+# --- Escenarios ------------------------------------------------------------
+
+
+class CifrasEscenario(SQLModel):
+    impuesto: Decimal
+    anticipo: Decimal
+    saldo_a_pagar: Decimal
+    saldo_a_favor: Decimal
+
+
+class EscenarioLeer(SQLModel):
+    """La misma liquidación con una sola decisión cambiada."""
+
+    clave: str
+    titulo: str
+    opcion_actual: str
+    opcion_alterna: str
+    actual: CifrasEscenario
+    alterna: CifrasEscenario
+    # Positivo: la alternativa cuesta menos que lo que hay hoy.
+    ahorro_en_impuesto: Decimal
+    ahorro_en_saldo: Decimal
+    explicacion: str
+
+
+class EscenariosLeer(SQLModel):
+    contribuyente_id: int
+    periodo_fiscal_id: int
+    anio_gravable: int
+    escenarios: List[EscenarioLeer]
+    advertencia: str = (
+        "Cada escenario vuelve a liquidar con una sola decisión cambiada y todo lo "
+        "demás igual. Son cálculos, no recomendaciones: que una opción dé menos "
+        "impuesto no dice si el contribuyente cumple los requisitos para tomarla ni "
+        "si tiene los soportes. Las sanciones no entran en la comparación."
     )
 
 

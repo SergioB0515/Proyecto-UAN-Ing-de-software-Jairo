@@ -1,3 +1,4 @@
+from core.formato import pesos
 import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
@@ -11,8 +12,18 @@ from ..contribuyentes.servicios import (
 )
 from ..exogena.modelos import RegistroExogena, TopeExogena
 from ..exogena.servicios import obtener_reporte_mas_reciente
+from decimal import Decimal
+
+from core.excepciones import UmbralNoConfiguradoError
+
 from ..liquidacion.formulario_210 import casilla_por_numero
+from . import cruce
 from .modelos import (
+    ComparacionCruce,
+    CruceDian,
+    DetalleTopeLeer,
+    RegistroPendiente,
+    TopeCruzado,
     BorradorRenglones,
     EstadoConciliacion,
     ItemConciliacion,
@@ -145,6 +156,13 @@ def conciliar_contribuyente(
     for registro in candidatos:
         if registro.id in usados or registro.concepto_code == CONCEPTO_CONSUMO_TC:
             continue
+        # Consumos con tarjeta, compras y movimientos de cuentas son flujos, no
+        # bienes ni ingresos: no se «declaran» como un activo o una fuente de
+        # ingreso, así que marcarlos como no declarados sería una alarma falsa.
+        # Se analizan en el cruce con la DIAN, frente a los ingresos. Las
+        # inversiones (un CDT) sí se quedan: dejan un activo o un rendimiento.
+        if _a_cruce(registro).es_flujo_sin_bien:
+            continue
         items.append(
             ItemConciliacion(
                 concepto=registro.detalle,
@@ -221,7 +239,9 @@ def generar_borrador_renglones(
                 renglon,
                 RenglonSugerido(renglon=renglon, valor_total=0.0, cantidad_registros=0),
             )
-            acumulado.valor_total += registro.valor
+            # Un bien en copropiedad cuenta por el porcentaje de participación
+            # que trae el archivo, no completo.
+            acumulado.valor_total += float(_a_cruce(registro).valor_propio)
             acumulado.cantidad_registros += 1
 
     # Nombre oficial de la casilla, del catálogo del formulario 210.
@@ -231,12 +251,12 @@ def generar_borrador_renglones(
             acumulado.casilla = casilla.numero
             acumulado.nombre_oficial = casilla.nombre
 
-    cuadres, diagnosticos = _cuadrar_contra_topes(session, reporte.id, acumulados)
+    cuadres, diagnosticos = _cuadrar_contra_topes(session, reporte.id, registros, acumulados)
     if sin_asignar:
         total = sum(r.valor for r in sin_asignar)
         diagnosticos.insert(
             0,
-            f"{len(sin_asignar)} registro(s) por ${total:,.0f} traen varios renglones "
+            f"{len(sin_asignar)} registro(s) por {pesos(total)} traen varios renglones "
             f"posibles en vez de uno asignado. NO se sumaron a ningún renglón: "
             f"asígnelos usted, porque repartirlos en todos contaría el mismo valor "
             f"varias veces.",
@@ -253,49 +273,172 @@ def generar_borrador_renglones(
     )
 
 
-# Renglones del borrador que deben cuadrar contra un tope del mismo archivo.
-# El archivo de la DIAN trae las dos cosas, así que se puede verificar solo.
-_CUADRES = {"Tope 2 - Patrimonio": "R29"}
+def _a_cruce(registro: RegistroExogena) -> cruce.Registro:
+    return cruce.Registro(
+        detalle=registro.detalle or "",
+        valor=Decimal(str(registro.valor)),
+        uso_sugerido=registro.uso_sugerido or "",
+        info_adicional=registro.info_adicional or "",
+        renglones_sugeridos=registro.renglones_sugeridos or "",
+        renglones_son_condicionales=registro.renglones_son_condicionales,
+        es_auto_reportado=registro.es_auto_reportado,
+        es_dian=registro.es_dian,
+        nombre_reportante=registro.nombre_reportante or "",
+    )
 
 
-def _cuadrar_contra_topes(
-    session: Session, reporte_id: int, acumulados: Dict[str, RenglonSugerido]
-) -> Tuple[List[CuadreTope], List[str]]:
-    """Contrasta el borrador contra los topes que viene en el propio archivo.
-
-    Es una verificación gratis: la DIAN informa el detalle y también el tope
-    consolidado, así que si el renglón armado con el detalle no coincide con
-    el tope, algo se contó de más o de menos. Antes nadie lo miraba.
-    """
-    cuadres: List[CuadreTope] = []
-    diagnosticos: List[str] = []
+def _topes_del_reporte(session: Session, reporte_id: int) -> Dict[str, Decimal]:
     topes = session.exec(
         select(TopeExogena).where(TopeExogena.reporte_exogena_id == reporte_id)
     ).all()
+    return {t.etiqueta.strip(): Decimal(str(t.valor)) for t in topes}
 
-    for tope in topes:
-        renglon = _CUADRES.get(tope.etiqueta.strip())
-        if renglon is None:
-            continue
-        acumulado = acumulados.get(renglon)
-        valor = acumulado.valor_total if acumulado else 0.0
-        diferencia = round(valor - tope.valor, 2)
-        cuadra = abs(diferencia) < 1
+
+def _cuadrar_contra_topes(
+    session: Session,
+    reporte_id: int,
+    registros: List[RegistroExogena],
+    acumulados: Dict[str, RenglonSugerido],
+) -> Tuple[List[CuadreTope], List[str]]:
+    """Reconstruye los cinco topes desde el detalle del propio archivo.
+
+    Es una verificación gratis: la DIAN informa el detalle y también el tope
+    consolidado, así que si el detalle no reproduce el tope, algo se leyó mal.
+
+    El tope de patrimonio NO es la suma del renglón 29: es el mayor entre lo
+    reportado por terceros y el patrimonio declarado el año anterior. Una
+    versión anterior los comparaba directamente y daba una falsa alarma cada
+    vez que el contribuyente había declarado el año pasado más de lo que los
+    terceros reportan este.
+    """
+    cuadres: List[CuadreTope] = []
+    diagnosticos: List[str] = []
+    for c in cruce.cuadrar_topes(
+        [_a_cruce(r) for r in registros], _topes_del_reporte(session, reporte_id)
+    ):
         cuadres.append(
             CuadreTope(
-                etiqueta=tope.etiqueta,
-                valor_tope=tope.valor,
-                valor_borrador=valor,
-                diferencia=diferencia,
-                cuadra=cuadra,
+                etiqueta=c.etiqueta,
+                valor_tope=float(c.valor_tope),
+                valor_borrador=float(c.valor_esperado),
+                diferencia=float(c.valor_esperado - c.valor_tope),
+                cuadra=c.cuadra,
             )
         )
-        if not cuadra:
-            sentido = "más" if diferencia > 0 else "menos"
+        if not c.cuadra:
+            diagnosticos.append(f"{c.etiqueta}: {c.explicacion}")
+        if c.numero == 2 and c.piso is not None and c.piso > c.suma_detalle:
+            sugerido = acumulados.get("R29")
+            valor = sugerido.valor_total if sugerido else 0.0
             diagnosticos.append(
-                f"El renglón {renglon} suma ${valor:,.0f} y el «{tope.etiqueta}» que "
-                f"reporta el mismo archivo es ${tope.valor:,.0f}: "
-                f"${abs(diferencia):,.0f} de {sentido}. Revise si algún registro se "
-                f"contó dos veces o si falta alguno."
+                f"El patrimonio bruto declarado el año anterior ({pesos(c.piso)}) es "
+                f"mayor que lo que los terceros reportan este año ({pesos(valor)} "
+                f"sugeridos para el renglón 29). La exógena no trae todo el "
+                f"patrimonio: si no hubo ventas, el renglón 29 real es más alto que "
+                f"el sugerido."
             )
     return cuadres, diagnosticos
+
+
+def cruzar_con_la_dian(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> CruceDian:
+    """Compara el borrador de liquidación con lo que la DIAN ya sabe."""
+    # Import tardío: la liquidación depende de medio sistema y este módulo se
+    # carga antes en el arranque.
+    from ..liquidacion import servicios as liquidacion
+    from ..parametros.servicios import obtener_umbral_vigente
+
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
+    registros = session.exec(
+        select(RegistroExogena)
+        .where(RegistroExogena.reporte_exogena_id == reporte.id)
+        .order_by(RegistroExogena.id)
+    ).all()
+
+    umbrales: Optional[Dict[int, Decimal]] = None
+    try:
+        u = obtener_umbral_vigente(session, periodo.anio_gravable)
+        uvt = Decimal(str(u.valor_uvt))
+        umbrales = {
+            1: uvt * Decimal(str(u.tope_ingresos_uvt)),
+            2: uvt * Decimal(str(u.tope_patrimonio_uvt)),
+            3: uvt * Decimal(str(u.tope_consumo_tc_uvt)),
+            4: uvt * Decimal(str(u.tope_movimiento_uvt)),
+            5: uvt * Decimal(str(u.tope_compras_uvt)),
+        }
+    except UmbralNoConfiguradoError:
+        pass
+
+    liq = liquidacion.liquidar_periodo(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    hoja = liquidacion.obtener_hoja(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    parametros = liquidacion.obtener_parametros(periodo.anio_gravable)
+    declarado = cruce.CifrasDeclaradas(
+        casillas={r.casilla: Decimal(r.valor) for r in liq.renglones if r.casilla},
+        compras_con_factura_electronica=Decimal(
+            str(hoja.compras_con_factura_electronica or 0)
+        ),
+        uvt=parametros.uvt,
+        tope_compras_uvt=parametros.deduccion_compras.tope_uvt or Decimal("240"),
+    )
+
+    resultado = cruce.cruzar(
+        [_a_cruce(r) for r in registros],
+        _topes_del_reporte(session, reporte.id),
+        declarado,
+        umbrales,
+    )
+
+    def pendiente(r: cruce.Registro) -> RegistroPendiente:
+        return RegistroPendiente(
+            detalle=r.detalle,
+            valor=r.valor,
+            renglones_posibles=[f"R{n}" for n in r.renglones()],
+            uso_sugerido=r.uso_sugerido or None,
+        )
+
+    severidades = (cruce.ALTA, cruce.MEDIA, cruce.OPORTUNIDAD, cruce.OK, cruce.SIN_DATO)
+    return CruceDian(
+        contribuyente_id=contribuyente_id,
+        periodo_fiscal_id=periodo_fiscal_id,
+        anio_gravable=periodo.anio_gravable,
+        reporte_exogena_id=reporte.id,
+        obligado_a_declarar=(
+            any(t.supera_umbral for t in resultado.topes) if umbrales else None
+        ),
+        topes=[
+            TopeCruzado(
+                numero=t.numero, nombre=t.nombre, etiqueta=t.etiqueta,
+                valor_tope=t.valor_tope, suma_detalle=t.suma_detalle, piso=t.piso,
+                valor_esperado=t.valor_esperado, cuadra=t.cuadra, umbral=t.umbral,
+                supera_umbral=t.supera_umbral, explicacion=t.explicacion,
+                registros=[
+                    DetalleTopeLeer(
+                        detalle=d.detalle, reportante=d.reportante, valor=d.valor,
+                        valor_propio=d.valor_propio, participacion=d.participacion,
+                    )
+                    for d in t.registros
+                ],
+            )
+            for t in resultado.topes
+        ],
+        comparaciones=[
+            ComparacionCruce(
+                clave=c.clave, titulo=c.titulo, casillas=c.casillas,
+                valor_dian=c.valor_dian, valor_declarado=c.valor_declarado,
+                diferencia=c.diferencia, severidad=c.severidad, mensaje=c.mensaje,
+            )
+            for c in resultado.comparaciones
+        ],
+        pendientes=[pendiente(r) for r in resultado.pendientes],
+        informativos=[pendiente(r) for r in resultado.informativos],
+        resumen={s: resultado.cuenta(s) for s in severidades},
+        diagnosticos=resultado.diagnosticos,
+    )
