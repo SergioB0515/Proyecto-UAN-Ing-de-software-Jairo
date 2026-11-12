@@ -432,6 +432,8 @@ def construir_insumos(
                 sujeto_a_limite_general=d.sujeto_a_limite_general,
                 fuente_legal=d.fuente_legal,
                 codigo_tope=d.codigo_plantilla,
+                subcedula=d.subcedula or None,
+                tipo=_fila_de(d),
             )
             for d in deducciones
         ],
@@ -486,6 +488,21 @@ def _patrimonio_liquido_anterior(
     return bruto - deudas
 
 
+def _fila_de(deduccion: DeduccionSolicitada) -> str:
+    """Fila del formulario 210 de una deducción guardada.
+
+    Las deducciones creadas antes de que existiera el campo no lo tienen. Si
+    salieron del catálogo, la fila es la de su plantilla; si se escribieron a
+    mano, se tratan como «otras deducciones imputables», que es lo que casi
+    siempre son. Mandarlas a rentas exentas daría el mismo impuesto y la
+    casilla equivocada.
+    """
+    if deduccion.fila_formulario:
+        return deduccion.fila_formulario
+    plantilla = plantillas.obtener(deduccion.codigo_plantilla or "")
+    return plantilla.fila if plantilla else motor.DEDUCCION_OTRA
+
+
 def liquidar_periodo(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> LiquidacionLeer:
@@ -530,11 +547,13 @@ def liquidar_periodo(
                 valor_declarable=r.valor_declarable,
                 formula=r.formula,
                 fuente_legal=r.fuente_legal,
+                casilla=r.casilla,
             )
             for r in resultado.renglones
         ],
         diagnosticos=diagnosticos,
         notas=resultado.notas,
+        casillas_marcadas=resultado.casillas_marcadas,
         ingresos_sin_clasificar=sin_clasificar,
     )
 
@@ -827,6 +846,8 @@ def crear_deduccion_desde_plantilla(
             sujeto_a_limite_general=plantilla.sujeto_a_limite_general,
             fuente_legal=plantilla.fuente_legal,
             codigo_plantilla=plantilla.codigo,
+            subcedula=plantilla.subcedula_sugerida,
+            fila_formulario=plantilla.fila,
         ),
     )
 

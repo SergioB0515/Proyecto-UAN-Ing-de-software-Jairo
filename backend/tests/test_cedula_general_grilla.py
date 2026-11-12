@@ -457,8 +457,12 @@ def test_cada_casilla_de_la_grilla_lleva_su_numero_y_su_norma():
         patrimonio=Patrimonio(patrimonio_bruto=D("200000000")),
     )
     liq = liquidar(insumos, P)
-    de_la_grilla = [r for r in liq.renglones if r.casilla]
-    assert de_la_grilla
-    for renglon in de_la_grilla:
+    con_casilla = [r for r in liq.renglones if r.casilla]
+    assert con_casilla
+    for renglon in con_casilla:
         assert renglon.fuente_legal, renglon.codigo
-        assert f"[{renglon.casilla}]" in renglon.nombre
+    # Los de la grilla llevan además el número en el nombre, porque el nombre
+    # de la fila se repite en las cuatro columnas y sin él no se distinguen.
+    for renglon in con_casilla:
+        if renglon.codigo.startswith("CG-C"):
+            assert f"[{renglon.casilla}]" in renglon.nombre

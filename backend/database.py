@@ -146,7 +146,17 @@ def crear_tablas() -> None:
         },
     )
     _agregar_columnas_si_faltan(
-        engine, "deducciones_solicitadas", {"codigo_plantilla": "VARCHAR"}
+        engine,
+        "deducciones_solicitadas",
+        {
+            "codigo_plantilla": "VARCHAR",
+            # Columna y fila del formulario 210 a las que se imputa. Quedan en
+            # NULL para las deducciones existentes, que es lo correcto: el
+            # motor las reparte entre las columnas con renta líquida en vez de
+            # inventarles una imputación que el contador no eligió.
+            "subcedula": "VARCHAR",
+            "fila_formulario": "VARCHAR",
+        },
     )
     _agregar_columnas_si_faltan(
         engine,

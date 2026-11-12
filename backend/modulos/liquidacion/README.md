@@ -116,3 +116,35 @@ La responsabilidad de la declaración es del contribuyente y del contador
 que la firma (art. 581 ET). Este módulo es una herramienta de apoyo: todas
 sus salidas llevan esa advertencia y están diseñadas para ser revisadas,
 no para ser aceptadas a ciegas.
+
+## La cédula general como grilla y el borrador del 210
+
+El formulario 210 pide la cédula general como una grilla de diecisiete filas por
+cuatro columnas (rentas de trabajo, de trabajo sin vínculo laboral, de capital y
+no laborales). `cedula_general.py` arma esa grilla y el motor emite un renglón
+`CG-C<número>` por cada celda con valor, con su número de casilla.
+
+Reglas tomadas del instructivo oficial del formulario (AG 2024), no del texto
+del Estatuto:
+
+| Regla | Dónde |
+|---|---|
+| El cupo del art. 336 num. 3 se reparte en cascada: trabajo → sin vínculo → capital → no laborales | `_repartir_en_cascada` |
+| Ninguna columna resta más que su propia renta líquida | `_repartir_en_cascada` |
+| La base del 40 % no descuenta las devoluciones de la casilla 75 | `depurar` |
+| Las rentas exentas sin límite se suman encima del 40 % | `depurar` |
+| La adición por dependientes (139) se topa en las casillas 42 + 57 | `depurar` |
+| El 1 % de compras (28) no puede generar pérdida | `depurar` |
+| La compensación de pérdidas va después del límite (87 → 89 → 90) | `motor.liquidar` |
+| Los descuentos (125) se topan en el impuesto de renta (121), no en renta + ganancia ocasional | `motor.liquidar` |
+| La casilla 140 se marca si los costos de la 45 superan el 60 % de la 43 | `motor.liquidar` |
+
+Cada deducción guarda su columna (`subcedula`) y su fila (`fila_formulario`). Si
+el contador no fija la columna, el motor la reparte entre las columnas con renta
+líquida en el orden del formulario.
+
+`GET …/formulario-210` devuelve el borrador en PDF, casilla por casilla
+(`borrador_210.py`). No es el formulario oficial: el 210 solo se presenta en los
+servicios en línea de la DIAN, y el documento va marcado como borrador en cada
+página. Las casillas que el motor no calcula (94, 95, 104–106, 109, 110,
+118–120, 122, 123, 128, 135) se imprimen como «no calculada», no en cero.

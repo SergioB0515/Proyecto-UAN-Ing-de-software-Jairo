@@ -11,6 +11,7 @@ import {
   crearDeduccionDesdePlantilla,
   listarPlantillas,
   eliminarDeduccion,
+  descargarBorrador210,
   exportarLiquidacion,
   liquidar,
   listarCedulas,
@@ -69,7 +70,7 @@ const BLOQUES = [
   { titulo: 'Pensiones', prefijos: ['PEN-'] },
   { titulo: 'Dividendos', prefijos: ['DIV-'] },
   { titulo: 'Comparación patrimonial', prefijos: ['COMP-'] },
-  { titulo: 'Base e impuesto', prefijos: ['RENTA-PRESUNTIVA', 'BASE-', 'IMP-RENTA'] },
+  { titulo: 'Base e impuesto', prefijos: ['RENTA-PRESUNTIVA', 'BASE-', 'IMP-RENTA', 'IMP-TOTAL'] },
   { titulo: 'Ganancias ocasionales', prefijos: ['GO-'] },
   { titulo: 'Impuesto a cargo y descuentos', prefijos: ['TOTAL-', 'DESC-', 'IMP-NETO'] },
   { titulo: 'Retenciones, anticipo y saldo', prefijos: ['RETENCIONES', 'ANTICIPO-', 'SALDO-'] },
@@ -396,8 +397,11 @@ onMounted(cargar)
           </p>
         </div>
         <div class="flex flex-wrap gap-2">
-          <button type="button" class="boton" @click="exportarLiquidacion(cid, pid, 'pdf')">
-            Generar documento 210 (PDF)
+          <button type="button" class="boton" @click="descargarBorrador210(cid, pid)">
+            Generar borrador del 210 (PDF)
+          </button>
+          <button type="button" class="boton-secundario" @click="exportarLiquidacion(cid, pid, 'pdf')">
+            Papel de trabajo (PDF)
           </button>
           <button type="button" class="boton-secundario" @click="exportarLiquidacion(cid, pid, 'xlsx')">
             Excel
@@ -728,6 +732,11 @@ onMounted(cargar)
                 <tr :class="DESTACADOS.has(r.codigo) ? 'bg-libro-claro/60 font-semibold' : ''">
                   <td>
                     {{ r.nombre }}
+                    <span
+                      v-if="r.casilla && !r.codigo.startsWith('CG-C')"
+                      class="ml-1 rounded bg-libro-claro px-1 text-xs font-normal"
+                      :title="`Casilla ${r.casilla} del formulario 210`"
+                    >casilla {{ r.casilla }}</span>
                     <span class="ml-1 text-xs font-normal text-tinta-tenue">{{ r.codigo }}</span>
                   </td>
                   <td class="cifra">{{ dinero(r.valor) }}</td>

@@ -517,3 +517,33 @@ def test_un_contador_no_alcanza_lo_empresarial_de_otro(client):
     assert client.get(
         f"/liquidacion/contribuyentes/{cid}/perdidas?anio_gravable=2025", headers=h_b
     ).status_code == 404
+
+
+def test_el_borrador_del_210_se_descarga_en_pdf_y_es_del_contador_dueno(client):
+    h = _token(client, "emp-210a@example.com")
+    cid = client.post("/contribuyentes", json={"nombre": "Borrador 210", "rut": "900210",
+                      "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]
+    pid = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                      json={"anio_gravable": 2025}, headers=h).json()["id"]
+
+    respuesta = client.get(f"{_base(cid, pid)}/formulario-210", headers=h)
+    assert respuesta.status_code == 200
+    assert respuesta.headers["content-type"] == "application/pdf"
+    assert respuesta.content.startswith(b"%PDF")
+    assert "borrador_210_900210_2025.pdf" in respuesta.headers["content-disposition"]
+
+    otro = _token(client, "emp-210b@example.com")
+    assert client.get(f"{_base(cid, pid)}/formulario-210", headers=otro).status_code == 404
+
+
+def test_la_liquidacion_expone_la_casilla_de_cada_renglon(client):
+    h = _token(client, "emp-210c@example.com")
+    cid = client.post("/contribuyentes", json={"nombre": "Casillas", "rut": "900211",
+                      "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]
+    pid = client.post(f"/contribuyentes/{cid}/periodos-fiscales",
+                      json={"anio_gravable": 2025}, headers=h).json()["id"]
+    liq = client.get(_base(cid, pid), headers=h).json()
+    casillas = {r["codigo"]: r["casilla"] for r in liq["renglones"]}
+    assert casillas["PAT-BRUTO"] == 29
+    assert casillas["SALDO-A-PAGAR"] == 136
+    assert liq["casillas_marcadas"] == []

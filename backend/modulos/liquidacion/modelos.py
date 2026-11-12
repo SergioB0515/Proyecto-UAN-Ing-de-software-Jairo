@@ -216,6 +216,13 @@ class DeduccionSolicitadaBase(SQLModel):
     # qué tope propio aplicarle: una deducción escrita a mano no tiene techo
     # conocido y el motor no puede inventarle uno.
     codigo_plantilla: Optional[str] = Field(default=None, max_length=60)
+    # Columna del formulario 210 a la que se imputa: TRABAJO,
+    # TRABAJO_SIN_VINCULO, CAPITAL o NO_LABORAL. Vacío deja que el motor la
+    # reparta entre las columnas con renta líquida, en el orden del formulario.
+    subcedula: Optional[str] = Field(default=None, max_length=30)
+    # Fila del formulario: EXENTA_AFC, EXENTA_OTRA, DEDUCCION_VIVIENDA o
+    # DEDUCCION_OTRA. Decide la casilla dentro de la columna.
+    fila_formulario: Optional[str] = Field(default=None, max_length=30)
 
 
 class DeduccionSolicitada(DeduccionSolicitadaBase, table=True):
@@ -273,6 +280,7 @@ class RenglonLeer(SQLModel):
     valor_declarable: Decimal
     formula: str
     fuente_legal: str
+    casilla: Optional[int] = None
 
 
 class ParametrosAplicadosLeer(SQLModel):
@@ -294,6 +302,7 @@ class LiquidacionLeer(SQLModel):
     renglones: List[RenglonLeer]
     diagnosticos: List[str]
     notas: List[str]
+    casillas_marcadas: List[int] = []
     ingresos_sin_clasificar: List[IngresoClasificadoLeer] = []
     advertencia: str = (
         "Borrador de liquidación generado a partir de los datos registrados. "

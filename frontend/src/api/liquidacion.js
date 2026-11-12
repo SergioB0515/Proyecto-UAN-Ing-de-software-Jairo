@@ -31,6 +31,10 @@ export const liquidar = (cid, pid) => obtener(base(cid, pid))
 export const exportarLiquidacion = (cid, pid, formato) =>
   descargarArchivo(`${base(cid, pid)}/exportar`, { formato }, `liquidacion.${formato}`)
 
+// Borrador del formulario 210 casilla por casilla, para transcribir.
+export const descargarBorrador210 = (cid, pid) =>
+  descargarArchivo(`${base(cid, pid)}/formulario-210`, {}, 'borrador_210.pdf')
+
 // --- Parte empresarial -----------------------------------------------------
 
 export const listarCategoriasDepreciacion = (anioGravable) =>

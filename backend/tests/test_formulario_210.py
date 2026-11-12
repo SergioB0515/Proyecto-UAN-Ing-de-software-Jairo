@@ -95,7 +95,8 @@ def test_un_codigo_agregado_no_mapea_y_explica_por_que():
 
 @pytest.mark.parametrize(
     "codigo, numero",
-    [("PAT-BRUTO", 29), ("PAT-LIQUIDO", 31), ("IMP-NETO", 126), ("SALDO-A-PAGAR", 136)],
+    [("PAT-BRUTO", 29), ("PAT-LIQUIDO", 31), ("IMP-NETO-RENTA", 126), ("IMP-NETO", 129),
+     ("SALDO-A-PAGAR", 136)],
 )
 def test_casillas_clave(codigo, numero):
     assert casilla_de(codigo, 2024).numero == numero

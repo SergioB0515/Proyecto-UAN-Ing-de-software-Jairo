@@ -23,6 +23,7 @@ from modulos.contadores.modelos import Contador
 
 from ..contribuyentes.servicios import obtener_contribuyente
 from . import clasificador, servicios
+from . import borrador_210
 from ..reportes.exportacion import DocumentoReporte, Seccion, a_excel, a_pdf
 from ..reportes.modelos import FormatoReporte
 from ..reportes.servicios import _MEDIA_TYPES
@@ -258,6 +259,50 @@ def exportar_liquidacion(
     return Response(
         content=contenido,
         media_type=_MEDIA_TYPES[formato],
+        headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
+    )
+
+
+@router.get(f"{_BASE}/formulario-210", response_class=Response)
+def borrador_formulario_210(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Borrador del formulario 210 en PDF, casilla por casilla.
+
+    Es distinto de `/exportar`: aquel es el papel de trabajo con la fórmula y
+    la norma de cada renglón; este es la hoja para transcribir, con las mismas
+    casillas del formulario en el mismo orden. Va marcado como borrador porque
+    el 210 solo se presenta desde los servicios en línea de la DIAN.
+    """
+    try:
+        liq = servicios.liquidar_periodo(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+        hoja = servicios.obtener_hoja(
+            session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+    datos = obtener_contribuyente(session, contador.id, contribuyente_id)
+    contenido = borrador_210.a_pdf(
+        borrador_210.Borrador210(
+            nombre=datos.nombre,
+            nit=datos.rut,
+            anio_gravable=liq.anio_gravable,
+            casillas=borrador_210.construir_casillas(liq.renglones),
+            marcadas=liq.casillas_marcadas,
+            numero_dependientes=hoja.numero_dependientes,
+            diagnosticos=liq.diagnosticos,
+            notas=liq.notas,
+        )
+    )
+    nombre = f"borrador_210_{datos.rut}_{liq.anio_gravable}.pdf"
+    return Response(
+        content=contenido,
+        media_type="application/pdf",
         headers={"Content-Disposition": f'attachment; filename="{nombre}"'},
     )
 

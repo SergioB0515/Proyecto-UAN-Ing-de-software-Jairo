@@ -25,6 +25,13 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import List, Optional
 
+from .cedula_general import (
+    DEDUCCION_OTRA,
+    DEDUCCION_VIVIENDA,
+    EXENTA_AFC,
+    TRABAJO,
+)
+
 
 @dataclass(frozen=True)
 class PlantillaDeduccion:
@@ -35,11 +42,19 @@ class PlantillaDeduccion:
     tope_propio_uvt: Optional[Decimal] = None
     periodicidad_tope: str = "ANUAL"  # ANUAL | MENSUAL
     nota: str = ""
+    # Fila del formulario 210. Los aportes a AFC, FVP y AVC y los intereses de
+    # vivienda tienen casilla propia, separada del resto.
+    fila: str = DEDUCCION_OTRA
+    # Columna del formulario. `None` deja que el motor la reparta entre las
+    # columnas con renta líquida; se fija solo cuando la norma la determina,
+    # como en el art. 387, que exige relación laboral.
+    subcedula_sugerida: Optional[str] = None
 
 
 PLANTILLAS: List[PlantillaDeduccion] = [
     PlantillaDeduccion(
         codigo="INTERESES_VIVIENDA",
+        fila=DEDUCCION_VIVIENDA,
         nombre="Intereses de crédito de vivienda",
         fuente_legal="Art. 119 ET",
         sujeto_a_limite_general=True,
@@ -56,6 +71,8 @@ PLANTILLAS: List[PlantillaDeduccion] = [
     ),
     PlantillaDeduccion(
         codigo="MEDICINA_PREPAGADA",
+        fila=DEDUCCION_OTRA,
+        subcedula_sugerida=TRABAJO,
         nombre="Medicina prepagada o póliza de salud",
         fuente_legal="Art. 387 num. 1 ET",
         sujeto_a_limite_general=True,
@@ -66,6 +83,8 @@ PLANTILLAS: List[PlantillaDeduccion] = [
     ),
     PlantillaDeduccion(
         codigo="DEPENDIENTES_387",
+        fila=DEDUCCION_OTRA,
+        subcedula_sugerida=TRABAJO,
         nombre="Dependientes económicos (art. 387)",
         fuente_legal="Art. 387 num. 2 ET",
         sujeto_a_limite_general=True,
@@ -77,6 +96,7 @@ PLANTILLAS: List[PlantillaDeduccion] = [
     ),
     PlantillaDeduccion(
         codigo="APORTES_VOLUNTARIOS_PENSION",
+        fila=EXENTA_AFC,
         nombre="Aportes voluntarios a fondos de pensiones voluntarias",
         fuente_legal="Art. 126-1 ET",
         sujeto_a_limite_general=True,
@@ -87,6 +107,7 @@ PLANTILLAS: List[PlantillaDeduccion] = [
     ),
     PlantillaDeduccion(
         codigo="AHORRO_AFC",
+        fila=EXENTA_AFC,
         nombre="Ahorro en cuentas AFC o AVC",
         fuente_legal="Art. 126-4 ET",
         sujeto_a_limite_general=True,

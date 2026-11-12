@@ -329,6 +329,8 @@ class Liquidacion:
     renglones: List[Renglon] = field(default_factory=list)
     diagnosticos: List[str] = field(default_factory=list)
     notas: List[str] = field(default_factory=list)
+    # Casillas del formulario que no llevan valor sino una marca (hoy, la 140).
+    casillas_marcadas: List[int] = field(default_factory=list)
 
     def valor(self, codigo: str) -> Decimal:
         for renglon in self.renglones:
@@ -689,12 +691,13 @@ def liquidar(
 
     # --- Patrimonio -------------------------------------------------------
     R(Renglon("PAT-BRUTO", "Total patrimonio bruto", insumos.patrimonio.patrimonio_bruto,
-              "Suma de los activos poseídos a 31 de diciembre", "Arts. 261 y 267 ET"))
+              "Suma de los activos poseídos a 31 de diciembre", "Arts. 261 y 267 ET",
+              casilla=29))
     R(Renglon("PAT-DEUDAS", "Deudas", insumos.patrimonio.deudas,
-              "Pasivos vigentes a 31 de diciembre", "Art. 283 ET"))
+              "Pasivos vigentes a 31 de diciembre", "Art. 283 ET", casilla=30))
     R(Renglon("PAT-LIQUIDO", "Total patrimonio líquido",
               insumos.patrimonio.patrimonio_liquido,
-              "Patrimonio bruto − deudas", "Art. 282 ET"))
+              "Patrimonio bruto − deudas", "Art. 282 ET", casilla=31))
 
     # --- Depreciación (arts. 128 a 131 y 137 ET) --------------------------
     trabajo, capital, no_laborales = insumos.trabajo, insumos.capital, insumos.no_laborales
@@ -943,6 +946,28 @@ def liquidar(
                   "sin que pueda dar lugar a pérdidas",
                   "Art. 336 num. 5 ET", casilla=28))
 
+    # --- Casilla 140: tope indicativo del art. 336-1 ET --------------------
+    #
+    # El instructivo pide marcarla cuando los costos y deducciones de las
+    # rentas de trabajo sin vínculo laboral (casilla 45) superan el 60 % de sus
+    # ingresos brutos (casilla 43). No cambia el impuesto: es un aviso a la
+    # DIAN, y a quien la marca le conviene tener los soportes a la mano.
+    sin_vinculo = cg.columnas[SIN_VINCULO]
+    if (
+        sin_vinculo.ingresos_brutos > CERO
+        and sin_vinculo.costos_y_deducciones
+        > sin_vinculo.ingresos_brutos * Decimal("0.60")
+    ):
+        liq.casillas_marcadas.append(140)
+        liq.diagnosticos.append(
+            f"Los costos de las rentas de trabajo sin vínculo laboral "
+            f"(${sin_vinculo.costos_y_deducciones.quantize(_CENTAVO)}) superan el 60 % "
+            f"de sus ingresos (${sin_vinculo.ingresos_brutos.quantize(_CENTAVO)}): hay "
+            f"que marcar la casilla 140 del formulario (tope indicativo del art. "
+            f"336-1 ET). No cambia el impuesto, pero la DIAN puede pedir los "
+            f"soportes de esos costos."
+        )
+
     R(Renglon("CG-C91", "[91] Renta líquida cédula general", cg.casilla_91,
               "Casillas 41 + 42 + 53 + 57 + 69 + 73 + 86 + 90",
               "Art. 336 ET", casilla=91))
@@ -977,18 +1002,42 @@ def liquidar(
     renta_liquida_pensiones = _no_negativo(base_pensiones - exenta_pensiones)
     if pensiones.ingresos_brutos > CERO:
         R(Renglon("PEN-INGRESOS", "Ingresos por pensiones", pensiones.ingresos_brutos,
-                  "Mesadas y demás pagos pensionales del año", "Art. 337 ET"))
+                  "Mesadas y demás pagos pensionales del año", "Art. 337 ET",
+                  casilla=99))
+        if pensiones.ingresos_no_constitutivos > CERO:
+            R(Renglon("PEN-INCRNGO", "Ingresos no constitutivos de renta de pensiones",
+                      pensiones.ingresos_no_constitutivos,
+                      "Aportes obligatorios a salud sobre las mesadas",
+                      "Art. 56 ET", casilla=100))
+        R(Renglon("PEN-BASE", "Renta líquida de la cédula de pensiones", base_pensiones,
+                  "Casilla 99 − casilla 100", "Art. 337 ET", casilla=101))
         R(Renglon("PEN-EXENTA", "Renta exenta de pensiones", exenta_pensiones,
                   f"Topada en {parametros.renta_exenta_pensiones_uvt_mensual} UVT × "
                   f"{meses} mes(es) = ${tope_pensiones.quantize(_CENTAVO)}",
-                  parametros.fuente_renta_exenta_pensiones))
+                  parametros.fuente_renta_exenta_pensiones, casilla=102))
         R(Renglon("PEN-RENTA-LIQUIDA", "Renta líquida gravable de pensiones",
                   renta_liquida_pensiones, "Ingresos − no constitutivos − renta exenta",
-                  "Art. 337 ET"))
+                  "Art. 337 ET", casilla=103))
 
     # --- Dividendos --------------------------------------------------------
     div = insumos.dividendos
     renta_liquida_dividendos = div.no_gravados + div.gravados
+    if div.no_gravados > CERO:
+        R(Renglon("DIV-NO-GRAVADOS", "Dividendos — 1a subcédula (no gravados)",
+                  div.no_gravados,
+                  "Dividendos distribuidos como no gravados según el certificado de "
+                  "la sociedad", "Art. 49 num. 3 ET", casilla=107))
+    if div.gravados > CERO:
+        R(Renglon("DIV-GRAVADOS", "Dividendos — 2a subcédula (gravados)",
+                  div.gravados,
+                  "Dividendos distribuidos como gravados según el certificado de la "
+                  "sociedad", "Art. 49 par. 2 ET", casilla=108))
+        liq.notas.append(
+            "El borrador no calcula la casilla 118 (impuesto del art. 240 sobre los "
+            "dividendos gravados de la 2a subcédula) ni la resta en la casilla 111: "
+            "hay dividendos gravados, así que esas dos casillas deben revisarse a "
+            "mano contra el certificado de la sociedad."
+        )
     if renta_liquida_dividendos > CERO:
         R(Renglon("DIV-RENTA-LIQUIDA", "Renta líquida cedular de dividendos y participaciones",
                   renta_liquida_dividendos,
@@ -1015,6 +1064,22 @@ def liquidar(
         go.loterias_rifas_apuestas * parametros.tarifa_ganancia_ocasional_loterias
     )
     if go.ingresos > CERO or go.loterias_rifas_apuestas > CERO:
+        R(Renglon("GO-INGRESOS", "Ingresos por ganancias ocasionales",
+                  go.ingresos + go.loterias_rifas_apuestas,
+                  "Incluye loterías, rifas y apuestas", "Arts. 299 a 306 ET",
+                  casilla=112))
+        if go.costos > CERO:
+            R(Renglon("GO-COSTOS", "Costos por ganancias ocasionales", go.costos,
+                      "Costo fiscal de los bienes enajenados", "Art. 300 ET",
+                      casilla=113))
+        if go.ganancia_exenta > CERO:
+            R(Renglon("GO-EXENTA", "Ganancias ocasionales no gravadas y exentas",
+                      go.ganancia_exenta, "Parte exenta según la norma aplicable",
+                      "Arts. 307 a 311-1 ET", casilla=114))
+        R(Renglon("GO-GRAVABLE", "Ganancias ocasionales gravables",
+                  base_go + go.loterias_rifas_apuestas,
+                  "Casilla 112 − casilla 113 − casilla 114", "Art. 311 ET",
+                  casilla=115))
         R(Renglon("GO-BASE", "Ganancia ocasional gravable", base_go,
                   "Ingresos por ganancia ocasional − costos − ganancia exenta",
                   "Arts. 299 a 311-1 ET"))
@@ -1025,7 +1090,7 @@ def liquidar(
                   + (f" + {porcentaje(parametros.tarifa_ganancia_ocasional_loterias)}% × "
                      f"${go.loterias_rifas_apuestas.quantize(_CENTAVO)} (loterías, rifas y apuestas)"
                      if go.loterias_rifas_apuestas > CERO else ""),
-                  parametros.fuente_ganancia_ocasional))
+                  parametros.fuente_ganancia_ocasional, casilla=127))
 
     # --- Base gravable y tabla del art. 241 --------------------------------
     base_ordinaria = renta_liquida_cg + renta_liquida_pensiones + renta_liquida_dividendos
@@ -1050,14 +1115,19 @@ def liquidar(
                       "Renta gravable por comparación patrimonial", renta_comparacion,
                       "Incorporada a la base por decisión del contador: el art. 236 "
                       "admite prueba en contrario y no se incorpora sola",
-                      "Art. 236 ET"))
+                      "Art. 236 ET", casilla=96))
+    R(Renglon("CG-C97", "[97] Renta líquida gravable de la cédula general",
+              renta_liquida_cg + renta_comparacion,
+              "Casilla 93 + casilla 96 − casillas 94 y 95 (que este borrador no "
+              "maneja: pérdidas de 2018 y anteriores y excesos de renta presuntiva)",
+              "Art. 336 ET", casilla=97))
 
     presuntiva = insumos.renta_presuntiva
     base_241 = max(base_ordinaria + renta_comparacion, presuntiva)
     if presuntiva > CERO:
         R(Renglon("RENTA-PRESUNTIVA", "Renta presuntiva", presuntiva,
                   f"Tarifa vigente: {porcentaje(parametros.tarifa_renta_presuntiva)}%",
-                  parametros.fuente_renta_presuntiva))
+                  parametros.fuente_renta_presuntiva, casilla=98))
         if presuntiva > base_ordinaria + renta_comparacion:
             liq.diagnosticos.append(
                 f"La renta presuntiva (${presuntiva.quantize(_CENTAVO)}) superó la renta "
@@ -1068,11 +1138,16 @@ def liquidar(
     R(Renglon("BASE-GRAVABLE", "Renta líquida gravable total", base_241,
               "Mayor entre la suma de las rentas líquidas cedulares (más la renta por "
               "comparación patrimonial, si se aceptó) y la renta presuntiva",
-              "Arts. 241, 331 y 188 ET"))
+              "Arts. 241, 331 y 188 ET", casilla=111))
 
     impuesto_renta, formula_impuesto, _ = aplicar_tabla(base_241, parametros.tabla_renta, uvt)
+    por_presuntiva = presuntiva > base_ordinaria + renta_comparacion
     R(Renglon("IMP-RENTA", "Impuesto sobre la renta líquida gravable", impuesto_renta,
-              formula_impuesto, parametros.fuente_tabla_renta))
+              formula_impuesto, parametros.fuente_tabla_renta,
+              casilla=117 if por_presuntiva else 116))
+    R(Renglon("IMP-TOTAL-RENTA", "Total impuesto sobre las rentas líquidas gravables",
+              impuesto_renta, "Casillas 116 + 117 + 118 + 119 + 120",
+              parametros.fuente_tabla_renta, casilla=121))
 
     total_a_cargo = impuesto_renta + impuesto_go + impuesto_loterias
     R(Renglon("TOTAL-A-CARGO", "Total impuesto a cargo", total_a_cargo,
@@ -1092,22 +1167,30 @@ def liquidar(
                   f"el exceso de la renta líquida cedular de dividendos sobre "
                   f"{parametros.descuento_dividendos.tope_uvt} UVT "
                   f"(${umbral_descuento.quantize(_CENTAVO)})",
-                  parametros.descuento_dividendos.fuente_legal))
+                  parametros.descuento_dividendos.fuente_legal, casilla=124))
 
+    # El techo es el impuesto de renta, no la suma con el de ganancias
+    # ocasionales: en el formulario la casilla 126 es 121 − 125, y el impuesto
+    # de ganancias ocasionales entra después, en la 127, sin descuentos.
     descuentos_solicitados = descuento_dividendos + insumos.otros_descuentos_tributarios
-    descuentos = min(descuentos_solicitados, total_a_cargo)
+    descuentos = min(descuentos_solicitados, impuesto_renta)
     if descuentos < descuentos_solicitados:
         liq.diagnosticos.append(
             f"Los descuentos tributarios se recortaron a ${descuentos.quantize(_CENTAVO)}: "
-            f"no pueden exceder el impuesto a cargo y el excedente de "
+            f"no pueden exceder el impuesto sobre la renta y el excedente de "
             f"${(descuentos_solicitados - descuentos).quantize(_CENTAVO)} se pierde."
         )
     R(Renglon("TOTAL-DESCUENTOS", "Total descuentos tributarios", descuentos,
-              "Limitados al impuesto a cargo", "Arts. 254-1 y 259 ET"))
+              "Limitados al impuesto sobre la renta", "Arts. 254-1 y 259 ET",
+              casilla=125))
+    R(Renglon("IMP-NETO-RENTA", "Impuesto neto de renta (sin ganancias ocasionales)",
+              impuesto_renta - descuentos, "Casilla 121 − casilla 125", "Art. 259 ET",
+              casilla=126))
 
     impuesto_neto = _no_negativo(total_a_cargo - descuentos)
     R(Renglon("IMP-NETO", "Impuesto neto de renta", impuesto_neto,
-              "Total impuesto a cargo − descuentos tributarios", "Art. 259 ET"))
+              "Total impuesto a cargo − descuentos tributarios. Es la casilla 129 "
+              "del formulario: 126 + 127", "Art. 259 ET", casilla=129))
 
     # --- Retenciones y anticipos -------------------------------------------
     retenciones = (
@@ -1115,7 +1198,17 @@ def liquidar(
     )
     R(Renglon("RETENCIONES", "Total retenciones en la fuente", retenciones,
               "Retenciones del año, incluidas las de dividendos y ganancias ocasionales",
-              "Art. 373 ET"))
+              "Art. 373 ET", casilla=132))
+    if insumos.anticipo_pagado_anio_anterior > CERO:
+        R(Renglon("ANTICIPO-ANTERIOR", "Anticipo liquidado el año gravable anterior",
+                  insumos.anticipo_pagado_anio_anterior,
+                  "Casilla de anticipo de la declaración del año anterior",
+                  "Art. 807 ET", casilla=130))
+    if insumos.saldo_a_favor_anio_anterior > CERO:
+        R(Renglon("SALDO-FAVOR-ANTERIOR", "Saldo a favor del año gravable anterior",
+                  insumos.saldo_a_favor_anio_anterior,
+                  "Sin solicitud de devolución ni compensación", "Art. 815 ET",
+                  casilla=131))
 
     # --- Anticipo del año siguiente (art. 807 ET) -------------------------
     #
@@ -1190,7 +1283,7 @@ def liquidar(
         anticipo, formula_anticipo = directo, formula_directo
 
     R(Renglon("ANTICIPO-SIGUIENTE", "Anticipo del impuesto del año siguiente", anticipo,
-              formula_anticipo, parametros.fuente_anticipo))
+              formula_anticipo, parametros.fuente_anticipo, casilla=133))
 
     if (
         metodo == "DIRECTO"
@@ -1217,16 +1310,16 @@ def liquidar(
     R(Renglon("SALDO-A-PAGAR", "Saldo a pagar por impuesto", saldo_a_pagar,
               "Impuesto neto + anticipo del año siguiente − retenciones − anticipo "
               "pagado el año anterior − saldo a favor del año anterior",
-              "Art. 807 ET"))
+              "Art. 807 ET", casilla=136))
     R(Renglon("SALDO-A-FAVOR", "Total saldo a favor", saldo_a_favor,
               "Resultado negativo de la misma operación; puede solicitarse en "
               "devolución o compensación",
-              "Arts. 850 y 815 ET"))
+              "Arts. 850 y 815 ET", casilla=137))
 
     liq.notas.append(
-        "Los renglones llevan códigos propios, no los números impresos del "
-        "formulario 210: esos los fija la resolución de la DIAN que prescribe el "
-        "formulario de cada año gravable y hay que confirmarlos antes de transcribir."
+        "Los números de casilla son los del formulario 210 del año gravable 2024. "
+        "La DIAN puede renumerar el formulario cada año: confírmelos contra la "
+        "resolución que prescribe el del año que se declara antes de transcribir."
     )
     return liq
 

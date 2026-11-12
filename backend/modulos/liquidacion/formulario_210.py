@@ -158,8 +158,9 @@ def casilla_de_subcedula(fila: str, subcedula: str) -> Optional[int]:
 # Solo figuran los códigos que corresponden a UNA casilla del formulario. Varios
 # renglones del motor son agregados de la cédula general y el formulario los pide
 # separados por subcédula (ingresos de trabajo en la 32, de capital en la 58, no
-# laborales en la 74...). Esos no se pueden mapear hasta que el motor emita el
-# detalle por subcédula; están listados en SIN_MAPEO_POR_AGREGACION.
+# laborales en la 74...). Esos totales no tienen casilla propia y están listados
+# en SIN_MAPEO_POR_AGREGACION; el detalle por subcédula lo emite el motor en
+# renglones «CG-C<número>», que ya llevan su casilla y no pasan por este mapa.
 MAPEO_2024: Dict[str, int] = {
     "PAT-BRUTO": 29,
     "PAT-DEUDAS": 30,
@@ -171,9 +172,13 @@ MAPEO_2024: Dict[str, int] = {
     "GO-BASE": 115,
     "IMP-RENTA": 116,
     "TOTAL-DESCUENTOS": 125,
-    "IMP-NETO": 126,
+    # El «impuesto neto» del motor ya incluye el de ganancias ocasionales y
+    # tiene restados los descuentos: es la casilla 129 (126 + 127), no la 126.
+    # Antes figuraba TOTAL-A-CARGO → 129, que es el total ANTES de descuentos y
+    # solo coincidía cuando no había ninguno.
+    "IMP-NETO-RENTA": 126,
     "GO-IMPUESTO": 127,
-    "TOTAL-A-CARGO": 129,
+    "IMP-NETO": 129,
     "RETENCIONES": 132,
     "ANTICIPO-SIGUIENTE": 133,
     "SALDO-A-PAGAR": 136,
