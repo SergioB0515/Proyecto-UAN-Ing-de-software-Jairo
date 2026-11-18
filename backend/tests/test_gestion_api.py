@@ -173,8 +173,11 @@ def test_un_cambio_despues_de_presentar_es_una_correccion_con_sancion(client):
     assert D(corr["sancion"]) == max(
         (D(corr["mayor_valor"]) * D("0.10")).quantize(D("1")), D("10") * D("52374"))
     assert corr["plazo"] == "2029-08-20"
-    # Sin tasas cargadas no inventa intereses: los reporta como faltantes.
-    assert corr["intereses"]["meses_sin_tasa"][0] == "2026-08"
+    # Las tasas publicadas llegan hasta octubre de 2026; noviembre y el 1 de
+    # diciembre (el «hoy» de la prueba) no se inventan: se reportan.
+    assert corr["intereses"]["meses_sin_tasa"] == ["2026-11", "2026-12"]
+    assert [t["desde"][:7] for t in corr["intereses"]["tramos"]] == [
+        "2026-08", "2026-09", "2026-10"]
     # Lo vigente sigue siendo lo presentado hasta que se registre la corrección.
     assert g["saldo_a_pagar"] == antes
 
@@ -254,7 +257,8 @@ def test_traer_del_anio_anterior_sin_declaracion_da_422(client):
 def test_pagar_tarde_genera_intereses_con_las_tasas_de_la_dian(client):
     h = _token(client, "gestion-l@example.com")
     cid, pid = _contribuyente(client, h)
-    tasas = client.post("/tasas-interes-moratorio/oficiales", headers=h).json()
+    # Las tasas publicadas por la DIAN vienen con la app: no hay que cargarlas.
+    tasas = client.get("/tasas-interes-moratorio", headers=h).json()
     assert {(t["anio"], t["mes"]) for t in tasas} >= {(2026, 8), (2026, 9)}
 
     # Año anterior con 4 M de impuesto: este año lo supera de sobra.
@@ -280,11 +284,11 @@ def test_pagar_tarde_genera_intereses_con_las_tasas_de_la_dian(client):
     assert g["firmeza"]["fecha"] == "2029-08-20"
 
 
-def test_las_tasas_editadas_no_se_pisan_al_cargar_las_oficiales(client):
+def test_una_tasa_editada_reemplaza_la_publicada(client):
     h = _token(client, "gestion-m@example.com")
     client.put("/tasas-interes-moratorio", headers=h, json={
         "anio": 2026, "mes": 8, "tasa_efectiva_anual": "30.00", "fuente": "Prueba"})
-    tasas = client.post("/tasas-interes-moratorio/oficiales", headers=h).json()
+    tasas = client.get("/tasas-interes-moratorio", headers=h).json()
     agosto = next(t for t in tasas if (t["anio"], t["mes"]) == (2026, 8))
     assert D(str(agosto["tasa_efectiva_anual"])) == D("30")
 

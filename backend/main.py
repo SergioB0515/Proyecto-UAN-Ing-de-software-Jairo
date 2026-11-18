@@ -67,7 +67,7 @@ app = FastAPI(
 
 # Prefijo bajo el que se montan las rutas de la API.
 #
-# En desarrollo vale "" y todo queda como siempre (las 195 pruebas llaman a
+# En desarrollo vale "" y todo queda como siempre (las pruebas llaman a
 # /contribuyentes, /cartera, ...). En el contenedor de producción vale "/api",
 # porque el SPA se sirve en el mismo origen y sus rutas de vue-router
 # (/cartera, /contribuyentes/3/resumen) chocarían con las de la API.

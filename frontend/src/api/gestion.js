@@ -29,4 +29,3 @@ export const descargarInforme = (cid, pid) =>
 
 export const listarTasas = () => obtener('/tasas-interes-moratorio')
 export const guardarTasa = async (datos) => (await cliente.put('/tasas-interes-moratorio', datos)).data
-export const cargarTasasOficiales = () => enviar('/tasas-interes-moratorio/oficiales', {})

@@ -1170,16 +1170,14 @@ def gestion_demo(session: Session, contador_id: int) -> None:
     - Nelson: venció el 20 de agosto y no ha presentado. La pantalla muestra
       la sanción y los intereses que siguen corriendo.
 
-    Las tasas de mora se cargan de la tabla de la DIAN; la de noviembre de
-    2026 se deja sin cargar a propósito, para que se vea el aviso.
+    Las tasas de mora publicadas por la DIAN vienen con la app; la de
+    noviembre de 2026 no está, y se deja así para que se vea el aviso.
     """
     from modulos.gestion import servicios as gestion
     from modulos.gestion.modelos import (
         DeclaracionAnteriorRegistrar, DocumentoActualizar, EstadoDocumento,
         PresentacionRegistrar, SeguimientoActualizar,
     )
-
-    gestion.cargar_tasas_oficiales(session)
 
     def ubicar(rut: str) -> Tuple[int, int]:
         c = session.exec(select(Contribuyente).where(

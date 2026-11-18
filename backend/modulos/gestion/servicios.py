@@ -124,10 +124,9 @@ def declaracion_vigente(
 
 
 def _tasas(session: Session) -> Dict[Tuple[int, int], Decimal]:
-    return {
-        (t.anio, t.mes): Decimal(t.tasa_efectiva_anual) / CIEN
-        for t in session.exec(select(TasaInteresMoratorio)).all()
-    }
+    """Tasas por mes en fracción: las publicadas, con lo editado encima."""
+    return {(t.anio, t.mes): Decimal(t.tasa_efectiva_anual) / CIEN
+            for t in listar_tasas(session)}
 
 
 def _uvt(anio: int, respaldo: Decimal) -> Decimal:
@@ -641,25 +640,23 @@ TASAS_CON_OTRA_FUENTE = {
 }
 
 
-def cargar_tasas_oficiales(session: Session) -> int:
-    """Carga las tasas publicadas por la DIAN que falten. No pisa las existentes."""
-    existentes = {(t.anio, t.mes) for t in session.exec(select(TasaInteresMoratorio)).all()}
-    nuevas = 0
+
+
+def _tasas_publicadas() -> Dict[Tuple[int, int], TasaInteresMoratorio]:
     todas = {k: (v, FUENTE_TABLA_DIAN) for k, v in TASAS_OFICIALES.items()}
     todas.update(TASAS_CON_OTRA_FUENTE)
-    for (anio, mes), (tasa, fuente) in todas.items():
-        if (anio, mes) not in existentes:
-            session.add(TasaInteresMoratorio(anio=anio, mes=mes,
-                                             tasa_efectiva_anual=Decimal(tasa),
-                                             fuente=fuente))
-            nuevas += 1
-    session.commit()
-    return nuevas
+    return {(a, m): TasaInteresMoratorio(anio=a, mes=m, tasa_efectiva_anual=Decimal(t),
+                                         fuente=f)
+            for (a, m), (t, f) in todas.items()}
 
 
 def listar_tasas(session: Session) -> List[TasaInteresMoratorio]:
-    return list(session.exec(select(TasaInteresMoratorio).order_by(
-        TasaInteresMoratorio.anio.desc(), TasaInteresMoratorio.mes.desc())).all())
+    """Las tasas publicadas vienen con la app; las de la base las completan o
+    las corrigen. Así una instalación nueva nunca arranca sin tasas."""
+    tasas = _tasas_publicadas()
+    for t in session.exec(select(TasaInteresMoratorio)).all():
+        tasas[(t.anio, t.mes)] = t
+    return sorted(tasas.values(), key=lambda t: (t.anio, t.mes), reverse=True)
 
 
 def guardar_tasa(session: Session, datos: TasaInteresDatos) -> TasaInteresMoratorio:

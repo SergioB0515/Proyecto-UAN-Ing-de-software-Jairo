@@ -19,7 +19,7 @@ calendario y la exógena.
 | Sanción por corrección y plazos | dentro de `/gestion` | Arts. 588, 589, 639, 640 y 644 ET |
 | Intereses de mora por tramos mensuales | dentro de `/gestion` (`?fecha_pago=` simula) | Arts. 634 y 635 ET |
 | Informe de la declaración para el cliente (PDF) | `GET …/informe-cliente` | — |
-| Tasas de interés moratorio | `GET/PUT /tasas-interes-moratorio`, `POST …/oficiales` | Art. 635 ET |
+| Tasas de interés moratorio (las publicadas vienen con la app; la base agrega o corrige meses) | `GET/PUT /tasas-interes-moratorio` | Art. 635 ET |
 
 ## Decisiones
 
@@ -34,9 +34,11 @@ calendario y la exógena.
   liquidación calcula la sanción «si se presentara hoy»; una copia tomada así
   guardaría una sanción que la declaración presentada a tiempo no tiene.
 - **Sin tasa no hay interés.** Si falta la tasa de un mes, ese tramo no se
-  calcula y se avisa. Las tasas de enero de 2025 a septiembre de 2026 vienen de
-  la tabla publicada por la DIAN; la de octubre de 2026, de la resolución de
-  usura de la Superfinanciera menos dos puntos. Las demás las carga el contador.
+  calcula y se avisa. Las tasas de enero de 2025 a septiembre de 2026 vienen
+  con la app, tomadas de la tabla publicada por la DIAN; la de octubre de 2026,
+  de la resolución de usura de la Superfinanciera menos dos puntos. Están en el
+  código y no en la base para que una instalación nueva nunca arranque sin
+  ellas; lo que el contador guarda en la base las completa o las corrige.
 - **Una casilla no copiada de una declaración anterior manual es desconocida,
   no cero**: no se marca en el comparativo.
 - **Un certificado por tercero y tipo**: los bancos expiden un solo certificado

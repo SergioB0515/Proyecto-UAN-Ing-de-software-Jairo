@@ -5,7 +5,7 @@
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
-import { cargarTasasOficiales, guardarTasa, listarTasas } from '../api/gestion'
+import { guardarTasa, listarTasas } from '../api/gestion'
 import MensajeError from './MensajeError.vue'
 
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre']
@@ -19,17 +19,6 @@ const visibles = computed(() => tasas.value.slice(0, 24))
 async function cargar() {
   try {
     tasas.value = await listarTasas()
-  } catch (e) {
-    error.value = mensajeDeError(e)
-  }
-}
-
-async function oficiales() {
-  error.value = ''
-  try {
-    const antes = tasas.value.length
-    tasas.value = await cargarTasasOficiales()
-    aviso.value = `Se cargaron ${tasas.value.length - antes} tasas de la tabla de la DIAN. Las que ya existían no se cambiaron.`
   } catch (e) {
     error.value = mensajeDeError(e)
   }
@@ -55,9 +44,11 @@ onMounted(cargar)
     <div class="flex flex-wrap items-baseline justify-between gap-3">
       <div>
         <h2>Tasa de interés moratorio</h2>
-        <p class="text-sm text-tinta-suave">Efectiva anual de cada mes (art. 635 ET). Con ella se calculan los intereses por pagar tarde.</p>
+        <p class="text-sm text-tinta-suave">
+          Efectiva anual de cada mes (art. 635 ET). Las publicadas por la DIAN vienen cargadas; agregue
+          aquí cada mes nuevo cuando la DIAN lo publique, o corrija uno.
+        </p>
       </div>
-      <button type="button" class="boton-secundario" @click="oficiales">Cargar tabla de la DIAN</button>
     </div>
     <MensajeError :mensaje="error" />
     <p v-if="aviso" class="text-sm text-libro" role="status">{{ aviso }}</p>

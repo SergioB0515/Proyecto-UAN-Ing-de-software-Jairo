@@ -204,13 +204,3 @@ def guardar_tasa_interes(
     session: Session = Depends(obtener_sesion),
 ):
     return servicios.guardar_tasa(session, datos)
-
-
-@router.post("/tasas-interes-moratorio/oficiales", response_model=List[TasaInteresMoratorio])
-def cargar_tasas_interes_oficiales(
-    contador: Contador = Depends(obtener_contador_actual),
-    session: Session = Depends(obtener_sesion),
-):
-    """Carga las tasas publicadas por la DIAN que falten, sin pisar las editadas."""
-    servicios.cargar_tasas_oficiales(session)
-    return servicios.listar_tasas(session)

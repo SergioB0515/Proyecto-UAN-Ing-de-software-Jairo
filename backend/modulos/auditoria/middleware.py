@@ -18,7 +18,6 @@ ACCIONES_AUDITADAS = {
     "actualizar_documento_solicitado": "Actualizó un documento solicitado al cliente",
     "agregar_documento_solicitado": "Agregó un documento a la solicitud del cliente",
     "guardar_tasa_interes": "Guardó una tasa de interés moratorio",
-    "cargar_tasas_interes_oficiales": "Cargó las tasas de interés moratorio oficiales",
     "crear": "Registró un contribuyente",
     "actualizar": "Editó los datos del contribuyente",
     "eliminar": "Eliminó un contribuyente",
