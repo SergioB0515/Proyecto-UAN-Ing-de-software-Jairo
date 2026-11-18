@@ -8,10 +8,7 @@ DATABASE_URL = os.getenv(
     "DATABASE_URL", "postgresql://postgres:postgres@localhost:5432/renta_db"
 )
 
-# Algunos proveedores (Render entre ellos) entregan la cadena de conexión con
-# el esquema antiguo «postgres://», que SQLAlchemy 2.x rechaza con
-# NoSuchModuleError. Normalizarlo aquí evita un fallo de arranque que desde
-# los logs parece un error de credenciales.
+# postgres:// -> postgresql:// (SQLAlchemy 2.x rechaza el esquema antiguo).
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 

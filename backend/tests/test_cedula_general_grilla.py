@@ -1,11 +1,4 @@
-"""La cédula general como grilla de cuatro columnas del formulario 210.
-
-Cada prueba fija una regla del instructivo oficial del formulario 210 del año
-gravable 2024, citada en su propio docstring. Son las reglas que no se deducen
-del Estatuto leyendo los artículos: están solo en el instructivo, y acertar el
-impuesto total sin acertarlas deja casillas que el contribuyente no puede
-transcribir.
-"""
+"""Grilla de la cédula general. Cada prueba cita la regla del instructivo del 210."""
 
 from decimal import Decimal as D
 
@@ -57,20 +50,12 @@ def _casillas(resultado) -> dict:
     return {numero: valor for numero, _, valor in casillas_de(resultado)}
 
 
-# ---------------------------------------------------------------------------
-# El reparto del límite entre columnas
-# ---------------------------------------------------------------------------
+# Reparto del límite entre columnas
 
 
 def test_el_limite_se_reparte_en_cascada_no_a_prorrata():
-    """Instructivo, cálculo de las rentas exentas y deducciones imputables:
-    «se distribuirá (…) primero a las Rentas de trabajo, segundo a las Rentas
-    de trabajo que no provengan de una relación laboral (…), después a las
-    Rentas de capital y por último a las Rentas no laborales, hasta agotar el
-    valor total».
-
-    Un reparto a prorrata daría el mismo impuesto y casillas distintas a las
-    del servicio de diligenciamiento de la DIAN.
+    """Instructivo: el límite se distribuye en cascada (trabajo, sin vínculo,
+    capital, no laborales).
     """
     resultado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("100000000")),
@@ -82,11 +67,10 @@ def test_el_limite_se_reparte_en_cascada_no_a_prorrata():
                                "Art. 119 ET", None, CAPITAL, DEDUCCION_OTRA),
         ],
     )
-    # 40 % de 200.000.000 = 80.000.000, mayor que los 60.000.000 solicitados:
-    # ambas columnas caben enteras y la cascada no tiene que recortar.
+    # 40 % de 200 M = 80 M > 60 M solicitados: no hay recorte.
     assert resultado.limitadas_total == D("60000000")
 
-    # Con el cupo recortado, la primera columna se lleva todo lo que puede.
+    # Con recorte, la primera columna toma todo lo que puede.
     recortado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("50000000")),
         capital=RentasPorSubcedula(ingresos_brutos=D("50000000")),
@@ -97,9 +81,7 @@ def test_el_limite_se_reparte_en_cascada_no_a_prorrata():
                                "Art. 119 ET", None, CAPITAL, DEDUCCION_OTRA),
         ],
     )
-    # 40 % de 100.000.000 = 40.000.000 para repartir entre dos columnas que
-    # pidieron 30.000.000 cada una. En cascada: 30.000.000 a trabajo y los
-    # 10.000.000 restantes a capital. A prorrata serían 20 y 20.
+    # Cupo de 40 M, dos columnas de 30 M: 30 a trabajo, 10 a capital (no 20 y 20).
     casillas = _casillas(recortado)
     assert recortado.limitadas_total == D("40000000")
     assert casillas[41] == D("30000000")
@@ -107,13 +89,7 @@ def test_el_limite_se_reparte_en_cascada_no_a_prorrata():
 
 
 def test_una_columna_no_puede_restar_mas_que_su_propia_renta_liquida():
-    """Instructivo casilla 69: el valor distribuido no puede «superar el valor
-    de la suma de las casillas 61 (Renta líquida de las Rentas de capital) y 62
-    (Rentas líquidas pasivas – ECE)».
-
-    Sin este techo una columna quedaría en negativo y la grilla no cuadraría
-    con el total.
-    """
+    """Instructivo casilla 69: tope en casillas 61 + 62."""
     resultado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("200000000")),
         capital=RentasPorSubcedula(ingresos_brutos=D("10000000")),
@@ -123,17 +99,14 @@ def test_una_columna_no_puede_restar_mas_que_su_propia_renta_liquida():
         ],
     )
     casillas = _casillas(resultado)
-    assert casillas[69] == D("10000000")          # topada en la renta líquida
-    assert 73 not in casillas                      # la columna queda en cero
+    assert casillas[69] == D("10000000")  # topada en la renta líquida
+    assert 73 not in casillas  # columna en cero
     assert any("no permite imputar más de la renta líquida" in d
                for d in resultado.diagnosticos)
 
 
 def test_una_deduccion_sin_subcedula_no_se_pierde_cuando_no_hay_renta_de_trabajo():
-    """Imputar por omisión a rentas de trabajo destruiría la deducción de quien
-    solo tiene rentas no laborales, porque ninguna columna puede restar más que
-    su propia renta líquida.
-    """
+    """Sin subcédula y sin rentas de trabajo, la deducción va a la columna con renta."""
     resultado = _depurar(
         no_laborales=RentasPorSubcedula(ingresos_brutos=D("100000000")),
         conceptos=[
@@ -142,24 +115,16 @@ def test_una_deduccion_sin_subcedula_no_se_pierde_cuando_no_hay_renta_de_trabajo
         ],
     )
     casillas = _casillas(resultado)
-    assert casillas[83] == D("20000000")    # fila de vivienda, columna no laboral
+    assert casillas[83] == D("20000000")  # fila de vivienda, columna no laboral
     assert casillas[86] == D("20000000")
     assert resultado.casilla_93 == D("80000000")
 
 
-# ---------------------------------------------------------------------------
-# Los topes que no están en el 40 %
-# ---------------------------------------------------------------------------
+# Topes fuera del 40 %
 
 
 def test_la_adicion_por_dependientes_se_topa_en_la_renta_de_trabajo():
-    """Instructivo casilla 92: «El valor de esta adición no puede ser mayor a
-    la sumatoria de los valores registrados en las casillas 42 (Renta líquida
-    ordinaria Rentas de trabajo) y 57».
-
-    Un comerciante sin rentas de trabajo no tiene derecho a esta adición, por
-    muchos dependientes que tenga.
-    """
+    """Instructivo casilla 92: dependientes topados en casillas 42 + 57."""
     comerciante = _depurar(
         no_laborales=RentasPorSubcedula(ingresos_brutos=D("300000000")),
         dependientes=D("7171056"),
@@ -176,29 +141,20 @@ def test_la_adicion_por_dependientes_se_topa_en_la_renta_de_trabajo():
 
 
 def test_el_uno_por_ciento_de_compras_no_puede_generar_perdida():
-    """Instructivo casilla 92: la deducción del art. 336 num. 5 «no se
-    encuentra sujeta al límite previsto en el numeral 3 (…) ni podrá dar lugar
-    a pérdidas».
-    """
+    """Instructivo casilla 92: el 1 % de compras no tiene límite del num. 3 ni genera pérdida."""
     resultado = _depurar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("100000000"), costos_y_gastos=D("95000000")
         ),
-        compras=D("11951760"),   # 240 UVT de 2025
+        compras=D("11951760"),  # 240 UVT de 2025
     )
-    assert resultado.deduccion_compras == D("5000000")   # lo que queda de renta
+    assert resultado.deduccion_compras == D("5000000")  # renta restante
     assert resultado.casilla_93 == D("0")
     assert any("no puede dar lugar a pérdidas" in d for d in resultado.diagnosticos)
 
 
 def test_las_rentas_exentas_sin_limite_se_suman_encima_del_cuarenta_por_ciento():
-    """Instructivo: «Al cuarenta por ciento (40%) o a las mil trescientas
-    cuarenta (1.340) UVT anuales calculado anteriormente, se suman las rentas
-    exentas que (…) no les son aplicados dichos límites».
-
-    Son las de los nums. 6 a 9 del art. 206, el art. 206-1, los nums. 3 y 4 del
-    art. 207-2, los convenios de doble tributación y la Decisión 578 de la CAN.
-    """
+    """Instructivo: exentas fuera del límite se suman sobre el 40 % / 1.340 UVT."""
     resultado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("100000000")),
         conceptos=[
@@ -209,39 +165,29 @@ def test_las_rentas_exentas_sin_limite_se_suman_encima_del_cuarenta_por_ciento()
                                EXENTA_OTRA),
         ],
     )
-    # El 40 % de 100.000.000 recorta la deducción corriente a 40.000.000, y la
-    # exenta del num. 7 se suma encima sin competir por ese cupo.
+    # 40 % de 100 M recorta a 40 M; la exenta del num. 7 se suma encima.
     assert resultado.limitadas_total == D("60000000")
     assert resultado.casilla_93 == D("40000000")
 
 
-# ---------------------------------------------------------------------------
-# La base del límite
-# ---------------------------------------------------------------------------
+# Base del límite
 
 
 def test_las_devoluciones_no_reducen_la_base_del_cuarenta_por_ciento():
-    """Instructivo: se suman los ingresos brutos de las casillas 32, 43, 58 y
-    74 más los ingresos pasivos ECE «y se restan los ingresos no
-    constitutivos». Las devoluciones de la casilla 75 no aparecen en esa
-    operación: restarlas daría un límite más bajo y un impuesto más alto que el
-    que calcula la DIAN.
-    """
+    """Instructivo: la base resta INCRNGO, no devoluciones (casilla 75)."""
     resultado = _depurar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("100000000"), devoluciones=D("20000000")
         ),
     )
     assert resultado.base_del_limite == D("100000000")
-    # Pero sí reducen la renta líquida de la columna (casilla 78).
+    # Sí reducen la renta líquida (casilla 78).
     assert _casillas(resultado)[78] == D("80000000")
     assert _casillas(resultado)[75] == D("20000000")
 
 
 def test_la_base_del_limite_no_descuenta_costos():
-    """Art. 336 num. 3: el 40 % se calcula sobre los ingresos depurados de
-    ingresos no constitutivos, antes de costos y gastos.
-    """
+    """Art. 336 num. 3: base antes de costos y gastos."""
     resultado = _depurar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("100000000"),
@@ -252,15 +198,11 @@ def test_la_base_del_limite_no_descuenta_costos():
     assert resultado.base_del_limite == D("90000000")
 
 
-# ---------------------------------------------------------------------------
-# Las filas de la grilla
-# ---------------------------------------------------------------------------
+# Filas de la grilla
 
 
 def test_los_aportes_afc_van_en_una_casilla_distinta_de_las_demas_exentas():
-    """El formulario separa los aportes voluntarios a AFC, FVP y AVC (casillas
-    35, 47, 63 y 80) de las demás rentas exentas (36, 48, 64 y 81).
-    """
+    """AFC/FVP/AVC (35, 47, 63, 80) separadas de otras exentas (36, 48, 64, 81)."""
     resultado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("200000000")),
         conceptos=[
@@ -273,13 +215,11 @@ def test_los_aportes_afc_van_en_una_casilla_distinta_de_las_demas_exentas():
     casillas = _casillas(resultado)
     assert casillas[35] == D("15000000")
     assert casillas[36] == D("5000000")
-    assert casillas[37] == D("20000000")     # total rentas exentas
+    assert casillas[37] == D("20000000")  # total rentas exentas
 
 
 def test_los_intereses_de_vivienda_van_separados_de_las_demas_deducciones():
-    """Casillas 38, 50, 66 y 83 para intereses de vivienda; 39, 51, 67 y 84
-    para las demás deducciones imputables.
-    """
+    """Vivienda en 38, 50, 66, 83; otras deducciones en 39, 51, 67, 84."""
     resultado = _depurar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("200000000")),
         conceptos=[
@@ -292,14 +232,11 @@ def test_los_intereses_de_vivienda_van_separados_de_las_demas_deducciones():
     casillas = _casillas(resultado)
     assert casillas[38] == D("12000000")
     assert casillas[39] == D("3000000")
-    assert casillas[40] == D("15000000")     # total deducciones imputables
+    assert casillas[40] == D("15000000")  # total deducciones imputables
 
 
 def test_los_honorarios_cambian_de_columna_segun_la_opcion_del_336_num_4():
-    """Art. 336 num. 4: quien opta por restar costos y gastos de sus honorarios
-    los declara en la columna de rentas de trabajo sin vínculo laboral
-    (casilla 43); quien no, los suma al salario en la casilla 32.
-    """
+    """Art. 336 num. 4: honorarios con opción de costos en casilla 43; sin ella, en 32."""
     sin_costos = _depurar(
         trabajo=RentasDeTrabajo(
             ingresos_brutos=D("50000000"),
@@ -326,10 +263,7 @@ def test_los_honorarios_cambian_de_columna_segun_la_opcion_del_336_num_4():
 
 
 def test_la_perdida_del_ejercicio_va_en_su_propia_casilla_y_no_en_la_renta():
-    """Instructivo casilla 88: la pérdida es «el resultado positivo» de restar
-    los ingresos de los costos, y va en una casilla distinta de la renta
-    líquida, que queda en cero.
-    """
+    """Instructivo casilla 88: pérdida en casilla propia; renta líquida en cero."""
     resultado = _depurar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("50000000"), costos_y_gastos=D("70000000")
@@ -341,9 +275,7 @@ def test_la_perdida_del_ejercicio_va_en_su_propia_casilla_y_no_en_la_renta():
     assert 78 not in casillas
 
 
-# ---------------------------------------------------------------------------
-# La aritmética entre casillas
-# ---------------------------------------------------------------------------
+# Aritmética entre casillas
 
 
 def test_la_casilla_91_es_la_suma_que_manda_el_instructivo():
@@ -388,10 +320,7 @@ def test_la_casilla_93_es_la_91_menos_la_92():
 
 
 def test_la_grilla_cuadra_con_el_total_que_liquida_el_motor():
-    """La grilla no es una vista aparte: el total de la cédula general sale de
-    ella. Si se separan, el contador transcribe casillas que no suman su propio
-    impuesto.
-    """
+    """El total de la cédula general sale de la grilla."""
     insumos = InsumosLiquidacion(
         anio_gravable=2025,
         trabajo=RentasDeTrabajo(
@@ -424,7 +353,7 @@ def test_la_grilla_cuadra_con_el_total_que_liquida_el_motor():
     assert casillas[92] == sum(
         (casillas.get(n, D("0")) for n in (28, 41, 53, 69, 86, 139)), D("0")
     )
-    # 93 = 91 − 92, y es la renta líquida de la cédula general.
+    # 93 = 91 − 92
     assert casillas[93] == casillas[91] - casillas[92]
     assert liq.valor("CG-RENTA-LIQUIDA") == casillas[93]
 
@@ -461,8 +390,7 @@ def test_cada_casilla_de_la_grilla_lleva_su_numero_y_su_norma():
     assert con_casilla
     for renglon in con_casilla:
         assert renglon.fuente_legal, renglon.codigo
-    # Los de la grilla llevan además el número en el nombre, porque el nombre
-    # de la fila se repite en las cuatro columnas y sin él no se distinguen.
+    # Renglones de la grilla con el número en el nombre (la fila se repite por columna).
     for renglon in con_casilla:
         if renglon.codigo.startswith("CG-C"):
             assert f"[{renglon.casilla}]" in renglon.nombre

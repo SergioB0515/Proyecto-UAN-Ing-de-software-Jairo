@@ -1,8 +1,5 @@
-"""Pruebas de los cálculos empresariales: depreciación, bancarización,
-compensación de pérdidas, comparación patrimonial y anticipo.
-
-Como en `test_liquidacion_motor.py`, los valores esperados se recalculan aquí
-con la fórmula de la norma, no se copian de la salida del motor.
+"""Pruebas de depreciación, bancarización, pérdidas, comparación patrimonial
+y anticipo. Valores esperados recalculados con la fórmula de la norma.
 """
 
 from decimal import ROUND_HALF_UP, Decimal as D
@@ -39,9 +36,7 @@ def _liquidar(**kwargs):
     return liquidar(InsumosLiquidacion(anio_gravable=2025, **kwargs), P)
 
 
-# ---------------------------------------------------------------------------
 # Depreciación (arts. 128 a 131 y 137 ET)
-# ---------------------------------------------------------------------------
 
 
 def test_la_depreciacion_se_calcula_por_linea_recta_sobre_la_base_depreciable():
@@ -122,9 +117,7 @@ def test_la_depreciacion_baja_la_renta_liquida_de_la_subcedula_elegida():
     assert con.valor("CG-RENTA-LIQUIDA") == sin.valor("CG-RENTA-LIQUIDA") - D("10000000")
 
 
-# ---------------------------------------------------------------------------
 # Bancarización (art. 771-5 ET)
-# ---------------------------------------------------------------------------
 
 
 def test_el_efectivo_dentro_de_todos_los_limites_se_acepta_completo():
@@ -151,7 +144,7 @@ def test_manda_el_40_por_ciento_de_los_pagos_cuando_es_la_cifra_menor():
 
 
 def test_los_porcentajes_de_las_formulas_no_salen_en_notacion_cientifica():
-    """Decimal.normalize() convierte 40,00 en 4E+1 y el contador leería «4E+1 %»."""
+    """Decimal.normalize() convierte 40,00 en 4E+1."""
     resultado = calcular_bancarizacion(
         InsumosBancarizacion(total_pagos_del_anio=D("100000000"), pagos_en_efectivo=D("80000000")),
         costos_y_deducciones_totales=D("900000000"),
@@ -202,7 +195,7 @@ def test_las_operaciones_individuales_sobre_100_uvt_se_listan_aparte():
 
 
 def test_el_limite_individual_se_evalua_aunque_no_haya_efectivo_en_el_total():
-    """Son dos límites distintos: el par. 2 no depende del par. 1."""
+    """Par. 2 independiente del par. 1."""
     resultado = calcular_bancarizacion(
         InsumosBancarizacion(
             operaciones_individuales_en_efectivo=[PagoIndividual("Pago grande", D("50000000"))]
@@ -223,17 +216,14 @@ def test_el_efectivo_rechazado_vuelve_a_la_renta_liquida():
             total_pagos_del_anio=D("100000000"), pagos_en_efectivo=D("80000000")
         ),
     )
-    # Los costos son 100M, así que el 35 % de los costos (35M) es la cota menor,
-    # por debajo del 40 % de los pagos (40M): se aceptan 35M y se rechazan 45M.
+    # Costos 100M: 35 % (35M) < 40 % de pagos (40M). Aceptados 35M, rechazados 45M.
     assert liq.valor("CG-EFECTIVO-ACEPTADO") == D("35000000.00")
     assert liq.valor("CG-EFECTIVO-RECHAZADO") == D("45000000.00")
     # 200M − 100M de costos + 45M rechazados = 145M
     assert liq.valor("CG-RL-ANTES") == D("145000000.00")
 
 
-# ---------------------------------------------------------------------------
 # Compensación de pérdidas
-# ---------------------------------------------------------------------------
 
 
 def test_la_perdida_se_compensa_contra_la_renta_del_mismo_tipo():
@@ -281,7 +271,7 @@ def test_una_perdida_de_mas_de_doce_anos_ya_no_se_compensa():
 
 
 def test_las_perdidas_se_consumen_de_la_mas_antigua_a_la_mas_reciente():
-    """Conviene al contribuyente: las que están por caducar se usan primero."""
+    """Se compensan primero las más antiguas."""
     resultado = calcular_compensacion_perdidas(
         [
             PerdidaCompensable(2024, "NO_LABORAL", D("40000000")),
@@ -300,9 +290,8 @@ def test_la_compensacion_baja_la_renta_liquida_de_la_cedula_general():
         perdidas_compensables=[PerdidaCompensable(2023, "NO_LABORAL", D("25000000"))],
     )
     assert liq.valor("CG-COMPENSACION") == D("25000000.00")
-    # La renta líquida «antes» es la de la columna, sin compensar: el formulario
-    # compensa después de las rentas exentas y deducciones limitadas (casillas
-    # 87 → 89 → 90), no antes. Lo que no cambia es el resultado final.
+    # Renta líquida antes de compensar: el formulario compensa después de las
+    # exentas y deducciones limitadas (87 -> 89 -> 90).
     assert liq.valor("CG-RL-ANTES") == D("100000000.00")
     assert liq.valor("CG-RENTA-LIQUIDA") == D("75000000.00")
     assert liq.valor("CG-C90") == D("75000000.00")
@@ -316,9 +305,7 @@ def test_las_rentas_de_trabajo_con_vinculo_no_admiten_compensacion():
     assert liq.valor("CG-COMPENSACION") == D("0")
 
 
-# ---------------------------------------------------------------------------
 # Comparación patrimonial (arts. 236 a 239 ET)
-# ---------------------------------------------------------------------------
 
 
 def test_la_diferencia_patrimonial_se_calcula_con_la_formula_del_articulo_237():
@@ -357,7 +344,7 @@ def test_un_patrimonio_que_no_crece_no_genera_renta_por_comparacion():
 
 
 def test_la_diferencia_no_entra_a_la_base_sin_que_el_contador_la_acepte():
-    """El art. 236 admite prueba en contrario: incorporarla sola inventaría impuesto."""
+    """Art. 236: no se suma a la base sin aceptación del contador."""
     liq = _liquidar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("50000000")),
         patrimonio=Patrimonio(patrimonio_bruto=D("500000000")),
@@ -384,9 +371,7 @@ def test_al_aceptarla_la_diferencia_entra_a_la_base_gravable():
     assert liq.valor("BASE-GRAVABLE") == liq.valor("CG-RENTA-LIQUIDA") + diferencia
 
 
-# ---------------------------------------------------------------------------
 # Anticipo (art. 807 ET)
-# ---------------------------------------------------------------------------
 
 
 def _esperado(valor, pct):
@@ -419,7 +404,7 @@ def test_el_metodo_menor_escoge_el_que_da_el_anticipo_mas_bajo():
 
 
 def test_sin_impuesto_del_ano_anterior_el_promedio_cae_al_metodo_directo():
-    """Promediar contra cero daría la mitad del anticipo: sanción asegurada."""
+    """Sin impuesto anterior, el promedio daría la mitad: se usa el directo."""
     liq = _liquidar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("250000000")),
         metodo_anticipo="PROMEDIO",
@@ -438,13 +423,11 @@ def test_avisa_cuando_el_promedio_habria_dado_un_anticipo_menor():
     assert any("método del promedio" in d for d in liq.diagnosticos)
 
 
-# ---------------------------------------------------------------------------
 # Costo de ventas
-# ---------------------------------------------------------------------------
 
 
 def test_el_costo_de_ventas_baja_la_renta_liquida_no_laboral():
-    """Era el hueco: sin esto, al comerciante se le liquidaba sobre el bruto."""
+    """El costo de ventas del kardex se resta."""
     sin = _liquidar(no_laborales=RentasPorSubcedula(ingresos_brutos=D("300000000")))
     con = _liquidar(
         no_laborales=RentasPorSubcedula(
@@ -466,9 +449,7 @@ def test_el_costo_de_ventas_no_cambia_la_base_del_limite_del_40_por_ciento():
     assert liq.valor("CG-BASE-LIMITE") == D("300000000")
 
 
-# ---------------------------------------------------------------------------
 # Todo junto
-# ---------------------------------------------------------------------------
 
 
 def test_un_comerciante_con_todo_activado_liquida_de_forma_coherente():
@@ -503,23 +484,18 @@ def test_un_comerciante_con_todo_activado_liquida_de_forma_coherente():
     # Costos 362M: el 35 % (126,7M) manda sobre el 40 % de los pagos (160M).
     assert liq.valor("CG-EFECTIVO-ACEPTADO") == D("126700000.00")
     assert liq.valor("CG-EFECTIVO-RECHAZADO") == D("73300000.00")
-    # Los costos que llegan al formulario son los procedentes: el efectivo
-    # rechazado por el art. 771-5 ya no está ahí. Antes se dejaba dentro de los
-    # costos y se sumaba de vuelta a la renta líquida, lo que daba el mismo
-    # impuesto pero una casilla 77 que no se podía transcribir.
+    # Costos en el formulario: solo los procedentes (sin el efectivo rechazado).
     costos_contables = D("300000000") + D("50000000") + depreciacion
     assert liq.valor("CG-COSTOS") == costos_contables - D("73300000.00")
     assert liq.valor("CG-COMPENSACION") == D("20000000.00")
-    # Este contribuyente no tiene rentas de trabajo, así que no tiene derecho a
-    # la adición por dependientes de la casilla 139, que el instructivo topa en
-    # la suma de las casillas 42 y 57.
+    # Sin rentas de trabajo: sin adición por dependientes (tope 42 + 57).
     assert liq.valor("CG-C139") == D("0")
     assert any("dependientes" in d and "casillas 42 y 57" in d
                for d in liq.diagnosticos)
     assert liq.valor("GO-IMPUESTO") == D("12000000.00")   # 15 % de 80M
     assert liq.valor("PAT-LIQUIDO") == D("700000000")
     assert liq.valor("TOTAL-A-CARGO") == liq.valor("IMP-RENTA") + liq.valor("GO-IMPUESTO")
-    # Nada queda sin rastro, por muchos cálculos que se encadenen.
+    # Todo renglón tiene rastro.
     assert [r.codigo for r in liq.renglones if not r.formula and not r.fuente_legal] == []
 
 
@@ -543,13 +519,11 @@ def test_los_calculos_empresariales_funcionan_en_todos_los_anos_cargados(anio):
     assert liq.valor("IMP-RENTA") > D("0")
 
 
-# ---------------------------------------------------------------------------
 # Pérdida del ejercicio: lo que no se alcanza a deducir no desaparece
-# ---------------------------------------------------------------------------
 
 
 def test_los_costos_que_superan_los_ingresos_se_reportan_como_perdida():
-    """Truncar en cero sin avisar escondería una deducción que no se aplicó."""
+    """La pérdida se reporta, no se trunca en silencio."""
     liq = _liquidar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("30000000"), costo_de_ventas=D("50000000")
@@ -561,7 +535,7 @@ def test_los_costos_que_superan_los_ingresos_se_reportan_como_perdida():
 
 
 def test_la_depreciacion_imputada_a_una_subcedula_sin_ingresos_se_reporta():
-    """Era el agujero: la deducción salía en el borrador y no restaba en ningún lado."""
+    """La deducción solicitada se resta en alguna columna."""
     liq = _liquidar(
         trabajo=RentasDeTrabajo(ingresos_sin_vinculo_laboral=D("54000000")),
         activos_depreciables=[

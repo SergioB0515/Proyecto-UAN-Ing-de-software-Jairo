@@ -1,5 +1,5 @@
 # tests/
 
-Pruebas del backend con `pytest` y el `TestClient` de FastAPI, contra una
-base de datos real de pruebas (no mocks), siguiendo el mismo criterio ya
-usado en el otro proyecto del curso.
+`pytest` + `TestClient` contra PostgreSQL real (`renta_test_db`). Cada prueba
+revierte su transacción. Las de motor, cédula general, cruce y gestión prueban
+funciones puras sin servidor.

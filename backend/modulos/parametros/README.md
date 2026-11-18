@@ -1,11 +1,9 @@
 # modulos/parametros/
 
-Tabla de configuración `UmbralDeclaracion` (UVT y los cinco topes de
-declaración) por año gravable. No pertenece a ningún contador ni
-contribuyente — cambia una vez al año por resolución de la DIAN y se
-administra como dato, no como constante en el código. Ver Proceso 5 en
-[03. Lógica del proyecto](../../../documentacion/03-logica-proyecto.md) y
-HU-07.
+Parámetros por año gravable. HU-07, HU-25.
 
-Antes de implementar HU-07 hace falta poblar esta tabla con los valores
-oficiales del año gravable vigente (UVT y los cinco topes en pesos).
+- `tablas_oficiales.py`: UVT, tabla del art. 241, límites y topes, con su norma.
+- `reajuste_activos.py`: art. 70 y tabla del art. 73 (Decreto 0449 de 2026 para AG 2025).
+- `UmbralDeclaracion`: UVT y topes para declarar. `POST /parametros/umbrales/oficiales/{anio}`
+  los carga desde la tabla oficial; `POST /parametros/umbrales` los sobrescribe.
+- `PlazoDeclaracion`: calendario de vencimientos por último dígito del NIT.

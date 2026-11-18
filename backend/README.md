@@ -1,10 +1,7 @@
-# Backend — API de Conciliación de Renta
+# Backend
 
-FastAPI + SQLModel sobre PostgreSQL. Ver
-[../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
-para las razones de cada elección técnica.
-
-**Estado**: implementado y probado; las pruebas se corren con `pytest` desde esta carpeta.
+FastAPI + SQLModel + PostgreSQL. Razones del stack en
+[../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md).
 
 | Incremento | Historias | Módulos |
 |---|---|---|
@@ -16,12 +13,11 @@ para las razones de cada elección técnica.
 | 6 | HU-19 a HU-21 | `auditoria`, `contadores` |
 | 7 | HU-22 a HU-24 | `contribuyentes` |
 | 8 | HU-25 a HU-27 | `parametros`, `contribuyentes`, `cartera` |
-| Extra | — | `adjuntos` (soportes: recibos, capturas, PDF) |
-| Extra | — | `liquidacion` (motor del 210, borrador casilla por casilla, venta de inmuebles), `gestion` (proceso de la declaración, documentos, presentación, firmeza, intereses), cruce con la DIAN en `conciliacion` |
+| Extra | — | `adjuntos`, `liquidacion`, `gestion`, cruce con la DIAN en `conciliacion` |
 
-## Endpoints principales
+## Endpoints
 
-Todos (salvo registro, login y `/salud`) exigen `Authorization: Bearer <token>`
+Todos salvo registro, login y `/salud` exigen `Authorization: Bearer <token>`
 y filtran por el contador del token.
 
 | Método y ruta | HU |
@@ -56,119 +52,55 @@ y filtran por el contador del token.
 | `GET .../periodos-fiscales/{pid}/gestion`, `PATCH .../gestion/seguimiento`, `POST .../gestion/presentaciones`, `POST .../gestion/traer-del-anio-anterior`, `POST /contribuyentes/{id}/declaraciones-anteriores`, `GET/POST/PATCH .../documentos`, `GET .../informe-cliente`, `GET/PUT /tasas-interes-moratorio` (ver [modulos/gestion](modulos/gestion/README.md)) | — |
 | `POST/GET /contribuyentes/{id}/adjuntos`, `GET .../adjuntos/resumen`, `GET/PATCH/DELETE .../adjuntos/{aid}`, `GET .../periodos-fiscales/{pid}/soportes/zip` (ver [modulos/adjuntos](modulos/adjuntos/README.md)) | — |
 
-Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el
-cuerpo (obligatorio) y se rechazan con 409 si ese periodo está cerrado. Sin
-`periodo_fiscal_id`, los `GET` de activos y fuentes devuelven todos los
-años, y el de patrimonio usa el periodo más reciente.
+## Reglas
 
-Edición y eliminación (para corregir errores de digitación):
+- Activos e ingresos llevan `periodo_fiscal_id`; con el periodo cerrado, 409.
+  Sin él, los `GET` devuelven todos los años.
+- El periodo de un registro no se cambia: se elimina y se registra en el año
+  correcto. El activo `INVENTARIO` de un cierre se deshace reabriendo el año.
+- Un contribuyente con años gravables o inventario no se elimina (409).
 
-- Activos e ingresos se editan o eliminan solo si su periodo está
-  abierto (409 si no). El periodo de un registro no se cambia: se elimina
-  y se registra en el año correcto. El activo `INVENTARIO` de un cierre no
-  se toca a mano (409): se deshace reabriendo el año.
-- Un contribuyente solo se elimina si no tiene años gravables ni
-  inventario (409 si no), y no se puede pasar a `ASALARIADO` si ya tiene
-  inventario.
+## Seguridad
 
-Seguridad (`modulos/auditoria`):
+- 5 intentos fallidos en 15 minutos: 429 con `Retry-After`.
+- `AuditoriaMiddleware` registra las acciones de `ACCIONES_AUDITADAS`; una
+  prueba falla si una ruta que modifica datos no está en la lista.
+- Exógena: máx. `TAMANO_MAXIMO_EXOGENA_MB` (5) y firma de Excel (413 / 422).
+- Adjuntos: firma real del archivo, máx. `TAMANO_MAXIMO_ADJUNTO_MB` (15),
+  nombre generado por el servidor (415 / 413).
+- CORS por `ORIGENES_PERMITIDOS`. Cabeceras `X-Content-Type-Options`,
+  `X-Frame-Options`, `Referrer-Policy`, `Cache-Control: no-store`.
 
-- **Bloqueo**: 5 intentos fallidos en 15 minutos devuelven 429 con
-  `Retry-After` hasta que el fallo más antiguo salga de la ventana.
-- **Auditoría**: `AuditoriaMiddleware` registra cada acción exitosa que
-  modifica datos o descarga un reporte (lista en `ACCIONES_AUDITADAS`).
-- **Archivo de exógena**: máximo `TAMANO_MAXIMO_EXOGENA_MB` (5 por defecto)
-  y firma real de Excel; 413 o 422 si no se cumple.
-- **Soportes adjuntos**: el formato se valida por la firma real del archivo
-  (PDF, imágenes, Excel, Word, CSV, TXT), máximo `TAMANO_MAXIMO_ADJUNTO_MB`
-  (15 por defecto) y guardados en `ALMACEN_ADJUNTOS` con nombre generado por
-  el servidor; 415 o 413 si no se cumple.
-- **CORS**: orígenes en `ORIGENES_PERMITIDOS` del `.env` (por defecto, el
-  Vite local). Cabeceras `X-Content-Type-Options`, `X-Frame-Options`,
-  `Referrer-Policy` y `Cache-Control: no-store` en toda respuesta.
+## Códigos de error
 
-Códigos de error: `404` si el recurso no existe o es de otro contador
-(deliberadamente el mismo código en ambos casos), `409` para conflictos de
-negocio (duplicados, stock insuficiente, periodo cerrado, contribuyente
-asalariado en inventario), `413` para un archivo demasiado grande, `415`
-para un formato de soporte no admitido, `422` para datos inválidos y `429`
-para una cuenta bloqueada.
-
-## Requisitos
-
-- Python 3.11 o superior
-- PostgreSQL corriendo localmente (o accesible por red)
+| Código | Caso |
+|---|---|
+| 404 | No existe o es de otro contador (mismo código en ambos casos). |
+| 409 | Conflicto de negocio: duplicado, stock, periodo cerrado. |
+| 413 | Archivo demasiado grande. |
+| 415 | Formato de soporte no admitido. |
+| 422 | Datos inválidos. |
+| 429 | Cuenta bloqueada. |
 
 ## Puesta en marcha
 
-**1. Crear y activar el entorno virtual**
+Python 3.11+ y PostgreSQL.
 
-En Windows (PowerShell):
-```powershell
+```bash
 python -m venv venv
-.\venv\Scripts\Activate.ps1
-```
-
-En Linux/macOS:
-```bash
-python3 -m venv venv
-source venv/bin/activate
-```
-
-**2. Instalar dependencias**
-```bash
+source venv/bin/activate            # Windows: .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-```
 
-**3. Crear las bases de datos**
-
-Con PostgreSQL corriendo y accesible como el usuario `postgres`:
-```bash
 psql -U postgres -c "CREATE DATABASE renta_db;"
 psql -U postgres -c "CREATE DATABASE renta_test_db;"
+
+cp .env.example .env                # definir JWT_SECRET_KEY y DATABASE_URL
+uvicorn main:app --reload           # docs en http://127.0.0.1:8000/docs
+pytest
 ```
-(`renta_db` es la de desarrollo; `renta_test_db` la usan las pruebas —
-ver `tests/conftest.py`. Los nombres y credenciales son ajustables por
-variable de entorno, ver el siguiente paso.)
 
-**4. Configurar las variables de entorno**
-```bash
-cp .env.example .env
-```
-Edita `.env` y define tu propio `JWT_SECRET_KEY` (el archivo trae el
-comando para generar uno). Ajusta `DATABASE_URL` si tu usuario, contraseña
-o puerto de PostgreSQL son distintos a los del ejemplo.
-
-**5. Arrancar el servidor**
-```bash
-uvicorn main:app --reload
-```
-Las tablas se crean automáticamente al arrancar (`database.crear_tablas`,
-sin Alembic en este incremento — ver la nota en `database.py`). La
-documentación interactiva queda en `http://127.0.0.1:8000/docs`.
-
-**6. Correr las pruebas**
-```bash
-pytest -v
-```
-Las pruebas corren contra `renta_test_db` con una base de datos real (no
-mocks): cada prueba abre una transacción y la revierte al terminar, así
-que no hace falta limpiar datos entre corridas. Si quieres apuntar las
-pruebas a otra base, define `TEST_DATABASE_URL` antes de correr `pytest`.
-
-**Integración continua**: `.github/workflows/ci.yml` corre estas mismas
-pruebas contra PostgreSQL en cada push a GitHub.
-
-**Nota sobre el esquema**: sin Alembic, `crear_tablas` crea las tablas
-nuevas pero no altera las existentes. Las tablas del incremento 6
-(`intentos_acceso`, `eventos_auditoria`) y del 8 (`plazos_declaracion`)
-son nuevas, así que se crean solas; las dos columnas nuevas de
-`periodos_fiscales` (`fecha_presentacion`, `fecha_vencimiento_manual`) las
-agrega `_agregar_columnas_si_faltan` al arrancar. El único cambio a tablas existentes
-(`periodo_fiscal_id` en `activos` y `fuentes_ingreso`, HU-03) lo aplica
-`_migrar_periodo_en_activos_y_fuentes` en `database.py` al arrancar: es
-idempotente y asigna los registros que ya existían al periodo más reciente
-de su contribuyente (el inventario de un cierre, a su propio periodo). Si
-un contribuyente con activos o ingresos no tenía ningún periodo, le crea
-uno abierto para el año anterior al actual. No hace falta recrear la base
-de desarrollo.
+- Las pruebas usan PostgreSQL real (`renta_test_db`, o `TEST_DATABASE_URL`);
+  cada prueba revierte su transacción.
+- CI: `.github/workflows/ci.yml` corre las pruebas y el build del frontend.
+- Sin Alembic: `crear_tablas` crea tablas nuevas y `database.py` agrega las
+  columnas posteriores al arrancar (idempotente).

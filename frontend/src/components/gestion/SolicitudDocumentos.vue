@@ -1,6 +1,5 @@
 <script setup>
-// Documentos que hay que pedirle al cliente, sugeridos desde la exógena y las
-// deducciones, con su estado y el mensaje listo para enviar.
+// Documentos para el cliente: sugeridos, estado y mensaje.
 import { onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'

@@ -39,8 +39,7 @@ def test_toda_casilla_que_emite_el_motor_existe_en_el_formulario():
     assert numeros
     for numero in numeros:
         assert numero in CASILLAS_2024, numero
-    # Ninguna casilla sale dos veces: dos renglones peleando por la misma
-    # casilla dejarían en el PDF el que casualmente se emitió de último.
+    # Ninguna casilla repetida.
     assert len(numeros) == len(set(numeros))
 
 
@@ -61,9 +60,7 @@ def test_la_liquidacion_privada_sigue_la_aritmetica_del_formulario():
 
 
 def test_los_descuentos_no_se_comen_el_impuesto_de_ganancias_ocasionales():
-    """En el formulario los descuentos (125) se restan del impuesto de renta
-    (121) y el de ganancias ocasionales entra después, en la 127.
-    """
+    """Descuentos (125) restan de 121; la GO entra en 127."""
     liq = _liq(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("60000000")),
         ganancias_ocasionales=GananciasOcasionales(ingresos=D("100000000")),
@@ -124,16 +121,14 @@ def test_el_pdf_se_genera_y_dice_que_es_un_borrador():
 
 
 def test_las_casillas_que_el_motor_no_calcula_no_se_imprimen_en_cero():
-    """Un cero impreso se lee como «calculado y dio cero»."""
+    """Vacía, no en cero."""
     liq = _liq(trabajo=RentasDeTrabajo(ingresos_brutos=D("50000000")))
     casillas = borrador_210.construir_casillas(liq.renglones)
     for numero in borrador_210.CASILLAS_NO_CALCULADAS:
         assert numero not in casillas
 
 
-# ---------------------------------------------------------------------------
 # Dividendos gravados y renta presuntiva
-# ---------------------------------------------------------------------------
 
 
 def test_los_dividendos_gravados_pagan_el_35_y_solo_el_remanente_va_a_la_tabla():
@@ -164,9 +159,7 @@ def test_la_tarifa_de_los_dividendos_gravados_se_puede_fijar():
 
 
 def test_la_presuntiva_solo_compite_con_la_cedula_general():
-    """Casilla 111: se toma el mayor entre la 97 y la 98, y las pensiones y los
-    dividendos se suman después, gane quien gane.
-    """
+    """Casilla 111 = max(97, 98) + pensiones + dividendos."""
     from modulos.liquidacion.motor import Dividendos
 
     liq = _liq(

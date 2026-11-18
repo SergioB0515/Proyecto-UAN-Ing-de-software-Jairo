@@ -1,7 +1,5 @@
 <script setup>
-// El cruce de la liquidación contra lo que la DIAN ya sabe: los cinco topes de
-// la exógena reconstruidos desde su detalle, y lo que se va a declarar frente a
-// lo que reportaron los terceros.
+// Cruce con la DIAN: cuadre de topes y declarado frente a reportado.
 import { computed, onMounted, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
@@ -46,7 +44,7 @@ async function cargar() {
   try {
     cruce.value = await obtenerCruceDian(props.contribuyenteId, props.periodoId)
   } catch (e) {
-    // Sin exógena no hay cruce; la vista que lo contiene ya lo explica.
+    // Sin exógena: la vista padre lo informa.
     if (e.response?.status !== 404) error.value = mensajeDeError(e)
   }
 }
@@ -74,7 +72,7 @@ onMounted(cargar)
       </span>
     </div>
 
-    <!-- Lo que se va a declarar frente a lo reportado -->
+    <!-- Declarado frente a reportado -->
     <div class="mt-4 overflow-x-auto">
       <table>
         <thead>
@@ -105,7 +103,7 @@ onMounted(cargar)
       </table>
     </div>
 
-    <!-- Los cinco topes, reconstruidos desde el detalle -->
+    <!-- Topes reconstruidos -->
     <h3 class="mt-6 text-base font-semibold">Los cinco topes del archivo</h3>
     <p class="mt-1 max-w-prose text-sm text-tinta-suave">
       Son las cifras consolidadas con las que la DIAN decide a quién revisar. Cada una

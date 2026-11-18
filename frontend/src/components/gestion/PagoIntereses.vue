@@ -1,6 +1,5 @@
 <script setup>
-// El pago: cuándo y cuánto, la devolución del saldo a favor, el emplazamiento,
-// y los intereses de mora si se paga después del vencimiento.
+// Pago, devolución, emplazamiento e intereses de mora.
 import { reactive, watch } from 'vue'
 
 import { dinero, fecha } from '../../formato'

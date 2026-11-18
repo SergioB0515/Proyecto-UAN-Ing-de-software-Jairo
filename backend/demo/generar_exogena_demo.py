@@ -1,26 +1,13 @@
-"""Genera los archivos de exógena que se cargan EN VIVO durante la demo.
-
-El importador de la aplicación solo acepta un Excel con la estructura del
-reporte «Consulta de Información reportada por terceros» de la DIAN, así que
-este script la reproduce fila por fila.
-
-Uso, desde la carpeta ``backend/``:
+"""Genera las exógenas de ejemplo para cargar en la demo.
 
     python demo/generar_exogena_demo.py
 
-Deja los archivos en ``backend/demo/archivos/``:
-
-  * ``exogena_osorio_pena_2025.xlsx``  — archivo válido de Sandra Milena
-    Osorio Peña, el contribuyente que la semilla deja SIN exógena. Al cargarlo
-    la conciliación produce de una vez un COINCIDE, una DISCREPANCIA, un
-    NO_DECLARADO y un NO_REPORTADO_POR_TERCERO.
-  * ``exogena_con_filas_invalidas.xlsx`` — mismo archivo con dos filas cuyo
-    valor no es numérico, para mostrar que el importador las reporta como
-    errores en vez de caerse.
-  * ``no_es_un_excel.txt`` — para mostrar el rechazo de archivos que no son
-    Excel.
-
-Los NIT, nombres y cifras son ficticios.
+Salida en backend/demo/archivos/:
+- exogena_osorio_pena_2025.xlsx: válido; produce COINCIDE, DISCREPANCIA,
+  NO_DECLARADO y NO_REPORTADO_POR_TERCERO.
+- exogena_con_filas_invalidas.xlsx: dos filas con valor no numérico.
+- no_es_un_excel.txt: archivo rechazado.
+Datos ficticios.
 """
 
 from __future__ import annotations
@@ -37,8 +24,7 @@ CONSULTANTE_ID = "1015442308"
 CONSULTANTE_NOMBRE = "SANDRA MILENA OSORIO PEÑA"
 
 TOPES = [
-    # Cada tope es la suma de sus registros, como en un archivo real; el de
-    # patrimonio es el mayor entre esa suma y lo declarado el año anterior.
+    # Topes = suma de registros; patrimonio = max(suma, año anterior).
     ("Tope 1 - Ingresos", 74_400_000),
     ("Tope 2 - Patrimonio", 69_400_000),
     ("Tope 3 - Consumo TC", 7_200_000),
@@ -51,13 +37,13 @@ REGISTROS = [
     ("860006555", "CLINICA DEL COUNTRY S A",
      "Pagos por salarios (Concepto: 5001)", 64_800_000,
      "Tope 1: Ingresos brutos | R32 Rentas de trabajo", None),
-    # Declaró 11.300.000 -> diferencia de 3.550.000: DISCREPANCIA.
+    # Declaró 11.300.000: DISCREPANCIA de 3.550.000.
     ("890903938", "BANCOLOMBIA S A",
      "Saldo de cuentas de ahorro y corrientes a 31 de diciembre "
      "(Concepto: 1110)", 14_850_000,
      "Tope 2: Patrimonio | R29 Patrimonio Bruto",
      "Número de Cuenta / Documento: 20100049871"),
-    # No lo declaró -> NO_DECLARADO.
+    # No declarado: NO_DECLARADO.
     ("830025281", "ARRENDAMIENTOS LA COLINA S A S",
      "Arrendamientos de bienes inmuebles (Concepto: 5008)", 9_600_000,
      "Tope 1: Ingresos brutos | R58 Ingresos brutos rentas de capital",

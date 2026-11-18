@@ -1,15 +1,7 @@
-"""Reajuste fiscal del costo de los activos fijos (arts. 70 y 73 ET).
+"""Reajuste fiscal de activos fijos (arts. 70 y 73 ET). Tabla por año gravable.
 
-Cada año el Gobierno fija por decreto el porcentaje del art. 70 y la tabla de
-multiplicadores del art. 73, que las personas naturales usan para actualizar el
-costo de adquisición de inmuebles y acciones según el año en que los
-compraron. La tabla cambia todos los años: no se reutiliza la de otro año.
-
-Año gravable 2025: Decreto 0449 del 27 de abril de 2026 (arts. 1.2.1.17.20 y
-1.2.1.17.21 del DUR 1625 de 2016). La tabla se transcribió del decreto y se
-contrastó contra una segunda publicación en los años 1986, 1990, 1995, 2000,
-2005, 2007, 2010, 2012, 2015, 2018, 2020, 2022, 2023 y 2024. Si un valor no
-coincide con el decreto, manda el decreto.
+AG 2025: Decreto 0449 de 2026 (DUR 1625 arts. 1.2.1.17.20 y 1.2.1.17.21).
+Si un valor difiere del decreto, prevalece el decreto.
 """
 
 from decimal import Decimal
@@ -19,11 +11,11 @@ FUENTE = {
     2025: "Decreto 0449 del 27 de abril de 2026 (art. 1.2.1.17.21 DUR 1625 de 2016)",
 }
 
-# Art. 70: porcentaje de reajuste del costo de los activos fijos.
+# Art. 70: porcentaje de reajuste.
 REAJUSTE_ART_70 = {2025: Decimal("0.0581")}
 
-# Art. 73, año gravable 2025: año de adquisición → (urbanos, rurales
-# agropecuarios, rurales). «1955» vale para 1955 y años anteriores.
+# Art. 73, AG 2025: año de adquisición -> (urbano, rural agropecuario, rural).
+# 1955 incluye años anteriores.
 _TABLA_2025 = """
 1955 36085.10 34963.67 35631.92
 1956 35363.86 34264.84 34919.74
@@ -113,11 +105,7 @@ REAJUSTE_ART_73 = {2025: _cargar(_TABLA_2025)}
 
 
 def factor_art_73(anio_gravable: int, tipo: str, anio_adquisicion: int) -> Optional[Decimal]:
-    """Multiplicador del art. 73, o None si no hay tabla cargada para ese año.
-
-    Un inmueble comprado en el mismo año gravable no se reajusta (factor 1):
-    la tabla del decreto solo llega al año anterior.
-    """
+    """Factor del art. 73, o None sin tabla. Adquirido en el mismo año: 1."""
     tabla = REAJUSTE_ART_73.get(anio_gravable)
     if tabla is None:
         return None

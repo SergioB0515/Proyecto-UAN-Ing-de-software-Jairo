@@ -1,24 +1,14 @@
-"""Sugerencia de cédula para una fuente de ingreso.
+"""Sugiere la cédula de una fuente de ingreso por palabras del concepto.
 
-Esto **sugiere**, no decide. La cédula de un ingreso cambia el impuesto —en la
-cédula general se pueden restar costos y gastos en capital y no laborales, pero
-no en rentas de trabajo con vínculo laboral, y la exención del 25 % solo aplica
-a estas últimas—, así que una clasificación equivocada produce una declaración
-equivocada. El motor solo liquida lo que el contador confirmó; lo que quede sin
-confirmar se reporta aparte y se excluye del cálculo.
-
-La sugerencia se hace por palabras del concepto, no por código de concepto de
-la exógena: el catálogo de códigos lo fija la DIAN por resolución cada año y no
-está cargado en la aplicación. Cargarlo y clasificar por código es más fiable y
-está en el roadmap.
+Solo sugiere; el motor liquida lo confirmado por el contador.
+Pendiente: clasificar por código de concepto de la exógena.
 """
 
 from typing import Dict, List, Tuple
 
 from .modelos import Cedula
 
-# Orden intencional: la primera coincidencia gana, así que lo más específico va
-# primero. "pensión" antes que "pago" evita que una mesada caiga en trabajo.
+# Gana la primera coincidencia: lo específico primero ("pensión" antes que "pago").
 _REGLAS: Tuple[Tuple[Cedula, Tuple[str, ...]], ...] = (
     (
         Cedula.EXCLUIDO,
@@ -71,7 +61,7 @@ def explicar(cedula: Cedula) -> str:
 
 
 def cedulas_disponibles() -> List[Dict[str, str]]:
-    """Catálogo para el frontend: valor, etiqueta y qué implica cada cédula."""
+    """Catálogo de cédulas para el frontend."""
     etiquetas = {
         Cedula.TRABAJO: "Rentas de trabajo (con vínculo laboral)",
         Cedula.TRABAJO_SIN_VINCULO: "Rentas de trabajo sin vínculo laboral",

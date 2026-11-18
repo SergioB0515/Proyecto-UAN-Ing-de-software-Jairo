@@ -1,22 +1,6 @@
-"""Numeración oficial de los renglones del formulario 210.
+"""Casillas oficiales del formulario 210, por año gravable.
 
-Por qué existe
--------------
-El motor produce los valores con códigos propios (`CG-INGRESOS`,
-`SALDO-A-PAGAR`). Para que el contador pueda digitar el borrador en MUISCA sin
-traducir nada, el archivo exportado tiene que traer el **número de casilla
-oficial** al lado de cada cifra.
-
-La numeración la fija la resolución de la DIAN que prescribe el formulario de
-cada año gravable y puede cambiar de un año a otro, así que vive aquí, por año,
-igual que los parámetros tributarios.
-
-Estado de la verificación
--------------------------
-- Todas las casillas se transcribieron del formulario 210 del año gravable
-  2024 y de su instructivo, publicados por la DIAN.
-- Año gravable 2025: **no verificado**. Mientras no se confirme la resolución
-  del 210 de 2025, se usa la numeración de 2024 y el exportado lo advierte.
+Transcritas del formulario y el instructivo del año gravable 2024 (DIAN).
 """
 
 from dataclasses import dataclass
@@ -42,13 +26,9 @@ def _c(numero: int, nombre: str, verificado: bool = True) -> CasillaOficial:
                           fuente=_OFICIAL_2024)
 
 
-# La cédula general es una grilla: las mismas filas conceptuales repetidas en
-# cuatro columnas, una por subcédula. Se declara así, como grilla, porque es
-# como está impresa en el formulario y porque deja ver de un vistazo qué
-# conceptos NO existen en una subcédula (las rentas de trabajo con vínculo
-# laboral no admiten costos, así que esa celda no tiene casilla).
-#
-# Orden de las columnas: trabajo · trabajo sin vínculo · capital · no laborales
+# Grilla de la cédula general: fila -> casilla por columna.
+# Columnas: trabajo, trabajo sin vínculo, capital, no laborales.
+# None: la celda no existe (p. ej. costos en rentas de trabajo).
 _GRILLA_CEDULA_GENERAL = {
     "Ingresos brutos": (32, 43, 58, 74),
     "Devoluciones, rebajas y descuentos": (None, None, None, 75),
@@ -144,26 +124,15 @@ for _fila, _numeros in _GRILLA_CEDULA_GENERAL.items():
 
 
 def casilla_de_subcedula(fila: str, subcedula: str) -> Optional[int]:
-    """Número de casilla de una fila de la grilla en una subcédula concreta.
-
-    Devuelve None cuando esa combinación no existe en el formulario, que es
-    información y no un error: las rentas de trabajo con vínculo laboral no
-    tienen casilla de costos porque la ley no permite restarlos.
-    """
+    """Casilla de una fila en una subcédula, o None si no existe."""
     numeros = _GRILLA_CEDULA_GENERAL.get(fila)
     if numeros is None or subcedula not in SUBCEDULAS:
         return None
     return numeros[SUBCEDULAS.index(subcedula)]
 
 
-# Código del motor → casilla oficial.
-#
-# Solo figuran los códigos que corresponden a UNA casilla del formulario. Varios
-# renglones del motor son agregados de la cédula general y el formulario los pide
-# separados por subcédula (ingresos de trabajo en la 32, de capital en la 58, no
-# laborales en la 74...). Esos totales no tienen casilla propia y están listados
-# en SIN_MAPEO_POR_AGREGACION; el detalle por subcédula lo emite el motor en
-# renglones «CG-C<número>», que ya llevan su casilla y no pasan por este mapa.
+# Código del motor -> casilla. Solo códigos de una casilla; los agregados
+# están en SIN_MAPEO_POR_AGREGACION y el detalle sale como "CG-C<n>".
 MAPEO_2024: Dict[str, int] = {
     "PAT-BRUTO": 29,
     "PAT-DEUDAS": 30,
@@ -175,10 +144,7 @@ MAPEO_2024: Dict[str, int] = {
     "GO-BASE": 115,
     "IMP-RENTA": 116,
     "TOTAL-DESCUENTOS": 125,
-    # El «impuesto neto» del motor ya incluye el de ganancias ocasionales y
-    # tiene restados los descuentos: es la casilla 129 (126 + 127), no la 126.
-    # Antes figuraba TOTAL-A-CARGO → 129, que es el total ANTES de descuentos y
-    # solo coincidía cuando no había ninguno.
+    # IMPUESTO-NETO = casilla 129 (126 + 127, después de descuentos).
     "IMP-NETO-RENTA": 126,
     "GO-IMPUESTO": 127,
     "IMP-NETO": 129,
@@ -197,19 +163,10 @@ SIN_MAPEO_POR_AGREGACION = {
     "CG-RENTA-LIQUIDA": "El formulario la arma por subcédula (42, 57, 73) y la consolida en 93 y 97.",
 }
 
-# Años gravables cubiertos por esta numeración.
-#
-# La Resolución DIAN 000044 del 14 de marzo de 2024 prescribió el formulario 210
-# «para el año gravable 2023 y siguientes», y su instructivo lo ajustó la
-# Resolución 000120 de 2024; ambas quedaron compiladas en la Resolución Única
-# 000227 de 2025. Para el año gravable 2025 no se prescribió una estructura
-# nueva. Las casillas se transcribieron del PDF del año gravable 2024; el de
-# 2025 no se comparó casilla por casilla, se confía en que la resolución es la
-# misma.
-#
-# Un año posterior no entra aquí hasta que se sepa que la DIAN no cambió el
-# formulario: reutilizar la numeración sin decirlo produciría un documento que
-# parece oficial y no lo es.
+# Años cubiertos. Res. DIAN 000044 de 2024 (AG 2023 y siguientes), ajustada
+# por la 000120 de 2024, compiladas en la 000227 de 2025. AG 2025 sin
+# estructura nueva; no comparado casilla por casilla.
+# Un año nuevo se agrega solo tras verificar el formulario.
 ANIOS_CON_NUMERACION_VERIFICADA = frozenset({2023, 2024, 2025})
 
 MAPEO_POR_ANIO: Dict[int, Dict[str, int]] = {
@@ -242,7 +199,7 @@ def nota_de_numeracion(anio_gravable: int) -> str:
 
 
 def casilla_de(codigo_motor: str, anio_gravable: int) -> Optional[CasillaOficial]:
-    """Casilla oficial de un renglón del motor, o None si no hay mapeo directo."""
+    """Casilla de un código del motor, o None."""
     mapeo = MAPEO_POR_ANIO.get(anio_gravable) or MAPEO_2024
     casillas = CASILLAS_POR_ANIO.get(anio_gravable) or CASILLAS_2024
     numero = mapeo.get(codigo_motor)
@@ -250,12 +207,7 @@ def casilla_de(codigo_motor: str, anio_gravable: int) -> Optional[CasillaOficial
 
 
 def casilla_por_numero(numero: Optional[int], anio_gravable: int) -> Optional[CasillaOficial]:
-    """Casilla por su número, para traducir los «R29» que trae la exógena.
-
-    El archivo de la DIAN ya dice a qué renglón va cada valor con esta misma
-    numeración, así que traducir el código al nombre oficial no requiere
-    ninguna inferencia: solo mirar el catálogo.
-    """
+    """Casilla por número (para los "R29" de la exógena)."""
     if numero is None:
         return None
     casillas = CASILLAS_POR_ANIO.get(anio_gravable) or CASILLAS_2024

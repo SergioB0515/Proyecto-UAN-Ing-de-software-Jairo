@@ -1,9 +1,7 @@
-# Frontend: SPA de conciliación de renta
+# Frontend
 
-Vue 3 (Composition API, `<script setup>`) + Vite + Tailwind CSS + Axios.
-Consume la API de [../backend](../backend/README.md); no tiene lógica de
-negocio propia: todo cálculo (patrimonio, conciliación, costeo, cierre) lo
-hace el backend.
+Vue 3 (`<script setup>`) + Vite + Tailwind + Axios. Sin lógica de negocio:
+todo cálculo lo hace el [backend](../backend/README.md).
 
 ## Puesta en marcha
 
@@ -16,23 +14,8 @@ cp .env.example .env   # opcional: solo si el backend no está en http://127.0.0
 npm run dev
 ```
 
-Abre `http://localhost:5173`. Ese origen ya está permitido en el CORS del
-backend (`ORIGENES_PERMITIDOS` en `backend/main.py`); si cambias el puerto,
-agrégalo allí.
-
-`npm run build` genera la versión de producción en `dist/`.
-
-## Recorrido mínimo
-
-1. Crea una cuenta de contador.
-2. En **Umbrales UVT** registra el año gravable (valor de la UVT y topes);
-   sin eso no se puede evaluar la obligación de declarar.
-3. En **Contribuyentes** registra uno y abre su año gravable.
-4. Carga activos e ingresos (con su código de concepto DIAN o palabra
-   clave, para que se crucen) e importa el Excel de exógena. Para probar
-   sin un archivo real sirve `backend/tests/fixtures/reporte_exogena_ejemplo.xlsx`.
-5. Revisa **Conciliación**, **Borrador por renglón** y **Resumen**; cierra
-   el año y descarga reportes en **Cierre y reportes**.
+`http://localhost:5173`, permitido en `ORIGENES_PERMITIDOS` del backend.
+`npm run build` genera `dist/`.
 
 ## Organización
 
@@ -67,17 +50,12 @@ agrégalo allí.
 | `UmbralesView` («Parámetros DIAN») + `components/CalendarioVencimientos.vue` | HU-25 |
 | `ResumenView` + `components/SeguimientoDeclaracion.vue` | HU-26 |
 | `CarteraView` (fecha límite, orden por vencimiento, Descargar Excel/PDF) | HU-25, HU-27 |
-| `SoportesView` + `components/PanelAdjuntos.vue` (y el clip «Soportes» en activos, ingresos, movimientos, documentos y proveedores) | — |
+| `SoportesView` + `components/PanelAdjuntos.vue` | — |
+| `LiquidacionView` + `components/liquidacion/` | Liquidación y borrador del 210 |
+| `GestionView` + `components/gestion/` | Gestión de la declaración |
 
 ## Diseño
 
-Tokens en `tailwind.config.js`: tinta `#1E2A36`, papel `#F2F4F0`, verde de
-libro contable `#2E6A4F` para acciones y un color por estado de
-conciliación (ámbar para discrepancia, rojo para no declarado, pizarra
-para sin reporte de terceros). Una sola familia tipográfica (Public Sans)
-con cifras tabulares (clase `.cifra`) para que los montos se alineen como
-en un libro. Las clases de componente (`.boton`, `.campo`, `.hoja`…) están
-en `src/style.css`.
-
-Los textos de la interfaz tutean al contador, igual que los mensajes de
-error del backend.
+Tokens en `tailwind.config.js`; clases de componente (`.boton`, `.campo`, `.hoja`)
+en `src/style.css`. Public Sans con cifras tabulares (`.cifra`). Cada estado de
+conciliación tiene color y forma.

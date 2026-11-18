@@ -13,5 +13,4 @@ HU-05/HU-06.
   expresión regular, marcado de filas autoreportadas o reportadas por la
   propia DIAN.
 
-El formato de parseo ya fue validado contra un archivo real (ver
-[09. Avances del proyecto](../../../documentacion/09-avances-proyecto.md)).
+Filas no numéricas se devuelven como errores con su número de fila; el resto se importa.

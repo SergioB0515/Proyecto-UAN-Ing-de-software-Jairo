@@ -47,9 +47,7 @@ def _por_clave(comparaciones):
     return {c.clave: c for c in comparaciones}
 
 
-# ---------------------------------------------------------------------------
 # Los topes se reconstruyen desde el detalle
-# ---------------------------------------------------------------------------
 
 
 def test_el_tope_de_patrimonio_es_el_mayor_entre_el_detalle_y_lo_declarado_antes():
@@ -66,9 +64,7 @@ def test_el_tope_de_patrimonio_es_el_mayor_entre_el_detalle_y_lo_declarado_antes
 
 
 def test_un_bien_en_copropiedad_cuenta_por_su_participacion():
-    """Deducido de un archivo real: con los avalúos completos el detalle
-    superaba el tope, cosa imposible si el tope es el mayor de los dos valores.
-    """
+    """Participación < 100 %: cuenta por la fracción (deducido de un archivo real)."""
     registros = [_avaluo("200000000", "50.00"), _avaluo("80000000"),
                  _declarado_anterior("100000000")]
     [tope] = cuadrar_topes(registros, {"Tope 2 - Patrimonio": D("180000000")})
@@ -97,9 +93,7 @@ def test_el_umbral_de_cada_tope_dice_si_obliga_a_declarar():
     assert tope.supera_umbral is True
 
 
-# ---------------------------------------------------------------------------
 # Lo declarado frente a lo reportado
-# ---------------------------------------------------------------------------
 
 
 def test_declarar_menos_patrimonio_que_el_tope_es_alerta_alta():
@@ -171,9 +165,7 @@ def test_gastar_mas_de_lo_que_se_declara_ganar_es_un_indicio_no_un_error():
     assert "indicio" in c["INDICIO_GASTO"].mensaje
 
 
-# ---------------------------------------------------------------------------
 # Por la API, con el archivo de ejemplo
-# ---------------------------------------------------------------------------
 
 
 def test_el_cruce_reconstruye_los_cinco_topes_del_archivo_de_ejemplo(client):
@@ -189,7 +181,7 @@ def test_el_cruce_reconstruye_los_cinco_topes_del_archivo_de_ejemplo(client):
     cuerpo = cruce.json()
     assert [t["numero"] for t in cuerpo["topes"]] == [1, 2, 3, 4, 5]
     assert all(t["cuadra"] for t in cuerpo["topes"])
-    # Sin nada registrado todavía, el patrimonio y los ingresos quedan cortos.
+    # Sin datos registrados: patrimonio e ingresos quedan cortos.
     severidades = {c["clave"]: c["severidad"] for c in cuerpo["comparaciones"]}
     assert severidades["PATRIMONIO"] == "ALTA"
     assert severidades["INGRESOS"] == "ALTA"
@@ -209,10 +201,7 @@ def test_el_cruce_sin_exogena_responde_404_y_es_del_contador_dueno(client):
 
 
 def test_declarar_menos_que_el_ano_pasado_no_es_lo_mismo_que_omitir_un_bien():
-    """El Tope 2 es el mayor entre lo reportado por terceros y lo declarado el
-    año anterior. Quedar por debajo de lo primero es una omisión; por debajo de
-    lo segundo, algo que hay que poder explicar.
-    """
+    """Tope 2: bajo terceros es ALTA, bajo el año anterior es MEDIA."""
     def cruce_con(declarado):
         return _por_clave(comparar(
             [], {2: D("400000000")}, CifrasDeclaradas({29: D(declarado)}, uvt=UVT),

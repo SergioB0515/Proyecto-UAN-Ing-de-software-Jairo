@@ -54,12 +54,7 @@ _BASE = "/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id
 
 
 def _traducir(exc: Exception) -> HTTPException:
-    """Traduce los errores de dominio a códigos HTTP.
-
-    `AnioGravableNoSoportadoError` es 422 y no 404: el periodo existe, lo que
-    falta es que alguien cargue los parámetros de ese año. El mensaje dice
-    dónde hacerlo, para que el error sea accionable y no un callejón.
-    """
+    """Errores de dominio -> HTTP. Año sin parámetros: 422."""
     if isinstance(exc, (ContribuyenteNoEncontradoError, PeriodoFiscalNoEncontradoError,
                         DeduccionNoEncontradaError, FuenteIngresoNoEncontradaError,
                         ActivoNoEncontradoError, PerdidaNoEncontradaError,
@@ -74,15 +69,14 @@ def _traducir(exc: Exception) -> HTTPException:
     if isinstance(exc, (PlantillaNoEncontradaError, SinPeriodoAnteriorError)):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnioGravableNoSoportadoError):
-        # 422 literal: starlette renombró la constante y la versión antigua
-        # emite DeprecationWarning, pero el código no cambia.
+        # 422 literal: la constante de starlette cambió de nombre.
         return HTTPException(status_code=422, detail=str(exc))
     raise exc
 
 
 @router.get("/cedulas", response_model=List[dict])
 def cedulas():
-    """Catálogo de cédulas con lo que implica cada una. Alimenta el selector del frontend."""
+    """Catálogo de cédulas."""
     return clasificador.cedulas_disponibles()
 
 
@@ -163,7 +157,7 @@ def imputar_deduccion(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Fija a qué columna y fila del formulario 210 va la deducción."""
+    """Fija columna y fila del 210 de una deducción."""
     try:
         return servicios.imputar_deduccion(
             session, contador.id, contribuyente_id, periodo_fiscal_id, deduccion_id, datos
@@ -245,12 +239,7 @@ def exportar_liquidacion(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Exporta el borrador con la fórmula y la norma de cada renglón.
-
-    Se exporta la trazabilidad completa, no solo las cifras: el archivo tiene
-    que servir como papel de trabajo frente a una revisión, y para eso cada
-    número debe poder reconstruirse.
-    """
+    """Exporta el borrador con fórmula y norma por renglón (papel de trabajo)."""
     try:
         liq = servicios.liquidar_periodo(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -258,9 +247,7 @@ def exportar_liquidacion(
     except Exception as exc:
         raise _traducir(exc)
 
-    # El encabezado lleva nombre y NIT, no el id interno: este archivo es el
-    # papel de trabajo que el contador archiva y entrega, y un número de base
-    # de datos no identifica a nadie.
+    # Encabezado con nombre y NIT, no el id interno.
     datos_contribuyente = obtener_contribuyente(session, contador.id, contribuyente_id)
 
     documento = DocumentoReporte(
@@ -301,7 +288,7 @@ def escenarios(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Compara la liquidación con una sola decisión cambiada a la vez."""
+    """Escenarios: una decisión cambiada a la vez."""
     try:
         return servicios.simular_escenarios(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -317,13 +304,7 @@ def borrador_formulario_210(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Borrador del formulario 210 en PDF, casilla por casilla.
-
-    Es distinto de `/exportar`: aquel es el papel de trabajo con la fórmula y
-    la norma de cada renglón; este es la hoja para transcribir, con las mismas
-    casillas del formulario en el mismo orden. Va marcado como borrador porque
-    el 210 solo se presenta desde los servicios en línea de la DIAN.
-    """
+    """Borrador del 210 en PDF, casilla por casilla, para transcribir."""
     try:
         liq = servicios.liquidar_periodo(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -354,9 +335,7 @@ def borrador_formulario_210(
     )
 
 
-# ---------------------------------------------------------------------------
 # Depreciación
-# ---------------------------------------------------------------------------
 
 
 @router.get("/categorias-depreciacion", response_model=List[dict])
@@ -364,7 +343,7 @@ def categorias_depreciacion(
     anio_gravable: int = Query(ge=2000, le=2100),
     contador: Contador = Depends(obtener_contador_actual),
 ):
-    """Catálogo del art. 137 con la tasa máxima y la vida útil equivalente."""
+    """Catálogo del art. 137: tasa máxima y vida útil equivalente."""
     try:
         return servicios.categorias_depreciacion(anio_gravable)
     except Exception as exc:
@@ -421,9 +400,7 @@ def eliminar_depreciacion(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# ---------------------------------------------------------------------------
-# Pérdidas fiscales (por contribuyente, no por periodo)
-# ---------------------------------------------------------------------------
+# Pérdidas fiscales (por contribuyente)
 
 
 @router.get(
@@ -435,7 +412,7 @@ def listar_perdidas(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Pérdidas del contribuyente, marcando cuáles siguen vigentes ese año."""
+    """Pérdidas del contribuyente y su vigencia en el año."""
     try:
         return servicios.listar_perdidas(
             session, contador.id, contribuyente_id, anio_gravable
@@ -483,9 +460,7 @@ def eliminar_perdida(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# ---------------------------------------------------------------------------
-# Pagos individuales en efectivo
-# ---------------------------------------------------------------------------
+# Pagos en efectivo
 
 
 @router.get(f"{_BASE}/pagos-efectivo", response_model=List[PagoEfectivoLeer])
@@ -545,9 +520,7 @@ def eliminar_pago_efectivo(
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
-# ---------------------------------------------------------------------------
 # Facilidades
-# ---------------------------------------------------------------------------
 
 
 @router.get(f"{_BASE}/plantillas-deducciones", response_model=List[dict])
@@ -557,7 +530,7 @@ def plantillas_deducciones(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Deducciones frecuentes con su norma y su tope propio ya en pesos."""
+    """Deducciones frecuentes con norma y tope en pesos."""
     try:
         return servicios.catalogo_plantillas(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -594,7 +567,7 @@ def copiar_hoja_del_anterior(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Copia del año anterior la situación del contribuyente, no sus cifras."""
+    """Copia del año anterior la situación, no las cifras."""
     try:
         return servicios.copiar_hoja_del_anio_anterior(
             session, contador.id, contribuyente_id, periodo_fiscal_id
@@ -604,7 +577,7 @@ def copiar_hoja_del_anterior(
 
 
 
-# --- Venta de inmuebles ------------------------------------------------------
+# Venta de inmuebles
 
 
 @router.get(f"{_BASE}/ventas-inmuebles", response_model=List[VentaInmuebleLeer])
@@ -630,8 +603,9 @@ def crear_venta_inmueble(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Registra la venta de un inmueble: costo fiscal (arts. 69, 72 y 73), utilidad
-    y si va como ganancia ocasional o como renta ordinaria (art. 300)."""
+    """Registra una venta de inmueble: costo fiscal (arts. 69, 72, 73), utilidad
+    y tratamiento (art. 300).
+    """
     try:
         return servicios.crear_venta_inmueble(session, contador.id, contribuyente_id,
                                               periodo_fiscal_id, datos)

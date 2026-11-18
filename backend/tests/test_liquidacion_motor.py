@@ -1,11 +1,5 @@
-"""Pruebas del motor de liquidación.
-
-Se prueban contra la fórmula que trae la norma, recalculada aquí de forma
-independiente, no contra el resultado que produjo el propio motor. Si ambos
-lados usaran el mismo código la prueba no probaría nada.
-
-No tocan la base de datos a propósito: la aritmética tributaria tiene que poder
-verificarse con lápiz y papel, y para eso el motor no debe necesitar Postgres.
+"""Pruebas del motor. Valores esperados recalculados con la fórmula de la norma,
+no copiados de la salida del motor. Sin base de datos.
 """
 
 from decimal import ROUND_HALF_UP, Decimal as D
@@ -37,9 +31,7 @@ def _liquidar(**kwargs):
     return liquidar(insumos, P2025)
 
 
-# ---------------------------------------------------------------------------
 # Tabla del artículo 241
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize(
@@ -77,9 +69,7 @@ def test_el_limite_inferior_de_un_tramo_no_entra_en_ese_tramo():
     assert impuesto == D("0")
 
 
-# ---------------------------------------------------------------------------
 # Límite del artículo 336 numeral 3
-# ---------------------------------------------------------------------------
 
 
 def test_el_limite_del_40_por_ciento_recorta_y_lo_reporta():
@@ -120,11 +110,7 @@ def test_no_recorta_ni_avisa_cuando_lo_solicitado_cabe_en_el_limite():
 
 
 def test_la_base_del_40_por_ciento_son_los_ingresos_menos_incrngo_no_los_netos_de_costos():
-    """El 40 % se calcula antes de restar costos y gastos (art. 336 num. 3).
-
-    Tomarlo después de los costos daría un límite más bajo y un impuesto más
-    alto: es el error que esta prueba vigila.
-    """
+    """Art. 336 num. 3: el 40 % se calcula antes de restar costos y gastos."""
     liq = _liquidar(
         no_laborales=RentasPorSubcedula(
             ingresos_brutos=D("200000000"), costos_y_gastos=D("150000000")
@@ -137,9 +123,7 @@ def test_la_base_del_40_por_ciento_son_los_ingresos_menos_incrngo_no_los_netos_d
     assert liq.valor("CG-EXENTAS-LIMITADAS") == D("50000000.00")  # cabe en el 40 %
 
 
-# ---------------------------------------------------------------------------
 # Renta exenta del 25 % y la exclusión del artículo 336 numeral 4
-# ---------------------------------------------------------------------------
 
 
 def test_la_exencion_del_25_por_ciento_se_topa_en_790_uvt():
@@ -179,9 +163,7 @@ def test_optar_por_costos_en_honorarios_hace_perder_la_exencion_del_25():
     assert con_costos.valor("CG-COSTOS") == D("30000000")
 
 
-# ---------------------------------------------------------------------------
 # Deducciones fuera del límite general
-# ---------------------------------------------------------------------------
 
 
 def test_dependientes_y_el_1_por_ciento_de_compras_no_entran_en_el_limite():
@@ -222,9 +204,7 @@ def test_la_deduccion_del_1_por_ciento_se_topa_en_240_uvt():
     assert liq.valor("DED-COMPRAS-1PCT") == (D("240") * UVT).quantize(D("0.01"))
 
 
-# ---------------------------------------------------------------------------
 # Pensiones
-# ---------------------------------------------------------------------------
 
 
 def test_las_pensiones_son_exentas_hasta_1000_uvt_mensuales():
@@ -242,9 +222,7 @@ def test_la_pension_que_supera_el_tope_mensual_tributa_por_el_exceso():
     assert liq.valor("PEN-RENTA-LIQUIDA") == D("700000000") - tope
 
 
-# ---------------------------------------------------------------------------
 # Ganancias ocasionales
-# ---------------------------------------------------------------------------
 
 
 def test_la_ganancia_ocasional_tributa_al_15_por_ciento_sobre_la_base_neta():
@@ -273,9 +251,7 @@ def test_la_ganancia_ocasional_no_entra_en_la_base_de_la_tabla_241():
     assert liq.valor("BASE-GRAVABLE") == liq.valor("CG-RENTA-LIQUIDA")
 
 
-# ---------------------------------------------------------------------------
 # Dividendos y descuentos
-# ---------------------------------------------------------------------------
 
 
 def test_los_dividendos_generan_el_descuento_del_254_1_sobre_el_exceso_de_1090_uvt():
@@ -305,9 +281,7 @@ def test_los_descuentos_no_pueden_exceder_el_impuesto_a_cargo():
     assert any("no pueden exceder" in d for d in liq.diagnosticos)
 
 
-# ---------------------------------------------------------------------------
 # Saldo
-# ---------------------------------------------------------------------------
 
 
 def test_cuando_las_retenciones_superan_el_impuesto_queda_saldo_a_favor():
@@ -338,9 +312,7 @@ def test_el_anticipo_usa_el_porcentaje_del_ano_de_declaracion():
     tercero = _liquidar(anios_declarando=3, **comun)
     neto = tercero.valor("IMP-NETO")
 
-    # ROUND_HALF_UP explícito: el redondeo por defecto de Decimal.quantize es
-    # ROUND_HALF_EVEN (bancario), que a 0,005 redondea al par y difiere en un
-    # centavo. En moneda se usa medio arriba, y el motor lo hace así.
+    # ROUND_HALF_UP explícito: quantize usa ROUND_HALF_EVEN por defecto.
     def esperado(porcentaje):
         return (neto * porcentaje).quantize(D("0.01"), rounding=ROUND_HALF_UP)
 
@@ -349,9 +321,7 @@ def test_el_anticipo_usa_el_porcentaje_del_ano_de_declaracion():
     assert tercero.valor("ANTICIPO-SIGUIENTE") == esperado(D("0.75"))
 
 
-# ---------------------------------------------------------------------------
 # Patrimonio, redondeo y precisión
-# ---------------------------------------------------------------------------
 
 
 def test_el_patrimonio_liquido_es_el_bruto_menos_las_deudas():
@@ -384,7 +354,7 @@ def test_el_valor_calculado_conserva_los_centavos_y_el_declarable_no():
 
 
 def test_la_suma_de_decimales_no_arrastra_error_de_float():
-    """Con float, 0.1 × 3 no da 0.3. Con Decimal sí, y los totales cuadran."""
+    """0.1 × 3 = 0.3 en Decimal."""
     liq = _liquidar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("100000000.10")),
         capital=RentasPorSubcedula(ingresos_brutos=D("0.10")),
@@ -393,9 +363,7 @@ def test_la_suma_de_decimales_no_arrastra_error_de_float():
     assert liq.valor("CG-INGRESOS") == D("100000000.30")
 
 
-# ---------------------------------------------------------------------------
 # Parámetros y años
-# ---------------------------------------------------------------------------
 
 
 def test_un_ano_sin_parametros_falla_en_vez_de_liquidar_con_otros():
@@ -416,7 +384,7 @@ def test_todos_los_anos_cargados_liquidan_y_citan_su_fuente(anio):
 
 
 def test_la_uvt_de_cada_ano_cambia_el_impuesto():
-    """Mismo ingreso nominal, años distintos: el reajuste de la UVT baja el impuesto."""
+    """Mismo ingreso, otro año: la UVT reajustada baja el impuesto."""
     impuestos = {}
     for anio, parametros in sorted(PARAMETROS_POR_ANIO.items()):
         insumos = InsumosLiquidacion(
@@ -428,7 +396,7 @@ def test_la_uvt_de_cada_ano_cambia_el_impuesto():
 
 
 def test_cada_renglon_sale_con_formula_o_fuente_legal():
-    """Trazabilidad: un renglón sin rastro no es auditable y no debe existir."""
+    """Todo renglón tiene fórmula y fuente."""
     liq = _liquidar(
         trabajo=RentasDeTrabajo(ingresos_brutos=D("150000000")),
         pensiones=Pensiones(ingresos_brutos=D("20000000")),

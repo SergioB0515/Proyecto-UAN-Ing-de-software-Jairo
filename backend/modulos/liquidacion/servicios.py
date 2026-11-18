@@ -1,11 +1,6 @@
 """Orquestación de la liquidación: lee la base, arma los insumos, llama al motor.
 
-Frontera de tipos
------------------
-El resto de la aplicación guarda dinero en `float`. Este módulo lo convierte a
-`Decimal` con `_dec()`, que pasa por `str` a propósito: `Decimal(0.1)` arrastra
-el error binario del float, `Decimal(str(0.1))` no. Toda conversión ocurre aquí
-y nada más abajo vuelve a ver un float.
+La base guarda float; aquí se convierte a Decimal con _dec(), vía str.
 """
 
 from core.formato import pesos
@@ -86,7 +81,7 @@ from core.excepciones import DatosVentaInvalidosError, VentaNoEncontradaError
 
 
 def _dec(valor) -> Decimal:
-    """Convierte a Decimal sin heredar el error de representación del float."""
+    """float -> Decimal vía str, para no heredar el error binario."""
     if valor is None:
         return CERO
     if isinstance(valor, Decimal):
@@ -94,9 +89,7 @@ def _dec(valor) -> Decimal:
     return Decimal(str(valor))
 
 
-# ---------------------------------------------------------------------------
 # Parámetros
-# ---------------------------------------------------------------------------
 
 
 def obtener_parametros(anio_gravable: int) -> ParametrosAnuales:
@@ -113,19 +106,13 @@ def obtener_parametros(anio_gravable: int) -> ParametrosAnuales:
     return parametros
 
 
-# ---------------------------------------------------------------------------
 # Hoja de liquidación
-# ---------------------------------------------------------------------------
 
 
 def obtener_hoja(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> HojaLiquidacion:
-    """Devuelve la hoja del periodo, creándola vacía la primera vez.
-
-    Crearla al leer evita que el frontend tenga que distinguir «no existe» de
-    «existe en blanco»: la hoja en blanco es un estado válido y liquida en cero.
-    """
+    """Hoja del periodo; la crea vacía si no existe."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
@@ -159,9 +146,7 @@ def actualizar_hoja(
     return hoja
 
 
-# ---------------------------------------------------------------------------
 # Deducciones solicitadas
-# ---------------------------------------------------------------------------
 
 
 def listar_deducciones(
@@ -204,7 +189,7 @@ def imputar_deduccion(
     deduccion_id: int,
     datos: DeduccionImputacion,
 ) -> DeduccionSolicitada:
-    """Fija la columna y la fila del formulario 210 de una deducción."""
+    """Fija columna y fila del 210 de una deducción."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -238,19 +223,13 @@ def eliminar_deduccion(
     session.commit()
 
 
-# ---------------------------------------------------------------------------
 # Clasificación de ingresos por cédula
-# ---------------------------------------------------------------------------
 
 
 def listar_ingresos_clasificados(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> List[IngresoClasificadoLeer]:
-    """Lista las fuentes de ingreso con su cédula: la guardada, o la sugerida.
-
-    `origen_clasificacion` distingue las dos, para que la interfaz muestre qué
-    confirmó el contador y qué sigue siendo una sugerencia del sistema.
-    """
+    """Fuentes de ingreso con su cédula, guardada o sugerida (origen_clasificacion)."""
     fuentes = listar_fuentes_ingreso(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -313,9 +292,7 @@ def guardar_clasificaciones(
     )
 
 
-# ---------------------------------------------------------------------------
-# Armado de insumos y liquidación
-# ---------------------------------------------------------------------------
+# Insumos y liquidación
 
 
 def _agrupar_por_cedula(
@@ -330,8 +307,7 @@ def _agrupar_por_cedula(
             sin_clasificar.append(ingreso)
             continue
         if ingreso.cedula != Cedula.EXCLUIDO:
-            # La retención de pensiones, dividendos y ganancias ocasionales se
-            # captura en la hoja; sumarla aquí la contaría dos veces.
+            # Retenciones de pensiones, dividendos y GO vienen de la hoja; no sumar aquí.
             retenciones += ingreso.retencion_fuente
     return totales, retenciones, sin_clasificar
 
@@ -357,11 +333,9 @@ def _resultado_venta(v: VentaInmueble, anio_gravable: int):
 def _sumar_ventas_de_inmuebles(
     session: Session, periodo: PeriodoFiscal, insumos: "motor.InsumosLiquidacion"
 ) -> None:
-    """Suma cada venta de inmueble a donde la ley la manda.
+    """Suma cada venta de inmueble: >= 2 años a GO, < 2 años a no laborales.
 
-    Dos años o más: ganancia ocasional. Menos: rentas no laborales. En
-    ganancia ocasional una pérdida no se resta de otras ganancias, así que el
-    costo se limita al valor de la venta.
+    En GO la pérdida no se resta de otras ganancias: costo limitado al valor de venta.
     """
     ventas = session.exec(select(VentaInmueble).where(
         VentaInmueble.periodo_fiscal_id == periodo.id).order_by(VentaInmueble.id)).all()
@@ -407,11 +381,7 @@ def construir_insumos(
         session, contador_id, contribuyente_id, periodo.id
     )
 
-    # --- Costo de ventas del inventario --------------------------------
-    #
-    # Lo calcula el kardex del módulo de inventario con el método de costeo de
-    # cada producto. Para un comerciante es la deducción más grande que tiene:
-    # sin esto, el motor liquidaría impuesto sobre el ingreso bruto.
+    # Costo de ventas (kardex, método de costeo de cada producto).
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
     costo_de_ventas = CERO
     if contribuyente.tipo_contribuyente in TIPOS_CON_INVENTARIO:
@@ -421,7 +391,7 @@ def construir_insumos(
             ).total_costo_ventas
         )
 
-    # --- Depreciación ----------------------------------------------------
+    # Depreciación
     depreciables = [
         ActivoDepreciable(
             descripcion=activo.descripcion,
@@ -437,7 +407,7 @@ def construir_insumos(
         )
     ]
 
-    # --- Pérdidas compensables ------------------------------------------
+    # Pérdidas compensables
     perdidas = [
         PerdidaCompensable(
             anio_origen=p.anio_origen,
@@ -452,7 +422,7 @@ def construir_insumos(
         if _dec(p.valor) - _dec(p.valor_compensado) > CERO
     ]
 
-    # --- Bancarización ---------------------------------------------------
+    # Bancarización
     pagos_individuales = [
         PagoIndividual(descripcion=pago.descripcion, valor=_dec(pago.valor))
         for pago in session.exec(
@@ -460,12 +430,7 @@ def construir_insumos(
         ).all()
     ]
 
-    # --- Patrimonio líquido del año anterior ------------------------------
-    #
-    # Se deduce de los activos y las deudas del periodo previo en vez de
-    # pedirlo: el dato ya está en la aplicación y volver a teclearlo es una
-    # oportunidad de equivocarse. El campo manual lo sobrescribe cuando el
-    # contribuyente llegó con años declarados fuera del sistema.
+    # Patrimonio líquido del año anterior. El campo manual tiene prioridad.
     patrimonio_anterior = _dec(hoja.patrimonio_liquido_anterior_manual) if (
         hoja.patrimonio_liquido_anterior_manual is not None
     ) else _patrimonio_liquido_anterior(
@@ -563,11 +528,8 @@ def construir_insumos(
 def _patrimonio_liquido_anterior(
     session: Session, contador_id: int, contribuyente_id: int, anio_gravable: int
 ) -> Optional[Decimal]:
-    """Patrimonio líquido del año inmediatamente anterior.
-
-    Lo que cuenta para la DIAN es lo declarado: si la declaración del año
-    anterior está registrada, se toma su casilla 31. Si no, se reconstruye con
-    los activos y las deudas que se registraron para ese año en la app.
+    """Patrimonio líquido del año anterior: casilla 31 declarada o, si no hay,
+    activos − deudas registrados ese año.
     """
     from ..gestion.servicios import declaracion_vigente
 
@@ -591,7 +553,7 @@ def _patrimonio_liquido_anterior(
     return bruto - deudas
 
 
-# Casillas de ingresos brutos de todas las cédulas y de ganancias ocasionales.
+# Casillas de ingresos brutos (todas las cédulas y GO).
 _CASILLAS_DE_INGRESOS = (32, 43, 58, 74, 99, 104, 107, 108, 109, 112)
 
 
@@ -603,13 +565,8 @@ def _sancion_por_extemporaneidad(
     resultado: motor.Liquidacion,
     hoy: Optional[date] = None,
 ) -> Tuple[sanciones.ResultadoSancion, List[str]]:
-    """Sanción del art. 641 si la declaración se presentó, o está, vencida.
-
-    Si ya se presentó, se cuenta hasta la fecha de presentación. Si no se ha
-    presentado y el plazo ya pasó, se cuenta hasta hoy: es lo que costaría
-    presentarla hoy, y sube cada mes que pase.
-    """
-    # Import tardío: el módulo de parámetros carga modelos que dependen de este.
+    """Sanción del art. 641: hasta la presentación o, si está vencida, hasta hoy."""
+    # Import tardío: dependencia circular con parametros.
     from ..parametros.servicios import calcular_vencimiento, hoy_colombia
 
     contribuyente = obtener_contribuyente(session, contador_id, contribuyente_id)
@@ -628,9 +585,7 @@ def _sancion_por_extemporaneidad(
     if corte <= vencimiento.fecha:
         return sanciones.ResultadoSancion(), []
 
-    # La UVT de la sanción es la del año en que se presenta, no la del año
-    # gravable: la sanción mínima y el tope de 2.500 UVT se liquidan con la
-    # vigente al momento de declarar.
+    # UVT del año de presentación, no del gravable (mínima y tope 2.500 UVT).
     avisos: List[str] = []
     parametros_corte = PARAMETROS_POR_ANIO.get(corte.year)
     if parametros_corte is None:
@@ -682,13 +637,9 @@ def _sancion_por_extemporaneidad(
 
 
 def _fila_de(deduccion: DeduccionSolicitada) -> str:
-    """Fila del formulario 210 de una deducción guardada.
+    """Fila del 210 de una deducción.
 
-    Las deducciones creadas antes de que existiera el campo no lo tienen. Si
-    salieron del catálogo, la fila es la de su plantilla; si se escribieron a
-    mano, se tratan como «otras deducciones imputables», que es lo que casi
-    siempre son. Mandarlas a rentas exentas daría el mismo impuesto y la
-    casilla equivocada.
+    Sin campo guardado: la de su plantilla, o "otras deducciones" si es manual.
     """
     if deduccion.fila_formulario:
         return deduccion.fila_formulario
@@ -708,9 +659,8 @@ def liquidar_periodo(
     )
     resultado = motor.liquidar(insumos, parametros)
 
-    # La sanción por extemporaneidad depende del impuesto a cargo, así que se
-    # liquida una vez sin ella, se calcula, y se vuelve a liquidar con la
-    # sanción puesta en la casilla 135.
+    # La sanción depende del impuesto: se liquida, se calcula y se vuelve a
+    # liquidar con la casilla 135.
     sancion, avisos_sancion = _sancion_por_extemporaneidad(
         session, contador_id, contribuyente_id, periodo, resultado
     )
@@ -762,9 +712,7 @@ def liquidar_periodo(
     )
 
 
-# ---------------------------------------------------------------------------
 # Escenarios
-# ---------------------------------------------------------------------------
 
 
 def _cifras(liq: motor.Liquidacion) -> CifrasEscenario:
@@ -791,12 +739,7 @@ def _escenario(clave, titulo, actual_txt, alterna_txt, base, alterna, explicacio
 def simular_escenarios(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> EscenariosLeer:
-    """Vuelve a liquidar cambiando una decisión a la vez.
-
-    El motor es una función pura, así que comparar dos opciones es liquidar dos
-    veces. Solo se simulan decisiones que la ley deja en manos del
-    contribuyente; nada de esto cambia los datos guardados.
-    """
+    """Liquida variando una decisión del contribuyente a la vez. No guarda nada."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -805,7 +748,7 @@ def simular_escenarios(
     base = motor.liquidar(insumos, parametros)
     escenarios: List[EscenarioLeer] = []
 
-    # --- Honorarios: costos y gastos, o renta exenta del 25 % --------------
+    # Honorarios: costos y gastos o exenta del 25 %
     trabajo = insumos.trabajo
     if (
         trabajo.ingresos_sin_vinculo_laboral > CERO
@@ -833,7 +776,7 @@ def simular_escenarios(
             "superan el 60 % del ingreso, marcar la casilla 140.",
         ))
 
-    # --- Anticipo: procedimiento directo o promedio ------------------------
+    # Anticipo: directo o promedio
     if insumos.anios_declarando > 1 and insumos.impuesto_neto_anio_anterior > CERO:
         actual_metodo = (insumos.metodo_anticipo or "DIRECTO").upper()
         nombres = {
@@ -852,7 +795,7 @@ def simular_escenarios(
             "cuenta del año siguiente.",
         ))
 
-    # --- Cupo sin usar del límite del art. 336 num. 3 ----------------------
+    # Cupo sin usar del límite del num. 3
     limite = parametros.limite_general
     base_limite = base.valor("CG-BASE-LIMITE")
     techo = min(
@@ -899,9 +842,7 @@ def simular_escenarios(
     )
 
 
-# ---------------------------------------------------------------------------
 # Depreciación
-# ---------------------------------------------------------------------------
 
 
 def guardar_depreciacion(
@@ -966,12 +907,7 @@ def _activos_depreciables(
 def listar_depreciacion(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> List[DatosDepreciacionLeer]:
-    """Los activos con depreciación registrada y lo que deducen este año.
-
-    Se devuelve el cálculo junto con los datos para que la interfaz no tenga
-    que replicar la regla del art. 137: el tope y el recorte los decide el
-    motor, en un solo sitio.
-    """
+    """Activos depreciables y su deducción del año (art. 137, calculada en el motor)."""
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     )
@@ -1016,7 +952,7 @@ def listar_depreciacion(
 
 
 def categorias_depreciacion(anio_gravable: int) -> List[dict]:
-    """Catálogo del art. 137 con su tasa, para el selector del frontend."""
+    """Catálogo del art. 137 con tasas."""
     parametros = obtener_parametros(anio_gravable)
     etiquetas = {
         c.value: c.value.replace("_Y_", " y ").replace("_", " ").capitalize()
@@ -1033,9 +969,7 @@ def categorias_depreciacion(anio_gravable: int) -> List[dict]:
     ]
 
 
-# ---------------------------------------------------------------------------
 # Pérdidas fiscales
-# ---------------------------------------------------------------------------
 
 
 def listar_perdidas(
@@ -1084,9 +1018,7 @@ def eliminar_perdida(
     session.commit()
 
 
-# ---------------------------------------------------------------------------
-# Pagos individuales en efectivo
-# ---------------------------------------------------------------------------
+# Pagos en efectivo
 
 
 def listar_pagos_efectivo(
@@ -1142,9 +1074,7 @@ def eliminar_pago_efectivo(
     session.commit()
 
 
-# ---------------------------------------------------------------------------
 # Facilidades
-# ---------------------------------------------------------------------------
 
 
 def catalogo_plantillas(
@@ -1164,7 +1094,7 @@ def crear_deduccion_desde_plantilla(
     codigo: str,
     valor: Decimal,
 ) -> DeduccionSolicitada:
-    """Crea una deducción a partir del catálogo, con su norma ya puesta."""
+    """Crea una deducción desde el catálogo, con su norma."""
     plantilla = plantillas.obtener(codigo)
     if plantilla is None:
         disponibles = ", ".join(p.codigo for p in plantillas.PLANTILLAS)
@@ -1193,8 +1123,7 @@ def crear_deduccion_desde_plantilla(
     )
 
 
-# Campos que NO se copian de un año al siguiente: son del periodo y copiarlos
-# arrastraría cifras del año pasado a la declaración nueva sin que se note.
+# Campos del periodo: no se copian al año siguiente.
 _NO_SE_COPIAN = {
     "periodo_fiscal_id", "contribuyente_id", "actualizado_en",
     "actualizado_por_contador_id", "impuesto_neto_anio_anterior",
@@ -1220,12 +1149,9 @@ _PREFIJO_PERDIDA = "CG-PERDIDA-EJERCICIO-"
 def _arrastrar_perdidas(
     session: Session, contribuyente_id: int, anio_origen: int, liquidacion: LiquidacionLeer
 ) -> None:
-    """Registra como compensables las pérdidas que dejó el año anterior.
+    """Registra las pérdidas del año anterior como compensables (arts. 147 y 330).
 
-    La pérdida del ejercicio se trunca en cero al liquidar y solo sirve si se
-    registra para compensarla después (arts. 147 y 330 ET). Antes había que
-    acordarse de digitarla; si ya hay una registrada de ese año y ese tipo, se
-    respeta la que puso el contador.
+    No sobrescribe una ya registrada del mismo año y tipo.
     """
     tipos_validos = {t.value for t in TipoRentaPerdida}
     for renglon in liquidacion.renglones:
@@ -1256,18 +1182,11 @@ def _arrastrar_perdidas(
 def copiar_hoja_del_anio_anterior(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> HojaLiquidacion:
-    """Copia del año anterior solo lo que no cambia: situación, no cifras.
+    """Copia del año anterior la situación, no las cifras.
 
-    Dependientes, método de anticipo, si optó por costos y gastos y a qué
-    subcédula va la depreciación son características del contribuyente que se
-    repiten año a año. Los valores en pesos no: copiarlos metería las cifras
-    del año pasado en la declaración nueva sin que nadie lo note, que es
-    exactamente el error que esta facilidad debería evitar.
-
-    Tres cifras sí se traen, porque no se copian de la hoja sino que salen de
-    la liquidación del año anterior: el impuesto neto (habilita el método del
-    promedio del art. 807), el anticipo liquidado (casilla 130 de este año) y
-    las pérdidas del ejercicio, que quedan registradas para compensar.
+    Se copian: dependientes, método de anticipo, opción de costos, subcédula de
+    depreciación. Se traen de la liquidación anterior: impuesto neto (art. 807),
+    anticipo (casilla 130) y pérdidas del ejercicio.
     """
     periodo = obtener_periodo_fiscal(
         session, contador_id, contribuyente_id, periodo_fiscal_id
@@ -1282,9 +1201,8 @@ def copiar_hoja_del_anio_anterior(
         raise SinPeriodoAnteriorError(
             f"No hay un periodo {periodo.anio_gravable - 1} registrado para copiar"
         )
-    # La hoja destino se crea ANTES de leer la del año anterior. `obtener_hoja`
-    # hace commit cuando la crea, y un commit expira los objetos ya cargados:
-    # leer la hoja anterior antes del commit devolvería valores vacíos.
+    # Crear la hoja destino antes de leer la anterior: obtener_hoja hace commit
+    # y el commit expira los objetos cargados.
     hoja = obtener_hoja(session, contador_id, contribuyente_id, periodo.id)
 
     hoja_anterior = session.get(HojaLiquidacion, anterior.id)
@@ -1297,7 +1215,7 @@ def copiar_hoja_del_anio_anterior(
         if campo not in _NO_SE_COPIAN:
             setattr(hoja, campo, valor)
 
-    # El impuesto neto del año anterior se toma de su liquidación, no se copia.
+    # Impuesto neto del año anterior: de su liquidación.
     try:
         liquidacion_anterior = liquidar_periodo(
             session, contador_id, contribuyente_id, anterior.id
@@ -1306,10 +1224,8 @@ def copiar_hoja_del_anio_anterior(
             (r.valor for r in liquidacion_anterior.renglones if r.codigo == "IMP-NETO"),
             CERO,
         )
-        # El anticipo que se liquidó el año pasado (casilla 133) es, por
-        # definición, la casilla 130 de este: se trae con el valor aproximado
-        # con que se declaró. El saldo a favor NO se arrastra solo, porque pudo
-        # haberse pedido en devolución; el cruce con la exógena lo verifica.
+        # Casilla 133 del año anterior = casilla 130 de este. El saldo a favor no se
+        # arrastra: pudo pedirse en devolución.
         hoja.anticipo_pagado_anio_anterior = next(
             (r.valor_declarable for r in liquidacion_anterior.renglones
              if r.codigo == "ANTICIPO-SIGUIENTE"),
@@ -1330,7 +1246,7 @@ def copiar_hoja_del_anio_anterior(
 
 
 
-# --- Venta de inmuebles ------------------------------------------------------
+# Venta de inmuebles
 
 
 def _leer_venta(v: VentaInmueble, anio_gravable: int) -> VentaInmuebleLeer:

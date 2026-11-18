@@ -1,6 +1,5 @@
 <script setup>
-// Registrar lo presentado (una copia de la liquidación) y, si después cambia
-// algo, ver qué cuesta corregir.
+// Registro de la presentación y costo de corregir.
 import { reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'

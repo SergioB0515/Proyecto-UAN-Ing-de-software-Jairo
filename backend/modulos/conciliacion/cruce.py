@@ -1,36 +1,12 @@
-"""El cruce de la declaración contra lo que la DIAN ya sabe.
+"""Cruce de la declaración contra la exógena. Funciones puras.
 
-La exógena trae dos cosas: el detalle de lo que cada tercero reportó y cinco
-«topes» consolidados, que son las cifras con las que la DIAN decide a quién
-mirar. Este módulo responde tres preguntas con esos datos:
+1. Cuadre: cada tope se reconstruye desde el detalle.
+2. Riesgo: patrimonio, ingresos, retenciones y GO declarados frente a lo reportado.
+3. Oportunidad: retenciones sin restar, compras con factura sin deducir el 1 %.
 
-1. **¿El archivo es coherente consigo mismo?** Cada tope se reconstruye desde
-   el detalle. Si no cuadra, el archivo se leyó mal o cambió de formato.
-2. **¿Lo que se va a declarar aguanta el cruce?** El patrimonio, los ingresos,
-   las retenciones y las ganancias ocasionales de la liquidación se comparan
-   con lo que reportaron los terceros. Declarar menos de lo que la DIAN ya
-   tiene es lo que origina un requerimiento.
-3. **¿Se está dejando plata sobre la mesa?** Retenciones reportadas que no se
-   están restando, o compras con factura electrónica que dan derecho a la
-   deducción del 1 % y no se registraron.
-
-Son funciones puras: reciben los registros, los topes y las cifras de la
-liquidación, y no tocan la base de datos.
-
-Cómo se arma cada tope
-----------------------
-El archivo marca cada registro con el tope al que pertenece en la columna de
-uso sugerido («Tope 4: Consignaciones e inversiones»). Dos reglas no son una
-simple suma, y ambas salen del propio archivo:
-
-- El **Tope 2 (patrimonio)** es el mayor entre la suma de lo reportado por
-  terceros y el patrimonio bruto declarado el año anterior; el archivo lo dice
-  en el registro «Total patrimonio bruto declarado en el año anterior».
-- Los bienes con **porcentaje de participación** menor al 100 % cuentan por
-  esa fracción. El archivo no lo dice con esas palabras: se dedujo de un
-  archivo real en el que sumar los avalúos completos superaba el tope, cosa
-  imposible si el tope es el mayor de los dos valores. Si en otro archivo la
-  regla no se cumple, el cuadre del tope lo delata.
+Reglas de los topes, deducidas de archivos reales:
+- Tope 2 = max(suma de terceros, patrimonio bruto declarado el año anterior).
+- Bienes con participación < 100 % cuentan por su fracción.
 """
 
 from core.formato import pesos
@@ -42,7 +18,7 @@ from typing import Dict, List, Optional, Sequence
 CERO = Decimal("0")
 _PESO = Decimal("1")
 
-# Margen para decir «coincide»: mil pesos, que es la aproximación del art. 577.
+# Tolerancia: mil pesos (aproximación del art. 577).
 TOLERANCIA = Decimal("1000")
 
 ALTA, MEDIA, OPORTUNIDAD, OK, SIN_DATO = "ALTA", "MEDIA", "OPORTUNIDAD", "OK", "SIN_DATO"
@@ -71,7 +47,7 @@ def _d(valor) -> Decimal:
 
 @dataclass
 class Registro:
-    """Lo que el cruce necesita de un registro de la exógena."""
+    """Registro de la exógena, en lo que usa el cruce."""
 
     detalle: str
     valor: Decimal
@@ -90,14 +66,8 @@ class Registro:
 
     @property
     def es_flujo_sin_bien(self) -> bool:
-        """Un movimiento que no deja nada que declarar como activo o ingreso.
-
-        Consumos con tarjeta (tope 3), compras con factura electrónica (tope 5)
-        y movimientos o consignaciones en cuentas (tope 4) son dinero que pasó,
-        no un bien: marcarlos como «no declarados» es una alarma falsa. Las
-        inversiones del mismo tope 4 —un CDT, un fondo— son distintas: o siguen
-        siendo un activo a 31 de diciembre o dejaron un rendimiento, así que sí
-        hay algo que buscar en la declaración.
+        """Flujo sin bien asociado: tarjeta (tope 3), compras (5), consignaciones (4).
+        Las inversiones del tope 4 sí se buscan: activo o rendimiento.
         """
         if self.tope in (3, 5):
             return True
@@ -105,7 +75,7 @@ class Registro:
 
     @property
     def piso_de_tope(self) -> Optional[int]:
-        """El registro que fija el piso de un tope (patrimonio del año anterior)."""
+        """Registro que fija el piso de un tope."""
         m = _PATRON_PISO.search(self.uso_sugerido or "")
         return int(m.group(1)) if m else None
 
@@ -124,7 +94,7 @@ class Registro:
 
     @property
     def valor_propio(self) -> Decimal:
-        """El valor que le corresponde al contribuyente según su participación."""
+        """Valor según la participación del contribuyente."""
         return (self.valor * self.participacion).quantize(Decimal("0.01"))
 
     def renglones(self) -> List[int]:
@@ -182,7 +152,7 @@ class ResultadoCruce:
 
 @dataclass
 class CifrasDeclaradas:
-    """Lo que la liquidación va a llevar al formulario, por casilla."""
+    """Cifras de la liquidación, por casilla."""
 
     casillas: Dict[int, Decimal]
     compras_con_factura_electronica: Decimal = CERO
@@ -194,13 +164,11 @@ class CifrasDeclaradas:
 
     @property
     def ingresos_brutos(self) -> Decimal:
-        # Ingresos brutos de todas las cédulas y ganancias ocasionales.
+        # Ingresos brutos de todas las cédulas y GO.
         return self.c(32, 43, 58, 74, 99, 104, 107, 108, 109, 112)
 
 
-# ---------------------------------------------------------------------------
-# 1. Los topes
-# ---------------------------------------------------------------------------
+# 1. Topes
 
 
 def _numero_de_tope(etiqueta: str) -> Optional[int]:
@@ -272,16 +240,12 @@ def cuadrar_topes(
     return sorted(cuadres, key=lambda c: c.numero)
 
 
-# ---------------------------------------------------------------------------
-# 2 y 3. Lo declarado frente a lo reportado
-# ---------------------------------------------------------------------------
+# 2 y 3. Declarado frente a reportado
 
 
 def _suma_por_renglon(registros: Sequence[Registro], renglon: int) -> Optional[Decimal]:
-    """Suma de los registros que la DIAN asigna a un renglón concreto.
-
-    Devuelve None si el archivo no trae ninguno: «la DIAN no reporta nada» y
-    «la DIAN reporta cero» no son lo mismo.
+    """Suma de los registros asignados a un renglón. None si no hay ninguno
+    (no reportado != reportado en cero).
     """
     propios = [
         r for r in registros
@@ -293,7 +257,7 @@ def _suma_por_renglon(registros: Sequence[Registro], renglon: int) -> Optional[D
 
 
 def _comparar_piso(clave, titulo, casillas, dian, declarado, que) -> Comparacion:
-    """Para cifras donde declarar MENOS que la DIAN es el riesgo."""
+    """Comparación donde el riesgo es declarar menos que la DIAN."""
     if dian is None:
         return Comparacion(clave, titulo, casillas, None, declarado, None, SIN_DATO,
                            f"La exógena no trae {que}.")
@@ -318,13 +282,9 @@ def _comparar_patrimonio(
     anio_anterior: Optional[Decimal],
     declarado: Decimal,
 ) -> Comparacion:
-    """Patrimonio bruto contra el Tope 2, distinguiendo de dónde sale el tope.
+    """Patrimonio bruto contra el tope 2.
 
-    El Tope 2 es el mayor entre lo que reportaron los terceros y lo que el
-    propio contribuyente declaró el año anterior. No son el mismo riesgo:
-    declarar menos de lo que un tercero reportó es una omisión que la DIAN
-    puede probar; declarar menos que el año pasado es normal si se vendió o se
-    gastó algo, y solo pide tener la explicación.
+    Menor que lo de terceros: ALTA. Menor que el año anterior: MEDIA.
     """
     if de_terceros is None and anio_anterior is None:
         return _comparar_piso("PATRIMONIO", "Patrimonio bruto", "29", tope,
@@ -367,25 +327,25 @@ def comparar(
 ) -> List[Comparacion]:
     salida: List[Comparacion] = []
 
-    # --- Patrimonio bruto contra el Tope 2 --------------------------------
+    # Patrimonio bruto / tope 2
     salida.append(_comparar_patrimonio(
         topes.get(2), patrimonio_de_terceros, patrimonio_anio_anterior,
         declarado.c(29)))
 
-    # --- Ingresos brutos contra el Tope 1 ---------------------------------
+    # Ingresos brutos / tope 1
     salida.append(_comparar_piso(
         "INGRESOS", "Ingresos brutos de todas las cédulas",
         "32, 43, 58, 74, 99, 107, 108 y 112", topes.get(1),
         declarado.ingresos_brutos, "ingresos"))
 
-    # --- Ganancias ocasionales contra los registros asignados a la 112 ----
+    # Ganancias ocasionales / casilla 112
     go_dian = _suma_por_renglon(registros, 112)
     if go_dian is not None:
         salida.append(_comparar_piso(
             "GANANCIA_OCASIONAL", "Ingresos por ganancias ocasionales", "112",
             go_dian, declarado.c(112), "ventas de bienes y otros ingresos ocasionales"))
 
-    # --- Retenciones contra los registros asignados a la 132 --------------
+    # Retenciones / casilla 132
     ret_dian = _suma_por_renglon(registros, 132)
     ret_decl = declarado.c(132)
     if ret_dian is None:
@@ -422,7 +382,7 @@ def comparar(
                 diferencia, OK, "Las retenciones restadas coinciden con las reportadas.",
             ))
 
-    # --- Saldo a favor del año anterior contra la 131 ---------------------
+    # Saldo a favor anterior / casilla 131
     saldo_dian = _suma_por_renglon(registros, 131)
     saldo_decl = declarado.c(131)
     if saldo_dian is not None and saldo_decl - saldo_dian > TOLERANCIA:
@@ -441,7 +401,7 @@ def comparar(
             f"anterior y solo se están imputando {pesos(saldo_decl)}.",
         ))
 
-    # --- Compras con factura electrónica: la deducción del 1 % ------------
+    # Compras con factura: deducción del 1 %
     beneficio = [
         r.valor for r in registros
         if "susceptible de beneficio" in (r.detalle or "").lower()
@@ -479,12 +439,7 @@ def comparar(
                 "Las compras registradas coinciden con las que reconoce la DIAN.",
             ))
 
-    # --- Indicios: gastar o mover más de lo que se declara ganar ----------
-    #
-    # No son errores. Son las comparaciones con las que la DIAN escoge a quién
-    # revisar, y tienen explicaciones legítimas: préstamos, traslados entre
-    # cuentas propias, ahorros de años anteriores. Lo que el contador necesita
-    # es saberlo antes de presentar, para tener la explicación lista.
+    # Indicios: gastos o movimientos superiores a los ingresos declarados.
     ingresos = declarado.ingresos_brutos
     gasto = topes.get(3, CERO) + topes.get(5, CERO)
     if gasto > ingresos + TOLERANCIA and gasto > CERO:

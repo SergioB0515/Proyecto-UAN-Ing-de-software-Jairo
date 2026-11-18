@@ -1,24 +1,9 @@
-"""Catálogo de deducciones y rentas exentas frecuentes.
+"""Catálogo de deducciones y rentas exentas frecuentes: norma, tope propio
+en UVT y si está sujeta al límite general. El valor lo pone el contador.
 
-Para qué
---------
-Sin esto, el contador teclea «Intereses de vivienda / Art. 119 ET / sujeto al
-límite» una vez por cada cliente. Con cien clientes son cien veces lo mismo,
-y cada vez es una oportunidad de equivocarse en la clasificación frente al
-límite del art. 336 num. 3, que es el error que más cambia el impuesto.
-
-El catálogo trae el concepto, su norma, su tope propio en UVT cuando lo tiene
-y si está sujeto al límite general. El contador sigue poniendo el valor: eso
-depende de los soportes del contribuyente, no del catálogo.
-
-Sobre `sujeto_a_limite_general`
--------------------------------
-La clasificación sigue el texto del art. 336: el numeral 3 dice que la
-deducción por dependientes va «en adición» al límite, y el numeral 5 dice
-expresamente que el 1 % de compras «no está sujeta al límite» del numeral 3.
-Parte de la doctrina divulgativa los clasifica como sujetos. Donde hay
-discusión, la plantilla lo dice en `nota` para que el contador decida, que es
-quien firma.
+sujeto_a_limite_general sigue el texto del art. 336: dependientes "en
+adición" (num. 3) y 1 % de compras "no está sujeta" (num. 5). Donde la
+doctrina difiere, se indica en nota.
 """
 
 from dataclasses import dataclass
@@ -42,12 +27,10 @@ class PlantillaDeduccion:
     tope_propio_uvt: Optional[Decimal] = None
     periodicidad_tope: str = "ANUAL"  # ANUAL | MENSUAL
     nota: str = ""
-    # Fila del formulario 210. Los aportes a AFC, FVP y AVC y los intereses de
-    # vivienda tienen casilla propia, separada del resto.
+    # Fila del 210 (AFC/FVP/AVC y vivienda tienen casilla propia).
     fila: str = DEDUCCION_OTRA
-    # Columna del formulario. `None` deja que el motor la reparta entre las
-    # columnas con renta líquida; se fija solo cuando la norma la determina,
-    # como en el art. 387, que exige relación laboral.
+    # Columna del 210. None: la imputa el motor. Se fija solo si la norma lo
+    # exige (art. 387: relación laboral).
     subcedula_sugerida: Optional[str] = None
 
 
@@ -170,8 +153,7 @@ PLANTILLAS: List[PlantillaDeduccion] = [
     ),
 ]
 
-# Conceptos que el motor ya calcula por su cuenta. Agregarlos como deducción
-# manual los contaría dos veces, así que el servicio los rechaza.
+# Conceptos que el motor calcula solo; no se aceptan como deducción manual.
 CODIGOS_CALCULADOS_POR_EL_MOTOR = {"DEPENDIENTES_336", "COMPRAS_1_PCT"}
 
 _POR_CODIGO = {p.codigo: p for p in PLANTILLAS}
@@ -182,7 +164,7 @@ def obtener(codigo: str) -> Optional[PlantillaDeduccion]:
 
 
 def catalogo(uvt: Decimal) -> List[dict]:
-    """El catálogo con los topes ya convertidos a pesos del año consultado."""
+    """Catálogo con topes en pesos del año."""
     salida = []
     for p in PLANTILLAS:
         tope_pesos = None

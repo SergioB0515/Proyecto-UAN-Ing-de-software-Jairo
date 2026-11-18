@@ -17,7 +17,7 @@ def _venta(**kw):
     return VentaInmueble(**base)
 
 
-# --- Tabla del art. 73 (Decreto 0449 de 2026) -------------------------------
+# Tabla del art. 73 (Decreto 0449 de 2026)
 
 
 def test_factores_contrastados_contra_dos_publicaciones_del_decreto():
@@ -41,7 +41,7 @@ def test_sin_tabla_para_el_ano_no_inventa_factor():
     assert factor_art_73(2026, "URBANO", 2010) is None
 
 
-# --- Costo fiscal (arts. 69, 72, 73) ----------------------------------------
+# Costo fiscal (arts. 69, 72, 73)
 
 
 def test_costo_reajustado_con_la_tabla_mas_mejoras():
@@ -66,7 +66,7 @@ def test_sin_tabla_usa_el_factor_que_escriba_el_contador_o_avisa():
     assert con.costo_fiscal == D("396000000")
 
 
-# --- Plazo de dos años (art. 300) -------------------------------------------
+# Plazo de dos años (art. 300)
 
 
 def test_dos_anos_o_mas_es_ganancia_ocasional():
@@ -82,7 +82,7 @@ def test_menos_de_dos_anos_es_renta_ordinaria():
     assert any("menos de dos años" in a for a in r.avisos)
 
 
-# --- Exención de casa de habitación (art. 311-1) ------------------------------
+# Exención de casa de habitación (art. 311-1)
 
 
 def test_la_casa_de_habitacion_exime_hasta_5000_uvt():
@@ -108,7 +108,7 @@ def test_vender_por_menos_del_costo_es_perdida_sin_utilidad():
     assert r.utilidad == D("0") and r.perdida == D("74400000")
 
 
-# --- API: de la venta a las casillas del 210 --------------------------------
+# API: de la venta a las casillas del 210
 
 
 def _token(client, email):

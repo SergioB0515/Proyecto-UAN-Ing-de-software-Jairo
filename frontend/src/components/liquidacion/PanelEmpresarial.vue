@@ -1,12 +1,5 @@
 <script setup>
-/**
- * Depreciación, pérdidas fiscales y pagos en efectivo.
- *
- * Va aparte de LiquidacionView porque solo le sirve a contribuyentes con
- * negocio: un asalariado no deprecia activos ni compensa pérdidas, y meterle
- * tres secciones vacías en la pantalla le estorba. La vista decide si lo
- * muestra; este componente solo sabe pintarlo.
- */
+// Depreciación, pérdidas fiscales y pagos en efectivo. Solo contribuyentes con negocio.
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'
@@ -162,7 +155,7 @@ onMounted(cargar)
   <div class="space-y-6">
     <MensajeError :mensaje="error" />
 
-    <!-- Depreciación --------------------------------------------------- -->
+    <!-- Depreciación -->
     <section class="hoja p-5">
       <h2>Depreciación de activos fijos</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">
@@ -256,7 +249,7 @@ onMounted(cargar)
       </p>
     </section>
 
-    <!-- Pérdidas fiscales ---------------------------------------------- -->
+    <!-- Pérdidas fiscales -->
     <section class="hoja p-5">
       <h2>Pérdidas fiscales de años anteriores</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">
@@ -318,7 +311,7 @@ onMounted(cargar)
       </form>
     </section>
 
-    <!-- Pagos en efectivo ----------------------------------------------- -->
+    <!-- Pagos en efectivo -->
     <section class="hoja p-5">
       <h2>Pagos individuales en efectivo</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">

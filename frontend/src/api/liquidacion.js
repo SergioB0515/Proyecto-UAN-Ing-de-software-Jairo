@@ -21,7 +21,7 @@ export async function imputarDeduccion(cid, pid, id, datos) {
   return data
 }
 
-// La misma liquidación con una sola decisión cambiada a la vez.
+// Escenarios: una decisión cambiada a la vez.
 export const obtenerEscenarios = (cid, pid) => obtener(`${base(cid, pid)}/escenarios`)
 
 export const eliminarDeduccion = (cid, pid, id) =>
@@ -39,11 +39,11 @@ export const liquidar = (cid, pid) => obtener(base(cid, pid))
 export const exportarLiquidacion = (cid, pid, formato) =>
   descargarArchivo(`${base(cid, pid)}/exportar`, { formato }, `liquidacion.${formato}`)
 
-// Borrador del formulario 210 casilla por casilla, para transcribir.
+// Borrador del 210 en PDF.
 export const descargarBorrador210 = (cid, pid) =>
   descargarArchivo(`${base(cid, pid)}/formulario-210`, {}, 'borrador_210.pdf')
 
-// --- Parte empresarial -----------------------------------------------------
+// Parte empresarial
 
 export const listarCategoriasDepreciacion = (anioGravable) =>
   obtener('/liquidacion/categorias-depreciacion', { anio_gravable: anioGravable })
@@ -87,7 +87,7 @@ export const crearDeduccionDesdePlantilla = (cid, pid, codigo, valor) =>
 export const copiarHojaDelAnterior = (cid, pid) =>
   enviar(`${base(cid, pid)}/hoja/copiar-del-anterior`)
 
-// --- Venta de inmuebles ----------------------------------------------------
+// Venta de inmuebles
 export const listarVentasInmuebles = (cid, pid) => obtener(`${base(cid, pid)}/ventas-inmuebles`)
 export const crearVentaInmueble = (cid, pid, datos) => enviar(`${base(cid, pid)}/ventas-inmuebles`, datos)
 export const eliminarVentaInmueble = (cid, pid, id) => cliente.delete(`${base(cid, pid)}/ventas-inmuebles/${id}`)

@@ -1,49 +1,21 @@
-"""Parámetros tributarios oficiales, versionados por año gravable.
+"""Parámetros tributarios por año gravable, con su norma.
 
-Por qué existe este archivo
----------------------------
-El impuesto de renta de personas naturales cambia *todos los años*: la UVT se
-reajusta por resolución de la DIAN cada diciembre, y los límites y tarifas
-cambian con cada reforma. Si esos números quedan dispersos en el código, la
-aplicación produce cifras equivocadas cada enero sin que nadie lo note.
-
-Aquí viven en un solo lugar, agrupados por año gravable y **con la norma que
-los fija citada al lado**. Para habilitar un año nuevo se agrega una entrada a
-PARAMETROS_POR_ANIO; no se toca el motor de liquidación.
-
-Convención de unidades
-----------------------
-- Todo importe en pesos es Decimal. Nunca float: en software contable el error
-  de representación binaria de float se acumula y descuadra los totales.
-- Los límites legales se expresan en UVT (como los escribe el Estatuto), no en
-  pesos. El motor los convierte a pesos multiplicando por la UVT del año.
-
-Estado de la normativa al 2026-11-03
-------------------------------------
-El régimen vigente para personas naturales es el de la Ley 2277 de 2022. El
-proyecto de ley de financiamiento radicado en julio de 2026 fue archivado por
-las comisiones económicas del Congreso, así que no modificó estos parámetros.
-Si una reforma posterior se aprueba, se agrega un bloque nuevo con su propio
-`regimen` y el motor sigue liquidando bien los años anteriores.
+Año nuevo = nueva entrada en PARAMETROS_POR_ANIO; el motor no cambia.
+Importes en Decimal. Límites en UVT, como en el Estatuto.
+Régimen vigente: Ley 2277 de 2022.
 """
 
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
-# ---------------------------------------------------------------------------
 # Estructuras
-# ---------------------------------------------------------------------------
 
 
 @dataclass(frozen=True)
 class TramoTarifa:
-    """Un renglón de una tabla de tarifas marginales expresada en UVT.
-
-    `impuesto_acumulado_uvt` es el impuesto de los tramos anteriores, tal como
-    lo trae impreso la tabla del Estatuto. Guardarlo evita recalcularlo y
-    permite comparar la implementación contra la tabla publicada renglón a
-    renglón, que es lo que revisaría un contador.
+    """Tramo de una tabla marginal en UVT. impuesto_acumulado_uvt: tal como lo
+    imprime el Estatuto.
     """
 
     desde_uvt: Decimal
@@ -59,7 +31,7 @@ class TramoTarifa:
 
 @dataclass(frozen=True)
 class LimiteUvt:
-    """Un límite legal con su porcentaje, su tope en UVT y su norma."""
+    """Límite legal: porcentaje, tope en UVT y norma."""
 
     porcentaje: Optional[Decimal]
     tope_uvt: Optional[Decimal]
@@ -68,14 +40,10 @@ class LimiteUvt:
 
 @dataclass(frozen=True)
 class TopeDeduccion:
-    """Tope propio de una deducción o renta exenta, aparte del límite general.
+    """Tope propio de una deducción o renta exenta.
 
-    `grupo` junta los conceptos que COMPARTEN un tope: los aportes voluntarios
-    a pensión y el ahorro en AFC no tienen 3.800 UVT cada uno, tienen 3.800 UVT
-    entre los dos. Tratarlos por separado duplicaría el beneficio.
-
-    `porcentaje_de_ingresos` es un segundo techo que se evalúa junto con el
-    tope en UVT: manda el menor de los dos.
+    grupo: conceptos con tope compartido (FVP + AFC: 3.800 UVT entre los dos).
+    porcentaje_de_ingresos: segundo techo; manda el menor.
     """
 
     codigo: str
@@ -88,11 +56,7 @@ class TopeDeduccion:
 
 @dataclass(frozen=True)
 class LimiteBancarizacion:
-    """Límites del art. 771-5 para aceptar pagos en efectivo.
-
-    El límite general es el MENOR entre tres cifras, no una sola. El
-    individual es un tope por operación, independiente del general.
-    """
+    """Límites del art. 771-5. General: el menor de tres cifras. Individual: por operación."""
 
     porcentaje_de_pagos: Decimal
     tope_uvt: Decimal
@@ -108,23 +72,22 @@ class ParametrosAnuales:
     uvt: Decimal
     fuente_uvt: str
 
-    # Tarifa del impuesto sobre la renta de personas naturales residentes.
+    # Tarifa de renta, residentes.
     tabla_renta: Tuple[TramoTarifa, ...]
     fuente_tabla_renta: str
 
-    # Depuración de la cédula general.
-    limite_general: LimiteUvt            # art. 336 num. 3
-    deduccion_dependientes: LimiteUvt    # art. 336 num. 3, inciso
+    # Cédula general.
+    limite_general: LimiteUvt  # art. 336 num. 3
+    deduccion_dependientes: LimiteUvt  # art. 336 num. 3, inciso
     max_dependientes: int
-    deduccion_compras: LimiteUvt         # art. 336 num. 5
-    renta_exenta_trabajo: LimiteUvt      # art. 206 num. 10
+    deduccion_compras: LimiteUvt  # art. 336 num. 5
+    renta_exenta_trabajo: LimiteUvt  # art. 206 num. 10
     renta_exenta_pensiones_uvt_mensual: Decimal  # art. 206 num. 5
     fuente_renta_exenta_pensiones: str
 
     # Dividendos (residentes).
-    descuento_dividendos: LimiteUvt      # art. 254-1
-    # Tarifa general del art. 240 que el art. 242 inc. 2 aplica a los dividendos
-    # gravados (par. 2 del art. 49) antes de llevarlos a la tabla del art. 241.
+    descuento_dividendos: LimiteUvt  # art. 254-1
+    # Tarifa del art. 240 para dividendos gravados (art. 242 inc. 2, art. 49 par. 2).
     tarifa_dividendos_gravados: Decimal
     fuente_dividendos_gravados: str
 
@@ -134,17 +97,17 @@ class ParametrosAnuales:
     fuente_ganancia_ocasional: str
     exencion_go_vivienda_uvt: Decimal
 
-    # Topes propios de cada deducción, anteriores al límite general.
+    # Topes propios, antes del límite general.
     topes_deducciones: Dict[str, TopeDeduccion]
 
-    # Pagos en efectivo (bancarización).
+    # Bancarización.
     bancarizacion: LimiteBancarizacion
 
-    # Depreciación: tasa anual máxima por tipo de bien (art. 137).
+    # Depreciación: tasa anual máxima (art. 137).
     tasas_depreciacion: Dict[str, Decimal]
     fuente_depreciacion: str
 
-    # Compensación de pérdidas fiscales.
+    # Compensación de pérdidas.
     anios_compensacion_perdidas: int
     fuente_compensacion_perdidas: str
 
@@ -152,23 +115,21 @@ class ParametrosAnuales:
     tarifa_renta_presuntiva: Decimal
     fuente_renta_presuntiva: str
 
-    # Anticipo del año siguiente (art. 807).
+    # Anticipo (art. 807).
     anticipo_primer_anio: Decimal
     anticipo_segundo_anio: Decimal
     anticipo_siguientes: Decimal
     fuente_anticipo: str
 
-    # Topes que obligan a declarar.
+    # Topes para declarar.
     topes_declarar_uvt: Dict[str, Decimal] = field(default_factory=dict)
     fuente_topes_declarar: str = ""
 
-    # Notas que el motor arrastra hasta la respuesta de la API, para que el
-    # contador vea dónde la norma es interpretable y no confíe a ciegas.
+    # Notas de interpretación que llegan a la respuesta de la API.
     notas: Tuple[str, ...] = ()
 
 
-# ---------------------------------------------------------------------------
-# Tabla del artículo 241 ET (vigente: Ley 2010 de 2019, art. 34)
+# Tabla del art. 241 ET (Ley 2010 de 2019, art. 34)
 #
 # Rango UVT              Marginal   Impuesto
 # > 0      a  1.090        0%       0
@@ -178,7 +139,6 @@ class ParametrosAnuales:
 # > 8.670  a 18.970       35%       2.296 UVT + 35% del exceso sobre 8.670
 # > 18.970 a 31.000       37%       5.901 UVT + 37% del exceso sobre 18.970
 # > 31.000                39%       10.352 UVT + 39% del exceso sobre 31.000
-# ---------------------------------------------------------------------------
 
 _TABLA_241 = (
     TramoTarifa(Decimal("0"), Decimal("1090"), Decimal("0.00"), Decimal("0")),
@@ -190,14 +150,8 @@ _TABLA_241 = (
     TramoTarifa(Decimal("31000"), None, Decimal("0.39"), Decimal("10352")),
 )
 
-# ---------------------------------------------------------------------------
-# Tasas máximas de depreciación anual (art. 137 ET)
-#
-# La norma fija topes de tasa anual, no vidas útiles mínimas: el contribuyente
-# puede estimar una vida útil menor, pero solo deduce hasta esta tasa. Por eso
-# el motor calcula la depreciación con la vida útil que registre el contador y
-# la recorta a este tope, en vez de imponer la vida útil.
-# ---------------------------------------------------------------------------
+# Tasas máximas de depreciación (art. 137 ET). Es tope de tasa, no vida útil:
+# se usa la vida útil registrada y se recorta a la tasa.
 
 _TASAS_DEPRECIACION = {
     "CONSTRUCCIONES_Y_EDIFICACIONES": Decimal("0.0222"),
@@ -218,16 +172,8 @@ _TASAS_DEPRECIACION = {
     "EQUIPO_DE_COMUNICACION": Decimal("0.2000"),
 }
 
-# ---------------------------------------------------------------------------
-# Topes propios de las deducciones y rentas exentas
-#
-# Se aplican ANTES del límite general del art. 336 num. 3: primero cada
-# concepto se recorta a su propio techo, y solo después la suma pasa por el
-# 40 % / 1.340 UVT. Invertir el orden acepta deducciones improcedentes cuando
-# el límite general no alcanza a morder.
-#
-# Los cuatro están en el instructivo oficial del formulario 210 de la DIAN.
-# ---------------------------------------------------------------------------
+# Topes propios (instructivo del 210). Se aplican antes del límite del
+# art. 336 num. 3.
 
 _TOPES_DEDUCCIONES = {
     "INTERESES_VIVIENDA": TopeDeduccion(
@@ -280,12 +226,7 @@ _NOTAS_LEY_2277 = (
 
 
 def _parametros_ley_2277(anio: int, uvt: str, fuente_uvt: str) -> ParametrosAnuales:
-    """Construye los parámetros de un año bajo el régimen de la Ley 2277 de 2022.
-
-    Solo cambia la UVT entre 2023 y 2026; el resto de los límites se fijan en
-    UVT y no se reajustan. Factorizarlo así evita que una corrección se aplique
-    a un año y se olvide en otro.
-    """
+    """Parámetros de un año bajo la Ley 2277 de 2022. Entre 2023 y 2026 solo cambia la UVT."""
     return ParametrosAnuales(
         anio_gravable=anio,
         regimen="LEY_2277_2022",
@@ -318,7 +259,7 @@ def _parametros_ley_2277(anio: int, uvt: str, fuente_uvt: str) -> ParametrosAnua
         fuente_renta_exenta_pensiones="Art. 206 num. 5 ET (1.000 UVT mensuales)",
         descuento_dividendos=LimiteUvt(
             porcentaje=Decimal("0.19"),
-            tope_uvt=Decimal("1090"),  # umbral: el descuento aplica sobre el exceso
+            tope_uvt=Decimal("1090"),  # el descuento aplica sobre el exceso
             fuente_legal="Art. 254-1 ET, adicionado por la Ley 2277 de 2022, art. 12",
         ),
         tarifa_dividendos_gravados=Decimal("0.35"),

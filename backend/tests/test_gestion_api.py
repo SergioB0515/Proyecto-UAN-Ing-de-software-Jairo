@@ -1,8 +1,4 @@
-"""La gestión de la declaración, a través de la API.
-
-El recorrido de una temporada: pedir documentos, registrar la declaración del
-año anterior, presentar, corregir y pagar tarde.
-"""
+"""Gestión por la API: documentos, año anterior, presentación, corrección, mora."""
 
 from datetime import date
 from decimal import Decimal as D
@@ -58,7 +54,7 @@ def _etapa(g, clave):
     return next(e for e in g["proceso"]["etapas"] if e["clave"] == clave)
 
 
-# --- Etapas -----------------------------------------------------------------
+# Etapas
 
 
 def test_una_declaracion_nueva_empieza_por_la_exogena(client):
@@ -82,7 +78,7 @@ def test_las_etapas_de_criterio_las_marca_el_contador(client):
     assert _etapa(g, "APROBACION")["hecha"] is False
 
 
-# --- Documentos -------------------------------------------------------------
+# Documentos
 
 
 def _subir_exogena(client, h, cid, pid):
@@ -135,7 +131,7 @@ def test_un_documento_que_no_existe_da_404(client):
     assert r.status_code == 404
 
 
-# --- Presentación y corrección ----------------------------------------------
+# Presentación y corrección
 
 
 def test_presentar_guarda_la_declaracion_y_fija_la_fecha(client):
@@ -173,12 +169,11 @@ def test_un_cambio_despues_de_presentar_es_una_correccion_con_sancion(client):
     assert D(corr["sancion"]) == max(
         (D(corr["mayor_valor"]) * D("0.10")).quantize(D("1")), D("10") * D("52374"))
     assert corr["plazo"] == "2029-08-20"
-    # Las tasas publicadas llegan hasta octubre de 2026; noviembre y el 1 de
-    # diciembre (el «hoy» de la prueba) no se inventan: se reportan.
+    # Tasas hasta octubre de 2026; noviembre y el 1 de diciembre se reportan sin tasa.
     assert corr["intereses"]["meses_sin_tasa"] == ["2026-11", "2026-12"]
     assert [t["desde"][:7] for t in corr["intereses"]["tramos"]] == [
         "2026-08", "2026-09", "2026-10"]
-    # Lo vigente sigue siendo lo presentado hasta que se registre la corrección.
+    # Vigente: lo presentado, hasta registrar la corrección.
     assert g["saldo_a_pagar"] == antes
 
     r = client.post(f"{_b(cid, pid)}/gestion/presentaciones", headers=h,
@@ -200,7 +195,7 @@ def test_una_correccion_no_puede_ser_anterior_a_la_ultima(client):
     assert r.status_code == 422
 
 
-# --- Año anterior, comparativo y beneficio de auditoría ----------------------
+# Año anterior, comparativo y beneficio de auditoría
 
 
 def test_la_declaracion_anterior_alimenta_comparativo_beneficio_y_hoja(client):
@@ -230,7 +225,7 @@ def test_la_declaracion_anterior_alimenta_comparativo_beneficio_y_hoja(client):
     anticipo = next(c for c in g["comparativo"]["coherencias"] if "130" in c["descripcion"])
     assert anticipo["cuadra"] is True
 
-    # El año anterior quedó como periodo cerrado, no como un año en trabajo.
+    # Año anterior como periodo cerrado.
     periodos = client.get(f"/contribuyentes/{cid}/periodos-fiscales", headers=h).json()
     assert next(p for p in periodos if p["anio_gravable"] == 2024)["estado"] == "CERRADO"
 
@@ -251,17 +246,17 @@ def test_traer_del_anio_anterior_sin_declaracion_da_422(client):
                        headers=h).status_code == 422
 
 
-# --- Intereses de mora ------------------------------------------------------
+# Intereses de mora
 
 
 def test_pagar_tarde_genera_intereses_con_las_tasas_de_la_dian(client):
     h = _token(client, "gestion-l@example.com")
     cid, pid = _contribuyente(client, h)
-    # Las tasas publicadas por la DIAN vienen con la app: no hay que cargarlas.
+    # Tasas oficiales incluidas.
     tasas = client.get("/tasas-interes-moratorio", headers=h).json()
     assert {(t["anio"], t["mes"]) for t in tasas} >= {(2026, 8), (2026, 9)}
 
-    # Año anterior con 4 M de impuesto: este año lo supera de sobra.
+    # Año anterior con 4 M de impuesto.
     client.post(f"/contribuyentes/{cid}/declaraciones-anteriores", headers=h, json={
         "anio_gravable": 2024, "fecha_presentacion": "2025-08-15",
         "casillas": {"126": 4_000_000}})
@@ -276,7 +271,7 @@ def test_pagar_tarde_genera_intereses_con_las_tasas_de_la_dian(client):
     esperado = (capital * D("0.2766") / 365 * 11 + capital * D("0.2724") / 365 * 30)
     assert D(i["valor"]) == esperado.quantize(D("1"))
     assert _etapa(g, "PAGO")["hecha"]
-    # Pagó tarde: pierde el beneficio de auditoría aunque lo alcanzara.
+    # Pago tardío: sin beneficio de auditoría.
     pago = next(c for c in g["beneficio_auditoria"]["condiciones"]
                 if "Pagada" in c["descripcion"])
     assert pago["cumple"] is False
@@ -293,7 +288,7 @@ def test_una_tasa_editada_reemplaza_la_publicada(client):
     assert D(str(agosto["tasa_efectiva_anual"])) == D("30")
 
 
-# --- Informe, cartera y aislamiento -----------------------------------------
+# Informe, cartera y aislamiento
 
 
 def test_el_informe_para_el_cliente_es_un_pdf(client):
@@ -356,14 +351,13 @@ def test_la_liquidacion_usa_el_patrimonio_liquido_declarado_el_ano_anterior(clie
     client.post(f"/contribuyentes/{cid}/declaraciones-anteriores", headers=h, json={
         "anio_gravable": 2024, "fecha_presentacion": "2025-08-15",
         "casillas": {"31": 10_000_000}})
-    # Un activo de 400 M este año contra 10 M declarados: la comparación
-    # patrimonial tiene que partir de lo declarado.
+    # Activo de 400 M frente a 10 M declarados: se parte de lo declarado.
     client.post(f"/contribuyentes/{cid}/activos", headers=h, json={
         "descripcion": "Apartamento", "tipo": "INMUEBLE", "valor": 400_000_000,
         "periodo_fiscal_id": pid})
     liq = client.get(f"/liquidacion{_b(cid, pid)}", headers=h).json()
     comparacion = next(r for r in liq["renglones"] if r["codigo"] == "COMP-PATRIMONIAL")
-    # 400 M de hoy − 10 M declarados el año anterior.
+    # 400 M − 10 M.
     assert "incremento $390.000.000" in comparacion["formula"]
 
 

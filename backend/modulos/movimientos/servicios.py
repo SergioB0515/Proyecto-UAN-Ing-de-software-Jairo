@@ -310,8 +310,7 @@ def calcular_costo_ventas(
         session, contador_id, contribuyente_id, periodo_fiscal_id
     ):
         salidas = [l for l in kardex.lineas if l.tipo == TipoMovimiento.SALIDA]
-        # Las sumas se hacen en Decimal: sumar cientos de líneas en binario
-        # acumula un error de centavos que termina en la declaración.
+        # Sumas en Decimal.
         ingresos_d = sum(
             (costeo._d(l.cantidad) * costeo._d(l.precio_venta_unitario or 0)
              for l in salidas),

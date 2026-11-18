@@ -1,9 +1,4 @@
-"""Pruebas del catálogo de casillas del formulario 210.
-
-No prueban aritmética: prueban que el catálogo sea íntegro y que no se pueda
-imprimir un número de casilla equivocado. Un documento que el contador va a
-transcribir a MUISCA con una casilla errada es peor que uno sin casillas.
-"""
+"""Integridad del catálogo de casillas del 210."""
 
 import pytest
 
@@ -45,7 +40,7 @@ def test_la_grilla_de_la_cedula_general_tiene_las_cuatro_subcedulas():
 
 
 def test_las_rentas_de_trabajo_con_vinculo_no_tienen_casilla_de_costos():
-    """No es un hueco del catálogo: la ley no permite restarlos ahí."""
+    """Sin casilla: la ley no permite restar costos ahí."""
     assert casilla_de_subcedula("Costos y deducciones procedentes", "TRABAJO") is None
     assert casilla_de_subcedula("Costos y deducciones procedentes", "CAPITAL") == 60
 
@@ -65,7 +60,7 @@ def test_ningun_codigo_del_motor_mapea_a_dos_casillas():
 
 
 def test_los_codigos_mapeados_existen_de_verdad_en_la_liquidacion():
-    """Si el motor renombra un renglón, el mapeo queda apuntando al vacío."""
+    """Todo código mapeado existe en el motor."""
     parametros = PARAMETROS_POR_ANIO[2024]
     liq = liquidar(
         InsumosLiquidacion(
@@ -75,8 +70,7 @@ def test_los_codigos_mapeados_existen_de_verdad_en_la_liquidacion():
         parametros,
     )
     emitidos = {r.codigo for r in liq.renglones}
-    # Los de pensiones, dividendos, presuntiva y ganancia ocasional solo salen
-    # cuando hay esos ingresos; se excluyen de esta comprobación.
+    # Pensiones, dividendos, presuntiva y GO solo salen con esos ingresos.
     condicionales = {
         "RENTA-PRESUNTIVA", "PEN-RENTA-LIQUIDA", "DIV-RENTA-LIQUIDA",
         "GO-BASE", "GO-IMPUESTO",
@@ -86,7 +80,7 @@ def test_los_codigos_mapeados_existen_de_verdad_en_la_liquidacion():
 
 
 def test_un_codigo_agregado_no_mapea_y_explica_por_que():
-    """No se le puede asignar una casilla a un valor que el formulario separa."""
+    """Los agregados por subcédula no tienen casilla."""
     for codigo, razon in SIN_MAPEO_POR_AGREGACION.items():
         assert codigo not in MAPEO_2024
         assert casilla_de(codigo, 2024) is None
@@ -103,5 +97,5 @@ def test_casillas_clave(codigo, numero):
 
 
 def test_un_ano_sin_numeracion_propia_cae_en_la_de_2024():
-    """Es deliberado, y el exportado lo advierte: la DIAN puede renumerar."""
+    """AG 2025 usa la numeración de 2024; el exportado lo advierte."""
     assert casilla_de("SALDO-A-PAGAR", 2026).numero == 136

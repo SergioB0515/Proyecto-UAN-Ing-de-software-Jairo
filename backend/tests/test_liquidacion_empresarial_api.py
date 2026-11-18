@@ -1,9 +1,5 @@
-"""Pruebas de la API de la parte empresarial.
-
-Lo que el motor no puede probar solo: que el costo de ventas del inventario
-llegue a la liquidación, que la depreciación se persista y se recalcule, que
-las pérdidas vivan por contribuyente y no por periodo, y que las facilidades
-no arrastren cifras del año anterior.
+"""API empresarial: costo de ventas, depreciación, pérdidas por contribuyente
+y facilidades sin arrastre de cifras.
 """
 
 from decimal import Decimal as D
@@ -39,9 +35,7 @@ def _activo(client, h, cid, pid, descripcion, valor, tipo="VEHICULO"):
     ).json()["id"]
 
 
-# ---------------------------------------------------------------------------
-# Costo de ventas: el hueco que motivó todo esto
-# ---------------------------------------------------------------------------
+# Costo de ventas
 
 
 def test_el_costo_de_ventas_del_inventario_llega_a_la_liquidacion(client):
@@ -79,9 +73,7 @@ def test_un_asalariado_no_arrastra_costo_de_ventas(client):
     assert _valor(liq, "CG-COSTO-VENTAS") == D("0")
 
 
-# ---------------------------------------------------------------------------
 # Depreciación
-# ---------------------------------------------------------------------------
 
 
 def test_la_depreciacion_se_guarda_y_devuelve_calculada(client):
@@ -162,9 +154,7 @@ def test_la_depreciacion_se_puede_quitar(client):
     assert client.get(f"{_base(cid, pid)}/depreciacion", headers=h).json() == []
 
 
-# ---------------------------------------------------------------------------
 # Pérdidas fiscales
-# ---------------------------------------------------------------------------
 
 
 def test_las_perdidas_viven_por_contribuyente_y_marcan_su_vigencia(client):
@@ -206,8 +196,7 @@ def test_la_perdida_registrada_se_compensa_en_la_liquidacion(client):
     liq = client.get(_base(cid, pid), headers=h).json()
 
     assert _valor(liq, "CG-COMPENSACION") == D("30000000.00")
-    # Ver la nota del motor: la compensación va después del límite del 40 %,
-    # como en las casillas 87 → 89 → 90 del formulario.
+    # La compensación va después del límite (casillas 87 -> 89 -> 90).
     assert _valor(liq, "CG-RL-ANTES") == D("100000000.00")
     assert _valor(liq, "CG-RENTA-LIQUIDA") == D("70000000.00")
 
@@ -231,9 +220,7 @@ def test_una_perdida_de_otro_contribuyente_no_se_borra(client):
     assert respuesta.status_code == 404
 
 
-# ---------------------------------------------------------------------------
 # Bancarización
-# ---------------------------------------------------------------------------
 
 
 def test_los_pagos_en_efectivo_marcan_los_que_superan_el_limite_individual(client):
@@ -280,9 +267,7 @@ def test_el_limite_general_del_771_5_se_refleja_en_la_liquidacion(client):
     assert any("771-5" in d for d in liq["diagnosticos"])
 
 
-# ---------------------------------------------------------------------------
 # Facilidades
-# ---------------------------------------------------------------------------
 
 
 def test_el_catalogo_de_plantillas_trae_la_norma_y_el_tope_en_pesos(client):
@@ -299,7 +284,7 @@ def test_el_catalogo_de_plantillas_trae_la_norma_y_el_tope_en_pesos(client):
     assert vivienda["fuente_legal"] == "Art. 119 ET"
     assert D(vivienda["tope_anual_en_pesos"]) == D("1200") * D("49799")
     assert vivienda["sujeto_a_limite_general"] is True
-    # Las que el motor ya calcula vienen marcadas para que no se dupliquen.
+    # Las calculadas por el motor vienen marcadas.
     assert por_codigo["COMPRAS_1_PCT"]["lo_calcula_el_motor"] is True
 
 
@@ -323,7 +308,7 @@ def test_crear_una_deduccion_desde_plantilla_pone_la_norma_sola(client):
 
 
 def test_una_plantilla_que_el_motor_ya_calcula_no_se_puede_agregar(client):
-    """Agregarla la contaría dos veces y bajaría el impuesto de forma indebida."""
+    """Rechazada: el motor ya la calcula."""
     h = _token(client, "emp-pla3@example.com")
     cid = client.post("/contribuyentes", json={"nombre": "L", "rut": "14",
                       "tipo_contribuyente": "ASALARIADO"}, headers=h).json()["id"]
@@ -356,7 +341,7 @@ def test_una_plantilla_inexistente_lista_las_disponibles(client):
 
 
 def test_copiar_la_hoja_trae_la_situacion_pero_no_las_cifras(client):
-    """Copiar los pesos del año pasado metería cifras viejas sin que se note."""
+    """No se copian los pesos del año anterior."""
     h = _token(client, "emp-cop1@example.com")
     cid = client.post("/contribuyentes", json={"nombre": "N", "rut": "16",
                       "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]
@@ -382,7 +367,7 @@ def test_copiar_la_hoja_trae_la_situacion_pero_no_las_cifras(client):
 
 
 def test_copiar_la_hoja_trae_el_impuesto_neto_del_ano_anterior(client):
-    """Es el dato que habilita el método del promedio del art. 807."""
+    """Habilita el método del promedio (art. 807)."""
     h = _token(client, "emp-cop2@example.com")
     cid = client.post("/contribuyentes", json={"nombre": "O", "rut": "17",
                       "tipo_contribuyente": "ASALARIADO"}, headers=h).json()["id"]
@@ -413,13 +398,11 @@ def test_copiar_sin_ano_anterior_falla_con_un_mensaje_claro(client):
     assert "2024" in respuesta.json()["detail"]
 
 
-# ---------------------------------------------------------------------------
 # Comparación patrimonial
-# ---------------------------------------------------------------------------
 
 
 def test_el_patrimonio_del_ano_anterior_se_deduce_de_los_activos_registrados(client):
-    """Ya está en la aplicación: volver a teclearlo es una oportunidad de error."""
+    """Patrimonio anterior desde los activos registrados."""
     h = _token(client, "emp-pat1@example.com")
     cid = client.post("/contribuyentes", json={"nombre": "Q", "rut": "19",
                       "tipo_contribuyente": "ASALARIADO"}, headers=h).json()["id"]
@@ -476,9 +459,7 @@ def test_el_patrimonio_anterior_manual_sobrescribe_el_deducido(client):
     assert _valor(liq, "COMP-PATRIMONIAL") == D("50000000.00")
 
 
-# ---------------------------------------------------------------------------
 # Auditoría y aislamiento
-# ---------------------------------------------------------------------------
 
 
 def test_las_decisiones_empresariales_quedan_auditadas(client):
@@ -549,9 +530,7 @@ def test_la_liquidacion_expone_la_casilla_de_cada_renglon(client):
     assert liq["casillas_marcadas"] == []
 
 
-# ---------------------------------------------------------------------------
 # Sanción por extemporaneidad y escenarios
-# ---------------------------------------------------------------------------
 
 
 def _asalariado(client, h, rut, ingreso=150000000, anio=2025):
@@ -687,9 +666,7 @@ def test_copiar_la_hoja_arrastra_el_anticipo_y_la_perdida_del_ano_anterior(clien
 
 
 def test_los_gastos_y_devoluciones_de_capital_y_no_laborales_llegan_a_sus_casillas(client):
-    """Antes solo entraban el costo de ventas del kardex y la depreciación: los
-    gastos de operación de un negocio no tenían dónde digitarse.
-    """
+    """Gastos de operación del negocio en la hoja."""
     h = _token(client, "emp-gas1@example.com")
     cid = client.post("/contribuyentes", json={"nombre": "Gastos", "rut": "900402",
                       "tipo_contribuyente": "INDEPENDIENTE"}, headers=h).json()["id"]

@@ -42,8 +42,7 @@ class RegistroExogenaBase(SQLModel):
     renglones_sugeridos: Optional[str] = Field(default=None, max_length=100)
     valor: float
     uso_sugerido: Optional[str] = Field(default=None, max_length=500)
-    # True cuando la DIAN ofrece varios renglones posibles en vez de asignar
-    # uno. Esos valores NO se suman a ningún renglón: los asigna el contador.
+    # True si la DIAN ofrece varios renglones posibles; no se suma a ninguno.
     renglones_son_condicionales: bool = Field(default=False)
     info_adicional: Optional[str] = Field(default=None, max_length=1000)
     es_auto_reportado: bool = Field(default=False)

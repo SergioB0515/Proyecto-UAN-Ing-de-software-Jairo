@@ -1,6 +1,5 @@
 <script setup>
-// Venta de inmuebles: costo fiscal (arts. 69, 72 y 73), utilidad y si va como
-// ganancia ocasional (dos años o más) o como renta ordinaria (art. 300).
+// Venta de inmuebles: costo fiscal (arts. 69, 72, 73) y tratamiento (art. 300).
 import { onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'

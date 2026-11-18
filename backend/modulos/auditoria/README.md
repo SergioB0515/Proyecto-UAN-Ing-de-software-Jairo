@@ -1,13 +1,6 @@
 # modulos/auditoria/
 
-Seguridad y trazabilidad (Incremento 6):
-
-- `IntentoAcceso`: cada intento de inicio de sesión (exitoso, fallido o
-  bloqueado) con su IP. Con 5 fallos en 15 minutos el email queda bloqueado
-  hasta que el fallo más antiguo salga de la ventana (`servicios.py`).
-- `EventoAuditoria`: cada acción que modifica datos o descarga un reporte.
-  La registra `AuditoriaMiddleware` a partir del nombre del endpoint, sin
-  que cada módulo tenga que acordarse de hacerlo. Subir, editar y eliminar
-  un soporte, y descargar el ZIP de soportes de un año, también se auditan.
-- `GET /auditoria` y `GET /auditoria/accesos`: lo que ve el contador en la
-  pantalla «Actividad». Cada contador solo ve lo suyo.
+- `IntentoAcceso`: cada intento de login con IP. 5 fallos en 15 minutos bloquean el email.
+- `EventoAuditoria`: lo registra `AuditoriaMiddleware` según el nombre del endpoint
+  (`ACCIONES_AUDITADAS`), solo en respuestas exitosas.
+- `GET /auditoria`, `GET /auditoria/accesos`: actividad del propio contador.

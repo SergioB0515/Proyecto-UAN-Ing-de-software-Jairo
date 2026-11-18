@@ -26,15 +26,8 @@ from modulos.reportes.router import router as router_reportes
 
 
 def _sembrar_demo_si_corresponde() -> None:
-    """Carga los datos de demostración al arrancar, si así se pidió.
-
-    Pensado para un despliegue donde no hay terminal a mano (Render, Railway):
-    basta con definir SEMBRAR_DEMO_AL_ARRANCAR=1.
-
-    En los arranques siguientes no vuelve a sembrar, pero sí regenera los
-    archivos de los soportes adjuntos si faltan. Eso importa en plataformas
-    sin disco persistente: la base de datos conserva las filas, pero el disco
-    se borra en cada reinicio y las vistas previas quedarían rotas.
+    """Siembra la demo al arrancar si SEMBRAR_DEMO_AL_ARRANCAR=1.
+    En arranques siguientes solo regenera los adjuntos que falten.
     """
     if os.getenv("SEMBRAR_DEMO_AL_ARRANCAR", "").strip().lower() not in {"1", "true", "si", "sí"}:
         return
@@ -65,14 +58,8 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Prefijo bajo el que se montan las rutas de la API.
-#
-# En desarrollo vale "" y todo queda como siempre (las pruebas llaman a
-# /contribuyentes, /cartera, ...). En el contenedor de producción vale "/api",
-# porque el SPA se sirve en el mismo origen y sus rutas de vue-router
-# (/cartera, /contribuyentes/3/resumen) chocarían con las de la API.
-# Si se cambia, hay que construir el frontend con el mismo valor en
-# VITE_API_URL: el Dockerfile y docker-compose.yml ya lo hacen.
+# Prefijo de la API. "" en desarrollo; "/api" en el contenedor, donde el SPA
+# comparte origen. Debe coincidir con VITE_API_URL del build.
 PREFIJO_API = os.getenv("PREFIJO_API", "").rstrip("/")
 
 app.add_middleware(AuditoriaMiddleware)
@@ -114,7 +101,7 @@ for _router in (
 ):
     app.include_router(_router, prefix=PREFIJO_API)
 
-# Endpoint de reinicio de la demo: solo existe si se define DEMO_RESET_TOKEN.
+# Reinicio de la demo: solo con DEMO_RESET_TOKEN definido.
 if os.getenv("DEMO_RESET_TOKEN"):
     from modulos.demo.router import router as router_demo
 
@@ -126,14 +113,8 @@ def salud():
     return {"estado": "ok"}
 
 
-# ---------------------------------------------------------------------------
-# Frontend compilado (despliegue en un solo contenedor)
-#
-# En desarrollo el SPA lo sirve Vite en el puerto 5173 y esta parte no hace
-# nada. En el contenedor de producción, el build de Vue queda en
-# ESTATICOS_SPA (por defecto backend/static) y FastAPI lo sirve en la misma
-# URL que la API: una sola dirección, sin CORS y sin un segundo servicio.
-# ---------------------------------------------------------------------------
+# Frontend compilado. En el contenedor, el build de Vue (ESTATICOS_SPA) se
+# sirve desde FastAPI en el mismo origen. En desarrollo lo sirve Vite.
 
 _DIRECTORIO_BASE = os.path.dirname(os.path.abspath(__file__))
 ESTATICOS_SPA = os.path.abspath(
@@ -142,12 +123,7 @@ ESTATICOS_SPA = os.path.abspath(
 
 
 class _SpaStaticFiles(StaticFiles):
-    """StaticFiles que devuelve index.html cuando la ruta no es un archivo.
-
-    Sin esto, recargar la página en /contribuyentes/3 da 404: el servidor
-    busca un archivo con ese nombre en vez de dejar que vue-router resuelva
-    la ruta en el navegador.
-    """
+    """StaticFiles que devuelve index.html si la ruta no es un archivo (vue-router)."""
 
     async def get_response(self, path: str, scope):
         try:

@@ -1,144 +1,70 @@
-# Datos de demostración y guion de la demo
-
-Todo lo de esta carpeta existe para una sola cosa: que mostrar la aplicación
-no dependa de registrar datos a mano ni de que nada falle en vivo.
-
-## Cargar los datos
-
-Desde `backend/`, con el entorno virtual activo y `.env` configurado:
+# Datos de demostración
 
 ```bash
-python semilla_demo.py              # carga los datos (no duplica si ya existen)
-python semilla_demo.py --reiniciar  # borra los datos demo y los vuelve a crear
-python semilla_demo.py --estado     # dice si hay datos cargados
-python demo/generar_exogena_demo.py # genera los Excel para cargar en vivo
+python semilla_demo.py              # carga (idempotente)
+python semilla_demo.py --reiniciar  # borra y vuelve a crear
+python semilla_demo.py --estado     # informa qué hay cargado
+python demo/generar_exogena_demo.py # Excel para cargar en vivo
 ```
 
-**Credenciales:** `contador@demo.co` / `demo1234`
+Credenciales: `contador@demo.co` / `demo1234`. Solo se modifica el contador demo.
+Datos ficticios. Año gravable fijo: `ANIO = 2025`.
 
-La semilla solo toca el contador demo: si ya tienes tu propio usuario con
-datos en esa base, no se borra nada tuyo.
+## Contribuyentes
 
-## Los seis contribuyentes
-
-No son relleno. Cada uno existe para enseñar un estado distinto, y juntos
-cubren los cuatro resultados posibles de la conciliación y cuatro de los
-estados de vencimiento.
-
-| Contribuyente | Qué demuestra | Conciliación | Vencimiento |
+| Contribuyente | Caso | Conciliación | Vencimiento |
 |---|---|---|---|
-| **Luz Marina Cifuentes Rojas** | Caso limpio. Además tiene periodo 2024 con activos, para «copiar activos de otro año» | 3 COINCIDE | Presentada |
-| **Héctor Fabio Quintero Pardo** | Diferencia de $80.000 que **no** se marca como error (está en la tolerancia del 0,5 %), y un vehículo que ningún tercero reportó | 2 COINCIDE, 1 no reportado por tercero | Pendiente |
-| **Diana Carolina Mosquera Luna** | **El caso que justifica el proyecto**: $42.300.000 de honorarios reportados por un tercero que nunca se declararon, más una discrepancia real de $7.500.000 | 1 COINCIDE, 1 discrepancia, 1 **no declarado** | Próxima a vencer |
-| **Jorge Enrique Lamprea Ávila** | Todos los topes por debajo del umbral: el sistema dice «no obligado a declarar» y el contador se ahorra el trabajo | 2 COINCIDE | Pendiente |
-| **Nelson Andrés Beltrán Gómez** | Comerciante con inventario: 4 productos, los dos métodos de costeo, kardex y costo de ventas. Obligado, con alerta y sin presentar | 2 COINCIDE, 1 discrepancia, 1 **no declarado**, 2 no reportados | **Vencida** |
-| **Sandra Milena Osorio Peña** | Periodo abierto **sin exógena**: es el que se usa para cargar el archivo en vivo | — | Pendiente |
+| Luz Marina Cifuentes Rojas | Limpio; periodo 2024 para copiar activos | 3 COINCIDE | Presentada |
+| Héctor Fabio Quintero Pardo | $80.000 de diferencia dentro de tolerancia; vehículo no reportado | 2 COINCIDE, 1 no reportado | Pendiente |
+| Diana Carolina Mosquera Luna | $42.300.000 de honorarios no declarados; discrepancia de $7.500.000 | 1 COINCIDE, 1 discrepancia, 1 no declarado | Próxima |
+| Jorge Enrique Lamprea Ávila | Bajo todos los topes: no obligado | 2 COINCIDE | Pendiente |
+| Nelson Andrés Beltrán Gómez | Comerciante: inventario, PEPS y promedio, kardex; periodo abierto | 2 COINCIDE, 1 discrepancia, 1 no declarado, 2 no reportados | Vencida |
+| Sandra Milena Osorio Peña | Sin exógena, para cargarla en vivo | — | Pendiente |
 
-El panel de cartera queda así: 6 contribuyentes, 4 obligados, 2 alertas sin
-declarar, 1 vencida, 1 próxima.
+Cuatro contribuyentes tienen `fecha_vencimiento_manual` relativa a la fecha de
+siembra (+7, +21, +45, +60 días): el calendario oficial del AG 2025 ya venció.
 
-### Sobre las fechas de vencimiento
+## Gestión
 
-El calendario oficial del año gravable 2025 termina el 26 de octubre de 2026.
-Después de esa fecha, cualquier contribuyente sin fecha manual aparece como
-**vencida**, y el panel se vería todo en rojo. Por eso cuatro de los seis
-llevan `fecha_vencimiento_manual` calculada al momento de sembrar
-(hoy + 7, + 21, + 45 y + 60 días): así el panel muestra varios estados sea
-cual sea el día de la presentación.
+| Contribuyente | Estado |
+|---|---|
+| Luz Marina | 7 de 7. Declaración 2024 manual: comparativo, coherencias, beneficio negado por el mínimo de 71 UVT. |
+| Diana Carolina | Documentos: 2 recibidos, resto pendiente, mensaje para el cliente. |
+| Nelson Andrés | Vencido el 20 de agosto: sanción, intereses por mes, aviso de tasa faltante (noviembre 2026). |
 
-## Archivos de exógena para cargar en vivo
+## Archivos de exógena (`demo/archivos/`)
 
-`python demo/generar_exogena_demo.py` deja en `demo/archivos/`:
+- `exogena_osorio_pena_2025.xlsx`: COINCIDE, DISCREPANCIA ($11.300.000 frente a
+  $14.850.000), NO_DECLARADO (arriendos $9.600.000), NO_REPORTADO (vehículo).
+- `exogena_con_filas_invalidas.xlsx`: dos filas no numéricas, reportadas como error.
+- `no_es_un_excel.txt`: rechazado.
 
-- **`exogena_osorio_pena_2025.xlsx`** — archivo válido de Sandra Milena. Al
-  cargarlo, la conciliación produce de una vez un COINCIDE, una DISCREPANCIA
-  (cuenta: declaró $11.300.000, el banco reportó $14.850.000), un NO DECLARADO
-  (arriendos por $9.600.000) y un NO REPORTADO POR TERCERO (el carro).
-- **`exogena_con_filas_invalidas.xlsx`** — el mismo archivo con dos filas sin
-  valor numérico. El importador las reporta como errores de fila y procesa el
-  resto, en vez de caerse.
-- **`no_es_un_excel.txt`** — para mostrar que la app rechaza lo que no es un
-  Excel de la DIAN.
+## Adjuntos
 
-**Descárgalos antes de la presentación.** No dependas de encontrarlos en el
-escritorio ni de generarlos en el momento.
+| Archivo | Asociado a |
+|---|---|
+| `impuesto-predial-2025.pdf` | Apartamento Suba, Luz Marina |
+| `certificado-ingresos-y-retenciones.pdf` | Honorarios de Diana ($61.500.000 frente a $54.000.000 declarados) |
+| `rut-actualizado.pdf` | Nelson, documentos generales |
+| `factura-fe-1042.png` | Documento FE-1042 de Nelson |
 
-## Soportes adjuntos
+Se generan en código y `asegurar_adjuntos_demo()` los recrea al arrancar si
+faltan (disco no persistente).
 
-La semilla crea cuatro soportes y **genera los archivos**, no los sube a mano:
+## Recorrido
 
-| Adjunto | Va en | Para qué |
-|---|---|---|
-| `impuesto-predial-2025.pdf` | Activo «Apartamento Suba» de Luz Marina | Recibo que respalda el avalúo |
-| `certificado-ingresos-y-retenciones.pdf` | Honorarios de Diana Carolina | Dice $61.500.000; ella declaró $54.000.000. Es el soporte de la discrepancia |
-| `rut-actualizado.pdf` | Nelson Andrés (documentos generales) | — |
-| `factura-fe-1042.png` | Documento soporte FE-1042 de Nelson | Imagen, para la vista previa |
+1. Cartera: 6 clientes, 4 obligados, 2 alertas, 1 vencido.
+2. Jorge Enrique: no obligado.
+3. Diana Carolina: conciliación, borrador por renglón, soportes.
+4. Héctor Fabio: diferencia dentro de tolerancia.
+5. Nelson Andrés: kardex, costo de ventas, cierre del periodo.
+6. Sandra Milena: cargar la exógena en vivo.
+7. Exportar la cartera.
 
-Los cuatro son previsualizables desde la aplicación.
+## Reinicio
 
-Se generan así, y no subiéndolos, por el despliegue: los adjuntos viven en
-disco y en una plataforma sin disco persistente (Render Free) se borran en
-cada reinicio. `asegurar_adjuntos_demo()` los vuelve a crear en cada arranque
-si faltan, de modo que la pantalla de Soportes nunca aparece vacía.
-`python semilla_demo.py --estado` dice cuántos faltan en disco.
-
-## Guion sugerido (8–10 minutos)
-
-1. **Login** con las credenciales demo. Panel de cartera: seis clientes, dos
-   con alertas, uno vencido. *«Esto es lo que un contador no puede ver hoy sin
-   abrir cliente por cliente.»*
-2. **Jorge Enrique** → obligación de declarar: no supera ningún tope. El
-   sistema descarta un cliente en dos segundos.
-3. **Diana Carolina** → conciliación. Aquí está el hallazgo: $42.300.000 que
-   un tercero reportó y nunca se declararon. Y la discrepancia de $7.500.000.
-4. **Héctor Fabio** → la diferencia de $80.000 aparece como COINCIDE. *«No
-   genera ruido por cualquier peso de diferencia.»*
-5. **Diana Carolina → borrador de renglones**: los valores agrupados por
-   renglón del formulario, listos para trasladar.
-6. **Nelson Andrés** → inventario, kardex y costo de ventas; cierre del
-   periodo en vivo (el periodo queda abierto a propósito).
-7. **Diana Carolina → soportes**: el certificado del pagador dice
-   $61.500.000 y en la aplicación hay $54.000.000. El hallazgo con su
-   respaldo documental al lado.
-8. **Sandra Milena → exógena**: cargar `exogena_osorio_pena_2025.xlsx` en
-   vivo y pasar de inmediato a la conciliación. Si sobra tiempo, cargar
-   `no_es_un_excel.txt` para mostrar la validación.
-9. **Exportar** el panel de cartera a Excel o PDF.
-
-## Si algo se daña a mitad de la demo
-
-Con `DEMO_RESET_TOKEN` definido en el entorno, la aplicación expone:
+Con `DEMO_RESET_TOKEN` definido:
 
 ```bash
-curl -X POST https://TU-DOMINIO/api/demo/reiniciar -H "X-Demo-Token: TU-TOKEN"
+curl -X POST https://DOMINIO/api/demo/reiniciar -H "X-Demo-Token: TOKEN"
 ```
-
-Devuelve los datos demo a su estado inicial en segundos, sin abrir una
-terminal en el servidor y sin tocar ningún otro usuario. Si la variable no
-está definida, el endpoint no existe.
-
-## Sobre las cifras
-
-Las cédulas, NIT, nombres, matrículas y placas son **ficticios**.
-
-Los umbrales UVT (`UMBRALES` en `semilla_demo.py`) y los códigos de concepto
-de la exógena son valores de referencia para la demostración: antes de
-presentarlos como dato real hay que contrastarlos con la resolución de la
-DIAN del año gravable correspondiente.
-
-El año gravable está fijo en `ANIO = 2025`. **No lo derives de la fecha
-actual**: si cambia, los cálculos dejan de ser reproducibles y la demo deja
-de coincidir con las capturas de `documentacion/10-evidencias-funcionamiento.md`.
-
-## Gestión de la temporada (pestaña «Gestión y presentación»)
-
-La semilla deja tres declaraciones en momentos distintos del proceso:
-
-| Contribuyente | Qué muestra |
-|---|---|
-| Luz Marina Cifuentes Rojas | Proceso terminado (7 de 7). Declaración de 2024 registrada a mano: comparativo casilla por casilla, coherencia del anticipo y del saldo a favor, y el beneficio de auditoría negado por el mínimo de 71 UVT del año anterior. Firmeza en 2029. |
-| Diana Carolina Mosquera Luna | Recolección de documentos a una semana del plazo: dos recibidos, el resto pendiente, y el mensaje listo para mandarle al cliente. |
-| Nelson Andrés Beltrán Gómez | Venció el 20 de agosto sin presentar. Sanción mínima incluida en el saldo, intereses de mora por tramos mensuales con la tasa de la DIAN y el aviso de que falta la tasa de noviembre de 2026 (se deja sin cargar a propósito). |
-
-En la cartera, la columna «Etapa» dice qué sigue en cada declaración. El
-botón «Descargar informe» genera el PDF para el cliente.

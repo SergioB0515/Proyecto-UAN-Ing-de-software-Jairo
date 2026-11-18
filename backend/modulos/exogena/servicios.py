@@ -31,11 +31,8 @@ PATRON_CONCEPTO = re.compile(r"\(Concepto:\s*(\d+)\)", re.IGNORECASE)
 
 PATRON_RENGLON = re.compile(r"\bR\d+\b")
 
-# La DIAN a veces no asigna el renglón: ofrece un menú de posibilidades y deja
-# la decisión al declarante ("Según el bien o derecho reportado se puede usar
-# en renglones como ... | R112 ... | R29 ... | R30 ..."). Tomarlos como
-# definitivos suma el mismo valor en varios renglones a la vez: la misma plata
-# contada como patrimonio, como deuda y como ganancia ocasional.
+# Renglones condicionales ("Según el bien o derecho reportado se puede usar
+# en renglones como ..."): no se toman como asignados.
 PATRONES_CONDICIONALES = (
     re.compile(r"se\s+puede(?:n)?\s+usar", re.IGNORECASE),
     re.compile(r"seg[uú]n\s+el\s+(?:bien|tipo|concepto)", re.IGNORECASE),

@@ -1,13 +1,5 @@
-"""Cálculos de la parte empresarial: depreciación, bancarización, pérdidas y
-comparación patrimonial.
-
-Viven aparte de `motor.py` por dos razones. Primera, cada uno se puede probar
-y revisar por separado contra su norma, que es como lo revisaría un contador.
-Segunda, `motor.py` orquesta la liquidación y ya es largo; mezclar aquí la
-tabla del art. 137 lo volvería ilegible.
-
-Todas las funciones son puras y trabajan en `Decimal`. Ninguna toca la base de
-datos ni conoce un número del Estatuto: los parámetros llegan por argumento.
+"""Depreciación, bancarización, compensación de pérdidas y comparación
+patrimonial. Funciones puras en Decimal; parámetros por argumento.
 """
 
 from dataclasses import dataclass, field
@@ -37,19 +29,12 @@ def _pct(fraccion: Decimal) -> str:
     return porcentaje(fraccion)
 
 
-# ---------------------------------------------------------------------------
-# Depreciación (arts. 128 a 131 y 137 ET)
-# ---------------------------------------------------------------------------
+# Depreciación (arts. 128-131 y 137 ET)
 
 
 @dataclass
 class ActivoDepreciable:
-    """Un activo fijo con los datos que la depreciación necesita.
-
-    `categoria` debe ser una de las claves de la tabla del art. 137. Si no lo
-    es, el cálculo no adivina una tasa: devuelve un diagnóstico y excluye el
-    activo, porque aplicar la tasa equivocada cambia la deducción.
-    """
+    """Activo fijo. categoria fuera del art. 137: se excluye con diagnóstico."""
 
     descripcion: str
     costo_fiscal: Decimal
@@ -70,17 +55,9 @@ class ResultadoDepreciacion:
 def calcular_depreciacion(
     activos: List[ActivoDepreciable], parametros: ParametrosAnuales
 ) -> ResultadoDepreciacion:
-    """Depreciación deducible del periodo, por línea recta y topada por el art. 137.
+    """Depreciación del periodo en línea recta, topada a la tasa del art. 137.
 
-    El art. 137 fija **tasas anuales máximas**, no vidas útiles obligatorias.
-    El contribuyente puede estimar una vida útil menor —y así lo registra en su
-    contabilidad—, pero fiscalmente solo deduce hasta la tasa de la tabla. Por
-    eso aquí se calcula con la vida útil que registró el contador y luego se
-    recorta, en vez de imponer la vida útil de la tabla.
-
-    La base depreciable es el costo fiscal menos el valor residual, y nunca se
-    deprecia más allá de esa base: un activo ya depreciado por completo deja de
-    generar deducción aunque siga en uso.
+    Base: costo fiscal − valor residual; no se deprecia más allá de ella.
     """
     resultado = ResultadoDepreciacion()
 
@@ -147,9 +124,7 @@ def calcular_depreciacion(
     return resultado
 
 
-# ---------------------------------------------------------------------------
 # Bancarización (art. 771-5 ET)
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -160,12 +135,7 @@ class PagoIndividual:
 
 @dataclass
 class InsumosBancarizacion:
-    """Totales del año. Se capturan, no se derivan.
-
-    La aplicación solo conoce las compras de inventario; los demás pagos del
-    contribuyente no están aquí. Derivar el total de lo que hay en la base
-    daría una cifra incompleta que parece completa, que es peor que pedirla.
-    """
+    """Totales de pagos del año. Se capturan: la app solo conoce compras de inventario."""
 
     total_pagos_del_anio: Decimal = CERO
     pagos_en_efectivo: Decimal = CERO
@@ -192,17 +162,10 @@ def calcular_bancarizacion(
     costos_y_deducciones_totales: Decimal,
     parametros: ParametrosAnuales,
 ) -> ResultadoBancarizacion:
-    """Parte de los pagos en efectivo que se acepta como costo o deducción.
+    """Pagos en efectivo aceptados como costo (art. 771-5).
 
-    El límite general del parágrafo 1 es el **menor** entre tres cifras: el
-    40 % de los pagos totales, 40.000 UVT y el 35 % de los costos y deducciones
-    totales. Lo que exceda ese menor no es deducible.
-
-    El límite individual del parágrafo 2 es distinto y se evalúa aparte: una
-    persona natural con rentas no laborales no puede pagar en efectivo una
-    operación que supere 100 UVT. Esas operaciones se listan para que el
-    contador las revise; el motor no las descuenta por su cuenta, porque la
-    consecuencia depende de si el pago se canalizó o no.
+    Par. 1: min(40 % de pagos, 40.000 UVT, 35 % de costos y deducciones).
+    Par. 2: operaciones > 100 UVT se listan; no se descuentan automáticamente.
     """
     limite = parametros.bancarizacion
     resultado = ResultadoBancarizacion()
@@ -269,9 +232,7 @@ def calcular_bancarizacion(
     return resultado
 
 
-# ---------------------------------------------------------------------------
-# Compensación de pérdidas fiscales
-# ---------------------------------------------------------------------------
+# Compensación de pérdidas
 
 
 @dataclass
@@ -294,20 +255,10 @@ def calcular_compensacion_perdidas(
     anio_gravable: int,
     parametros: ParametrosAnuales,
 ) -> ResultadoCompensacion:
-    """Imputa pérdidas de años anteriores contra la renta líquida del mismo tipo.
+    """Compensa pérdidas de años anteriores (art. 330 ET, DUR 1625 art. 1.2.1.20.5).
 
-    Dos restricciones que no se pueden saltar (art. 330 ET y art. 1.2.1.20.5
-    del DUR 1625 de 2016):
-
-    1. **Mismo tipo de renta.** Una pérdida de arrendamientos no se resta de la
-       utilidad de un negocio. Las rentas de trabajo con vínculo laboral no
-       admiten compensación (art. 156), ni las de pensiones ni las de
-       dividendos.
-    2. **Doce periodos gravables.** Una pérdida más antigua caduca y no se
-       compensa, aunque siga registrada.
-
-    Las pérdidas se consumen de la más antigua a la más reciente: es lo que
-    conviene al contribuyente, porque las que están por caducar se usan primero.
+    Solo contra el mismo tipo de renta; caducan a los 12 periodos. Se consumen de
+    la más antigua a la más reciente.
     """
     resultado = ResultadoCompensacion()
     limite_anio = anio_gravable - parametros.anios_compensacion_perdidas
@@ -362,16 +313,14 @@ def calcular_compensacion_perdidas(
     return resultado
 
 
-# ---------------------------------------------------------------------------
-# Renta por comparación patrimonial (arts. 236 a 239 ET)
-# ---------------------------------------------------------------------------
+# Comparación patrimonial (arts. 236-239 ET)
 
 
 @dataclass
 class InsumosComparacionPatrimonial:
     patrimonio_liquido_anterior: Optional[Decimal] = None
     impuestos_pagados_en_el_anio: Decimal = CERO
-    justificaciones: Decimal = CERO  # valorizaciones, reajuste fiscal, herencias…
+    justificaciones: Decimal = CERO  # valorizaciones, reajuste fiscal, herencias
     aceptar_como_renta_gravable: bool = False
 
 
@@ -392,27 +341,17 @@ def calcular_comparacion_patrimonial(
     rentas_exentas: Decimal,
     ganancia_ocasional_neta: Decimal,
 ) -> ResultadoComparacionPatrimonial:
-    """Compara el incremento del patrimonio líquido con lo que lo explica.
+    """Renta por comparación patrimonial.
 
-        diferencia = incremento − (renta gravable + rentas exentas
-                     + ganancia ocasional neta − impuestos pagados
-                     + justificaciones)
+        diferencia = incremento − (renta gravable + exentas + GO neta
+                     − impuestos pagados + justificaciones)
 
-    Los impuestos pagados se restan de lo que justifica porque son una salida
-    de dinero: redujeron el patrimonio y no pudieron financiar su aumento.
-
-    **El resultado no se suma a la base por sí solo.** El art. 236 admite
-    prueba en contrario: el contribuyente puede demostrar que el aumento
-    obedece a causas justificativas (valorizaciones, reajuste fiscal del
-    art. 70, herencias, pasivos no declarados antes). Por eso el motor lo
-    calcula, lo reporta y solo lo incorpora si el contador marca que lo acepta.
-    Incorporarlo automáticamente inventaría un impuesto.
+    Admite prueba en contrario (art. 236): solo entra a la base si el contador
+    la acepta.
     """
     resultado = ResultadoComparacionPatrimonial()
     if insumos.patrimonio_liquido_anterior is None:
-        # Solo se avisa si hay patrimonio que comparar. Sin activos registrados
-        # no falta nada, y un diagnóstico en cada liquidación sin patrimonio
-        # sería ruido que entrena al contador a ignorar los diagnósticos.
+        # Sin activos registrados no se diagnostica.
         if patrimonio_liquido_actual > CERO:
             resultado.diagnosticos.append(
                 "No hay patrimonio líquido del año anterior registrado, así que no "

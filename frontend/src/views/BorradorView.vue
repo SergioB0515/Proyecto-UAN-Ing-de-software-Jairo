@@ -50,9 +50,7 @@ onMounted(async () => {
       </p>
     </div>
 
-    <!-- Cuadre contra los topes del propio archivo. La DIAN informa el
-         detalle y también el consolidado, así que el borrador se puede
-         verificar solo. -->
+    <!-- Cuadre contra los topes del archivo -->
     <section v-if="borrador.cuadres?.length" class="hoja max-w-3xl p-5">
       <h2>Cuadre contra los topes del archivo</h2>
       <p class="mt-1 text-sm text-tinta-suave">
@@ -89,7 +87,7 @@ onMounted(async () => {
       </table>
     </section>
 
-    <!-- Registros que la DIAN no asignó a un renglón concreto. -->
+    <!-- Registros sin renglón asignado -->
     <section v-if="borrador.sin_asignar?.length" class="hoja max-w-3xl p-5">
       <h2>Sin renglón asignado</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">

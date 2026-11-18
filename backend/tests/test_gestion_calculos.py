@@ -20,7 +20,7 @@ UVT_2025 = D("49799")
 VENCE = date(2026, 8, 20)
 
 
-# --- Firmeza (art. 714) -----------------------------------------------------
+# Firmeza (art. 714)
 
 
 def test_firmeza_general_es_tres_anos_desde_el_vencimiento():
@@ -60,7 +60,7 @@ def test_sumar_meses_respeta_el_fin_de_mes():
     assert sumar_meses(date(2028, 2, 29), 12) == date(2029, 2, 28)
 
 
-# --- Beneficio de auditoría (art. 689-3, Ley 2294 de 2023 art. 69) ----------
+# Beneficio de auditoría (art. 689-3, Ley 2294 de 2023 art. 69)
 
 
 def test_incremento_de_35_por_ciento_da_seis_meses():
@@ -114,7 +114,7 @@ def test_fuera_de_los_anos_prorrogados_no_hay_beneficio():
     assert not b.vigente and b.meses is None
 
 
-# --- Corrección (arts. 588, 589, 644) ---------------------------------------
+# Corrección (arts. 588, 589, 644)
 
 
 def test_correccion_que_aumenta_lleva_el_10_por_ciento_del_mayor_valor():
@@ -174,7 +174,7 @@ def test_meses_o_fraccion_cuenta_un_dia_como_un_mes():
     assert meses_o_fraccion(date(2026, 8, 20), date(2026, 9, 21)) == 2
 
 
-# --- Intereses de mora (arts. 634 y 635) ------------------------------------
+# Intereses de mora (arts. 634 y 635)
 
 TASAS = {(2026, 8): D("0.2766"), (2026, 9): D("0.2724")}
 
@@ -200,7 +200,7 @@ def test_pagar_a_tiempo_no_genera_intereses():
     assert calcular_intereses(D("10000000"), VENCE, VENCE, TASAS).valor == D("0")
 
 
-# --- Comparativo ------------------------------------------------------------
+# Comparativo
 
 
 def test_marca_las_variaciones_grandes_y_no_las_pequenas():
@@ -226,7 +226,7 @@ def test_el_anticipo_y_el_saldo_a_favor_deben_venir_del_ano_anterior():
     assert saldo.cuadra is False and saldo.esperado == D("800000")
 
 
-# --- Documentos -------------------------------------------------------------
+# Documentos
 
 
 def _reg(nit, nombre, detalle, concepto=None, info=None, **kw):

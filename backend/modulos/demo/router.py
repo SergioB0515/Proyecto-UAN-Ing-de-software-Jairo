@@ -1,18 +1,9 @@
-"""Reinicio de los datos de demostración desde la propia aplicación.
+"""Reinicio de los datos demo.
 
-Existe por una sola razón: si algo se daña a mitad de una sustentación (un
-registro borrado por error, un periodo cerrado sin querer), devolver la base a
-su estado inicial debe tomar segundos y no obligar a abrir una terminal.
-
-El router SOLO se monta si la variable de entorno ``DEMO_RESET_TOKEN`` está
-definida. En un despliegue que no sea de demostración, simplemente no se
-define y el endpoint no existe.
+Solo se monta con DEMO_RESET_TOKEN definido. No toca otros contadores.
 
     POST /demo/reiniciar
-    X-Demo-Token: <el valor de DEMO_RESET_TOKEN>
-
-Borra los datos del contador demo y los vuelve a crear. No toca ningún otro
-contador registrado en la base.
+    X-Demo-Token: <DEMO_RESET_TOKEN>
 """
 
 from __future__ import annotations

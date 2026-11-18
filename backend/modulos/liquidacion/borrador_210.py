@@ -1,20 +1,7 @@
-"""Borrador del formulario 210, casilla por casilla.
+"""Borrador del formulario 210 en PDF, casilla por casilla, para transcribir.
 
-Qué es y qué no es
-------------------
-Es un papel de trabajo para transcribir: las mismas casillas del formulario 210,
-con el mismo número y en el mismo orden, llenas con lo que calculó el motor.
-
-No es el formulario oficial ni pretende parecerlo. El 210 solo se presenta desde
-los servicios en línea de la DIAN, que recalculan cada total; el PDF que la
-DIAN publica es de consulta y viene marcado «no diligenciable». Por eso este
-documento no lleva la imagen de la DIAN y cada página va cruzada con la
-leyenda de borrador.
-
-Los valores van aproximados al múltiplo de mil más cercano (art. 577 ET), que es
-como se digitan. Como cada casilla se aproxima por separado, un total puede
-diferir hasta en mil pesos de la suma de sus partes ya aproximadas; el servicio
-de la DIAN recalcula los totales a partir de lo digitado.
+No es el formulario oficial: va marcado como borrador. Valores aproximados a
+mil (art. 577); un total puede diferir hasta mil pesos de la suma de sus partes.
 """
 
 import io
@@ -47,7 +34,7 @@ _ENCABEZADOS_GRILLA = (
     "Rentas no laborales",
 )
 
-# Las secciones que siguen a la grilla, en el orden del formulario.
+# Secciones posteriores a la grilla, en orden del formulario.
 _SECCIONES = (
     ("Patrimonio", (29, 30, 31)),
     ("Cédula general — totales", (28, 91, 92, 93, 94, 95, 96, 97, 98, 139)),
@@ -58,8 +45,7 @@ _SECCIONES = (
     ("Liquidación privada", tuple(range(116, 138))),
 )
 
-# Casillas que el motor no calcula. Se imprimen vacías y señaladas, no en cero:
-# un cero impreso se lee como «calculado y dio cero».
+# Casillas no calculadas: vacías y señaladas, no en cero.
 CASILLAS_NO_CALCULADAS = {
     94: "pérdidas de 2018 y anteriores",
     95: "excesos de renta presuntiva",
@@ -89,10 +75,7 @@ class Borrador210:
 
 
 def construir_casillas(renglones) -> Dict[int, Decimal]:
-    """Casilla → valor a declarar, a partir de los renglones del motor.
-
-    Solo entran los renglones que el motor marcó con su número de casilla.
-    """
+    """Casilla -> valor a declarar, desde los renglones con casilla."""
     casillas: Dict[int, Decimal] = {}
     for renglon in renglones:
         numero = getattr(renglon, "casilla", None)
@@ -155,7 +138,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
     e.append(datos)
 
     def tabla_lista(numeros):
-        """Dos columnas de «n° · concepto · valor», como las del formulario."""
+        """Dos columnas "n° · concepto · valor"."""
         mitad = (len(numeros) + 1) // 2
         izq, der = numeros[:mitad], numeros[mitad:]
         filas = []
@@ -187,7 +170,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
     e.append(Paragraph("Patrimonio", h))
     e.append(tabla_lista(_SECCIONES[0][1]))
 
-    # --- La grilla de la cédula general -----------------------------------
+    # Grilla de la cédula general
     e.append(Paragraph("Cédula general", h))
     a_n, a_v = 0.65 * cm, 2.45 * cm
     a_c = ancho_util - 4 * (a_n + a_v)
@@ -208,7 +191,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
         for k, n in enumerate(numeros):
             if n is None:
                 fila += ["", ""]
-                # Celda que no existe en el formulario: sombreada, no en cero.
+                # Celda inexistente: sombreada.
                 estilo.append(("BACKGROUND", (1 + 2 * k, i), (2 + 2 * k, i), gris))
                 estilo.append(("SPAN", (1 + 2 * k, i), (2 + 2 * k, i)))
             else:
@@ -222,7 +205,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
         e.append(Paragraph(nombre_seccion, h))
         e.append(tabla_lista(numeros))
 
-    # --- Casillas de marca e informativas ---------------------------------
+    # Casillas de marca e informativas
     e.append(Paragraph("Otras casillas", h))
     marca_140 = "Sí — marcar" if 140 in borrador.marcadas else "No"
     dependientes = ("—" if borrador.numero_dependientes is None
@@ -244,7 +227,7 @@ def a_pdf(borrador: Borrador210) -> bytes:
                                ("VALIGN", (0, 0), (-1, -1), "MIDDLE")]))
     e.append(otras)
 
-    # --- Lo que hay que saber antes de transcribir ------------------------
+    # Notas para transcribir
     e.append(Paragraph("Antes de transcribir", h))
     avisos = [
         "Los valores están aproximados al múltiplo de mil más cercano (art. 577 ET). "

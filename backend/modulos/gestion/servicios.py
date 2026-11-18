@@ -1,9 +1,5 @@
-"""Servicios de la gestión de la declaración.
-
-Junta la liquidación, el calendario, la exógena y lo que el contador registra
-para responder lo que se pregunta en cada declaración de la temporada: en qué
-va, qué falta pedirle al cliente, qué se presentó, cuándo queda en firme y qué
-cuesta corregirla o pagarla tarde.
+"""Servicios de gestión: etapas, documentos, presentación, firmeza,
+corrección, intereses y tasas.
 """
 
 from datetime import date
@@ -64,9 +60,7 @@ class DatosInvalidosError(ErrorAplicacion):
     pass
 
 
-# ---------------------------------------------------------------------------
-# Lecturas de apoyo
-# ---------------------------------------------------------------------------
+# Lecturas
 
 
 def _hoy() -> date:
@@ -112,7 +106,7 @@ def _leer_presentada(d: DeclaracionPresentada, anio: int) -> DeclaracionPresenta
 def declaracion_vigente(
     session: Session, contribuyente_id: int, anio_gravable: int
 ) -> Optional[DeclaracionPresentada]:
-    """La última declaración presentada de un año (la corrección manda)."""
+    """Última declaración presentada de un año (la corrección prevalece)."""
     periodo = session.exec(select(PeriodoFiscal).where(
         PeriodoFiscal.contribuyente_id == contribuyente_id,
         PeriodoFiscal.anio_gravable == anio_gravable,
@@ -124,7 +118,7 @@ def declaracion_vigente(
 
 
 def _tasas(session: Session) -> Dict[Tuple[int, int], Decimal]:
-    """Tasas por mes en fracción: las publicadas, con lo editado encima."""
+    """Tasas por mes, en fracción: oficiales con las de la base encima."""
     return {(t.anio, t.mes): Decimal(t.tasa_efectiva_anual) / CIEN
             for t in listar_tasas(session)}
 
@@ -134,9 +128,7 @@ def _uvt(anio: int, respaldo: Decimal) -> Decimal:
     return parametros.uvt if parametros else respaldo
 
 
-# ---------------------------------------------------------------------------
 # Documentos
-# ---------------------------------------------------------------------------
 
 
 def _documentos(
@@ -173,8 +165,7 @@ def _documentos(
             actualizado_en=g.actualizado_en if g else None,
             nota=g.nota if g else "",
         ))
-    # Los agregados a mano, y los sugeridos que ya no salen (porque cambió la
-    # exógena) pero que el contador ya había marcado: no se pierden.
+    # Se conservan los manuales y los sugeridos ya marcados que dejaron de sugerirse.
     for g in guardados.values():
         if g.manual or g.estado != EstadoDocumento.PENDIENTE:
             salida.append(DocumentoLeer(**g.model_dump(exclude={"periodo_fiscal_id"})))
@@ -256,9 +247,7 @@ def agregar_documento(
     return solicitud_documentos(session, contador_id, contribuyente_id, periodo_id)
 
 
-# ---------------------------------------------------------------------------
 # Presentación y declaración anterior
-# ---------------------------------------------------------------------------
 
 
 def _como_texto(casillas: Dict[int, Decimal]) -> Dict[str, str]:
@@ -269,10 +258,8 @@ def registrar_presentacion(
     session: Session, contador_id: int, contribuyente_id: int, periodo_id: int,
     datos: PresentacionRegistrar,
 ) -> DeclaracionPresentada:
-    """Guarda lo que se presentó: una copia de la liquidación de hoy.
-
-    La primera es la declaración inicial y fija la fecha de presentación del
-    periodo. Las siguientes son correcciones.
+    """Guarda copia de la liquidación presentada. La primera es la inicial; las
+    siguientes, correcciones.
     """
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_id)
     previas = _presentaciones(session, periodo_id)
@@ -280,10 +267,7 @@ def registrar_presentacion(
         raise DatosInvalidosError(
             "La corrección no puede tener fecha anterior a la última declaración "
             f"presentada ({previas[-1].fecha_presentacion.isoformat()}).")
-    # La fecha se fija ANTES de liquidar: la sanción por extemporaneidad se
-    # cuenta hasta la presentación, y sin fecha la liquidación la calcula «si
-    # se presentara hoy». Una copia tomada así guardaría una sanción que la
-    # declaración presentada a tiempo no tiene.
+    # Fecha antes de liquidar: si no, la sanción se calcula a hoy.
     if not previas:
         periodo.fecha_presentacion = datos.fecha_presentacion
         session.add(periodo)
@@ -304,11 +288,7 @@ def registrar_declaracion_anterior(
     session: Session, contador_id: int, contribuyente_id: int,
     datos: DeclaracionAnteriorRegistrar,
 ) -> DeclaracionPresentada:
-    """Registra a mano una declaración que no se hizo en la app.
-
-    Si el año no existe como periodo, se crea cerrado: es historia, no un año
-    en trabajo.
-    """
+    """Registra una declaración hecha fuera de la app. Crea el periodo cerrado si no existe."""
     obtener_contribuyente(session, contador_id, contribuyente_id)
     desconocidas = sorted(n for n in datos.casillas if n not in CASILLAS_2024)
     if desconocidas:
@@ -340,10 +320,8 @@ def registrar_declaracion_anterior(
 def traer_datos_del_anio_anterior(
     session: Session, contador_id: int, contribuyente_id: int, periodo_id: int
 ) -> List[str]:
-    """Copia a la hoja lo que esta declaración toma de la anterior.
-
-    Impuesto neto de renta (126, para el anticipo), anticipo liquidado (133 →
-    130) y saldo a favor (137 → 131). Devuelve lo que cambió.
+    """Trae de la declaración anterior: 126 (anticipo), 133 -> 130, 137 -> 131.
+    Devuelve lo que cambió.
     """
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_id)
     anterior = declaracion_vigente(session, contribuyente_id, periodo.anio_gravable - 1)
@@ -367,9 +345,7 @@ def traer_datos_del_anio_anterior(
     return cambios
 
 
-# ---------------------------------------------------------------------------
 # Seguimiento
-# ---------------------------------------------------------------------------
 
 
 def actualizar_seguimiento(
@@ -392,10 +368,8 @@ def etapas(
     fecha_presentacion: Optional[date],
     saldo_a_pagar: Optional[Decimal],
 ) -> ProcesoLeer:
-    """Las etapas de una declaración, en el orden en que se trabaja.
-
-    Las que se pueden saber solas (exógena, documentos, presentación) se
-    calculan; las de criterio (revisar, aprobar, pagar) las marca el contador.
+    """Etapas en orden de trabajo. Exógena, documentos y presentación se calculan;
+    el resto lo marca el contador.
     """
     s = seguimiento
     sin_saldo = saldo_a_pagar is not None and saldo_a_pagar <= 0
@@ -430,7 +404,7 @@ def etapas(
 def proceso_resumido(
     session: Session, contribuyente_id: int, periodo: PeriodoFiscal
 ) -> ProcesoLeer:
-    """Etapas sin liquidar: para la cartera, que lo pide por cada cliente."""
+    """Etapas sin liquidar, para la cartera."""
     tiene_exogena = session.exec(select(ReporteExogena.id).where(
         ReporteExogena.periodo_fiscal_id == periodo.id)).first() is not None
     docs = _documentos(session, contribuyente_id, periodo)
@@ -441,9 +415,7 @@ def proceso_resumido(
                   _seguimiento(session, periodo.id), periodo.fecha_presentacion, saldo)
 
 
-# ---------------------------------------------------------------------------
 # Vista completa
-# ---------------------------------------------------------------------------
 
 
 def _intereses_leer(r: calculos.Intereses, fecha_pago: date, pagado: bool) -> InteresesLeer:
@@ -471,8 +443,7 @@ def gestion(
     vivas = construir_casillas(liq.renglones)
     presentadas = _presentaciones(session, periodo_id)
     vigente = _casillas_de(presentadas[-1]) if presentadas else None
-    # Lo que cuenta para firmeza, beneficio e intereses es lo presentado; si
-    # no se ha presentado, lo que se va a presentar.
+    # Se usa lo presentado; si no hay, lo liquidado.
     base = vigente if vigente is not None else vivas
     saldo_a_pagar, saldo_a_favor = base.get(136, CERO), base.get(137, CERO)
 
@@ -489,7 +460,7 @@ def gestion(
                      seguimiento, periodo.fecha_presentacion,
                      saldo_a_pagar if presentadas else None)
 
-    # --- Declaración anterior y comparativo -----------------------------
+    # Declaración anterior y comparativo
     anterior_decl = declaracion_vigente(session, contribuyente_id, periodo.anio_gravable - 1)
     comparativo = None
     if anterior_decl is not None:
@@ -512,7 +483,7 @@ def gestion(
             coherencias=[CoherenciaLeer(**c.__dict__) for c in comp.coherencias],
         )
 
-    # --- Beneficio de auditoría -----------------------------------------
+    # Beneficio de auditoría
     hoja = session.get(HojaLiquidacion, periodo_id)
     impuesto_anterior = None
     if anterior_decl is not None:
@@ -544,7 +515,7 @@ def gestion(
         conclusion=b.conclusion, fuente=b.fuente,
     )
 
-    # --- Firmeza ----------------------------------------------------------
+    # Firmeza
     perdidas = any(base.get(n, CERO) > 0 for n in (55, 56, 71, 72, 88, 89))
     f = calculos.calcular_firmeza(
         vencimiento, periodo.fecha_presentacion,
@@ -558,7 +529,7 @@ def gestion(
                        "contándose desde la declaración inicial.")
     firmeza = FirmezaLeer(fecha=f.fecha, regla=f.regla, fuente=f.fuente, notas=f.notas)
 
-    # --- Corrección -------------------------------------------------------
+    # Corrección
     tasas = _tasas(session)
     correccion = None
     if vigente is not None:
@@ -573,8 +544,7 @@ def gestion(
         if c.tipo != "SIN_EFECTO" or vivas != vigente:
             intereses_corr = None
             if c.tipo == "AUMENTA" and vencimiento is not None:
-                # Los intereses van sobre el mayor impuesto (134), no sobre
-                # las sanciones.
+                # Intereses sobre el mayor impuesto (134), no sobre sanciones.
                 mayor_impuesto = vivas.get(134, CERO) - vigente.get(134, CERO)
                 r = calculos.calcular_intereses(mayor_impuesto, vencimiento, hoy, tasas)
                 intereses_corr = _intereses_leer(r, hoy, False)
@@ -586,7 +556,7 @@ def gestion(
                                + (intereses_corr.valor if intereses_corr else CERO)),
             )
 
-    # --- Intereses de mora ------------------------------------------------
+    # Intereses de mora
     intereses = None
     capital = base.get(134, saldo_a_pagar)
     if vencimiento is not None and capital > 0:
@@ -616,14 +586,12 @@ def gestion(
     )
 
 
-# ---------------------------------------------------------------------------
 # Tasas de interés moratorio
-# ---------------------------------------------------------------------------
 
 FUENTE_TABLA_DIAN = ("DIAN, tabla «Tasa de interés moratorio» publicada el "
                      "31-08-2026 (dian.gov.co/normatividad/TIM)")
 
-# Tasas oficiales publicadas por la DIAN, en % efectivo anual.
+# Tasas publicadas por la DIAN, % efectivo anual.
 TASAS_OFICIALES = {
     (2025, 1): "22.89", (2025, 2): "24.30", (2025, 3): "22.92", (2025, 4): "23.62",
     (2025, 5): "23.97", (2025, 6): "23.55", (2025, 7): "22.78", (2025, 8): "23.17",
@@ -633,7 +601,7 @@ TASAS_OFICIALES = {
     (2026, 9): "27.24",
 }
 
-# Las que la tabla de la DIAN aún no traía al consultarla, con su fuente.
+# Meses aún no publicados en la tabla de la DIAN, con su fuente.
 TASAS_CON_OTRA_FUENTE = {
     (2026, 10): ("26.59", "Usura de consumo 28,59 % (Superfinanciera, Resolución 1472 "
                           "del 30-09-2026) menos 2 puntos"),
@@ -651,8 +619,7 @@ def _tasas_publicadas() -> Dict[Tuple[int, int], TasaInteresMoratorio]:
 
 
 def listar_tasas(session: Session) -> List[TasaInteresMoratorio]:
-    """Las tasas publicadas vienen con la app; las de la base las completan o
-    las corrigen. Así una instalación nueva nunca arranca sin tasas."""
+    """Tasas oficiales completadas o corregidas por las de la base."""
     tasas = _tasas_publicadas()
     for t in session.exec(select(TasaInteresMoratorio)).all():
         tasas[(t.anio, t.mes)] = t

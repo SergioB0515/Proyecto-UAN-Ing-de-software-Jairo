@@ -9,8 +9,7 @@ from modulos.contadores.modelos import Contador
 
 from .seguridad import decodificar_token
 
-# El prefijo debe coincidir con PREFIJO_API de main.py: solo afecta al botón
-# «Authorize» de /docs, pero sin esto deja de funcionar en el despliegue.
+# Debe coincidir con PREFIJO_API (botón Authorize de /docs).
 _PREFIJO_API = os.getenv("PREFIJO_API", "").rstrip("/")
 
 _esquema_oauth2 = OAuth2PasswordBearer(tokenUrl=f"{_PREFIJO_API}/contadores/login")

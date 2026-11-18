@@ -10,9 +10,8 @@ certificados…) de cualquier objeto de un contribuyente.
 - `servicios.py`: validación, almacenamiento en disco, consultas y ZIP.
 - `router.py`: endpoints bajo `/contribuyentes/{id}/adjuntos`.
 
-Los archivos viven en `ALMACEN_ADJUNTOS` (por defecto `backend/almacen/`,
-fuera de git) con un nombre generado por el servidor; la base solo guarda
-el metadato. Respalda esa carpeta junto con la base de datos.
+Archivos en `ALMACEN_ADJUNTOS` (por defecto `backend/almacen/`, fuera de git)
+con nombre generado por el servidor; la base guarda el metadato.
 
 Endpoints:
 
@@ -28,16 +27,13 @@ Endpoints:
 
 Reglas:
 
-- El formato se decide por el **contenido** del archivo (firma real), no por
-  la extensión ni por el `Content-Type` que declare el cliente. Se admiten
-  PDF, PNG, JPG, WEBP, GIF, XLSX, DOCX, CSV y TXT; cualquier otro responde
-  415. Un SVG o un HTML disfrazado de imagen se rechaza.
+- Formato por firma real del archivo, no por extensión ni `Content-Type`:
+  PDF, PNG, JPG, WEBP, GIF, XLSX, DOCX, CSV, TXT. Otro: 415.
 - Tamaño máximo por archivo: `TAMANO_MAXIMO_ADJUNTO_MB` (15 por defecto),
   413 si se supera.
 - El mismo archivo (misma huella SHA-256) no se adjunta dos veces al mismo
   objeto (409); sí puede respaldar objetos distintos.
-- Adjuntar y editar la nota se permiten aunque el año esté cerrado (los
-  soportes llegan tarde); **eliminar** exige reabrirlo (409).
+- Con el año cerrado se puede adjuntar y editar la nota; eliminar exige reabrir (409).
 - El activo `INVENTARIO` que genera el cierre no admite adjuntos (409).
 - Al eliminar un activo, un ingreso o un contribuyente se eliminan también
   sus soportes.

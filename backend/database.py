@@ -132,11 +132,8 @@ def crear_tablas() -> None:
         "periodos_fiscales",
         {"fecha_vencimiento_manual": "DATE", "fecha_presentacion": "DATE"},
     )
-    # Columnas agregadas a la hoja de liquidación después de su primera versión.
-    # `SQLModel.metadata.create_all` crea tablas que faltan pero NUNCA altera una
-    # que ya existe, así que sin esto un despliegue con datos arranca y falla al
-    # primer SELECT. Llevan DEFAULT y NOT NULL para que las filas existentes
-    # queden con un valor válido y no con NULL.
+    # Columnas agregadas después de la primera versión. create_all no altera
+    # tablas existentes. DEFAULT y NOT NULL para las filas existentes.
     _agregar_columnas_si_faltan(
         engine,
         "hojas_liquidacion",
@@ -163,10 +160,7 @@ def crear_tablas() -> None:
         "deducciones_solicitadas",
         {
             "codigo_plantilla": "VARCHAR",
-            # Columna y fila del formulario 210 a las que se imputa. Quedan en
-            # NULL para las deducciones existentes, que es lo correcto: el
-            # motor las reparte entre las columnas con renta líquida en vez de
-            # inventarles una imputación que el contador no eligió.
+            # Columna y fila del 210. NULL en las existentes: las imputa el motor.
             "subcedula": "VARCHAR",
             "fila_formulario": "VARCHAR",
         },

@@ -1,33 +1,12 @@
-"""Motor de liquidación del impuesto de renta de personas naturales residentes.
+"""Motor de liquidación de renta, personas naturales residentes (formulario 210).
 
-Qué hace
---------
-Toma los insumos depurados de un contribuyente y produce el borrador de la
-liquidación: renta líquida por cédula, impuesto según la tabla del art. 241,
-ganancias ocasionales, descuentos, anticipo y saldo a pagar o a favor.
+Entrada: InsumosLiquidacion + ParametrosAnuales. Salida: Liquidacion, una lista
+de renglones con valor, fórmula, fuente legal y casilla.
 
-Qué NO hace
------------
-No decide. Cada renglón sale con la fórmula que lo produjo y la norma que lo
-respalda para que el contador lo revise y lo ajuste. La responsabilidad de la
-declaración es del contribuyente y del contador que la firma (art. 581 ET);
-este módulo es una herramienta de apoyo y los resultados deben validarse antes
-de transcribirlos a la declaración.
-
-Decisiones de diseño
---------------------
-1. **Sin base de datos y sin estado.** Funciones puras sobre dataclasses. Así
-   se puede probar el cálculo con cifras de papel sin montar Postgres, que es
-   la única forma de tener confianza en aritmética tributaria.
-2. **Decimal, no float.** Todo importe es Decimal. El redondeo se hace de forma
-   explícita y solo donde la norma lo manda.
-3. **Parámetros inyectados.** El motor no conoce ningún número del Estatuto:
-   los recibe de `tablas_oficiales.ParametrosAnuales`. Un año nuevo o una
-   reforma se resuelven cambiando datos, no lógica.
-4. **Trazabilidad obligatoria.** Ningún valor llega al resultado sin su fórmula
-   y su fuente legal. Es lo que diferencia una herramienta auditable de una
-   caja negra, y es el requisito que hace el producto defendible ante una
-   revisión de la DIAN.
+- Funciones puras: sin base de datos, sin reloj.
+- Todo importe es Decimal; se redondea solo donde la norma lo exige.
+- Ningún valor del Estatuto está en este archivo: llegan en los parámetros.
+- No decide: el resultado es un borrador que revisa el contador (art. 581 ET).
 """
 
 from dataclasses import dataclass, field, replace
@@ -73,23 +52,16 @@ _NOMBRE_SUBCEDULA = {
 }
 
 
-# ---------------------------------------------------------------------------
-# Utilidades de redondeo
-# ---------------------------------------------------------------------------
+# Redondeo
 
 
 def redondear_pesos(valor: Decimal) -> Decimal:
-    """Redondea a dos decimales para los cálculos intermedios."""
+    """Redondea a dos decimales (cálculos intermedios)."""
     return valor.quantize(_CENTAVO, rounding=ROUND_HALF_UP)
 
 
 def aproximar_al_multiplo_de_mil(valor: Decimal) -> Decimal:
-    """Aproxima al múltiplo de mil más cercano, como exige el art. 577 ET.
-
-    Los valores de la declaración se presentan aproximados al múltiplo de mil
-    más cercano. Se aplica únicamente al renglón que se transcribe, nunca a los
-    cálculos intermedios: aproximar antes de operar desplaza el resultado.
-    """
+    """Aproxima al múltiplo de mil (art. 577 ET). Solo para el valor declarado."""
     return (valor / _MIL).quantize(Decimal("1"), rounding=ROUND_HALF_UP) * _MIL
 
 
@@ -98,70 +70,49 @@ def _no_negativo(valor: Decimal) -> Decimal:
 
 
 def porcentaje(fraccion: Decimal) -> str:
-    """Formatea una fracción como porcentaje legible: 0.40 → «40».
-
-    No se usa `Decimal.normalize()` porque convierte los múltiplos de diez a
-    notación científica: `Decimal("40.00").normalize()` devuelve `4E+1`, y la
-    fórmula le mostraría «4E+1 %» al contador. Se quitan los ceros de la parte
-    decimal a mano y se conservan los decimales que importan (2,22 % del
-    art. 137).
-    """
+    """0.40 -> "40". Decimal.normalize() devolvería 4E+1; conserva 2,22 (art. 137)."""
     texto = f"{(fraccion * 100):f}"
     if "." in texto:
         texto = texto.rstrip("0").rstrip(".")
     return texto or "0"
 
 
-# ---------------------------------------------------------------------------
 # Insumos
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class ConceptoDepuracion:
-    """Una deducción o renta exenta solicitada, con su tratamiento frente al límite.
+    """Deducción o renta exenta solicitada.
 
-    `sujeto_a_limite_general` distingue los conceptos que caen bajo el 40 % /
-    1.340 UVT del art. 336 num. 3 de los que la ley dejó por fuera (la
-    deducción por dependientes y el 1 % de compras del num. 5). Confundirlos es
-    el error de liquidación más común y cambia el impuesto de forma material.
+    sujeto_a_limite_general: False para dependientes y 1 % de compras
+    (art. 336 num. 5), que no entran al 40 % / 1.340 UVT.
     """
 
     nombre: str
     valor: Decimal
     sujeto_a_limite_general: bool = True
     fuente_legal: str = ""
-    # Código del catálogo de plantillas. Es lo que permite al motor saber qué
-    # tope propio le corresponde al concepto. Sin él no se aplica ninguno:
-    # para una deducción escrita a mano, el motor no puede adivinar su techo.
+    # Código de plantilla. Sin él no se aplica tope propio.
     codigo_tope: Optional[str] = None
-    # Columna del formulario 210 a la que se imputa. El límite del art. 336
-    # num. 3 es uno solo para toda la cédula general, pero el formulario pide
-    # las exentas y deducciones separadas por subcédula (casillas 41, 53, 69 y
-    # 86), así que cada concepto tiene que saber a cuál pertenece.
-    #
-    # `None` significa que el contador no la fijó: el motor la reparte entre
-    # las columnas con renta líquida, en el orden del formulario. Fijarla es
-    # mejor cuando se sabe, porque la imputación cambia en qué casilla aparece.
+    # Columna del 210 (casillas 41, 53, 69, 86). None: el motor la imputa en
+    # orden del formulario.
     subcedula: Optional[str] = None
-    # Fila del formulario. Los aportes voluntarios a AFC, FVP y AVC tienen
-    # casilla propia (35, 47, 63, 80), separada de las demás rentas exentas, y
-    # los intereses de vivienda también (38, 50, 66, 83).
+    # Fila: AFC/FVP/AVC (35, 47, 63, 80) e intereses de vivienda (38, 50, 66, 83)
+    # tienen casilla propia.
     tipo: str = EXENTA_OTRA
 
 
 @dataclass
 class RentasDeTrabajo:
-    """Rentas de trabajo de la cédula general (art. 335 ET)."""
+    """Rentas de trabajo (art. 335 ET)."""
 
     ingresos_brutos: Decimal = CERO
     aportes_obligatorios_salud: Decimal = CERO
     aportes_obligatorios_pension: Decimal = CERO
     otros_ingresos_no_constitutivos: Decimal = CERO
 
-    # Honorarios y compensaciones sin vínculo laboral. El art. 336 num. 4 obliga
-    # a elegir: o se restan costos y gastos, o se toma la renta exenta del
-    # art. 206 num. 10. No se pueden usar las dos.
+    # Honorarios sin vínculo. Art. 336 num. 4: costos y gastos o exenta del
+    # art. 206 num. 10, no ambos.
     ingresos_sin_vinculo_laboral: Decimal = CERO
     costos_y_gastos_sin_vinculo_laboral: Decimal = CERO
     opta_por_costos_y_gastos: bool = False
@@ -183,24 +134,18 @@ class RentasDeTrabajo:
 class RentasPorSubcedula:
     """Rentas de capital o no laborales (arts. 338 y 340 ET).
 
-    `costo_de_ventas` va aparte de `costos_y_gastos` porque lo calcula el
-    kardex del módulo de inventario y no lo digita el contador: separarlo deja
-    ver en el borrador de dónde salió cada cifra.
+    costo_de_ventas viene del kardex; va separado de costos_y_gastos.
     """
 
     ingresos_brutos: Decimal = CERO
-    # Devoluciones, rebajas y descuentos en ventas (casilla 75 del 210). Solo
-    # las rentas no laborales tienen esta fila en el formulario.
+    # Devoluciones, rebajas y descuentos (casilla 75). Solo no laborales.
     devoluciones: Decimal = CERO
     ingresos_no_constitutivos: Decimal = CERO
     costos_y_gastos: Decimal = CERO
     costo_de_ventas: Decimal = CERO
     depreciacion: Decimal = CERO
-    # Costos que se restaron en los libros pero que la ley no acepta, hoy solo
-    # los pagos en efectivo que exceden el límite del art. 771-5. Se llevan en
-    # un campo propio para no alterar las cifras que vienen del kardex ni de la
-    # tabla de depreciación: así la casilla de costos del formulario queda con
-    # el valor procedente exacto y el origen de cada cifra sigue siendo visible.
+    # Costos no procedentes: efectivo sobre el límite del art. 771-5. Campo
+    # aparte para no alterar las cifras del kardex ni de la depreciación.
     costos_no_procedentes: Decimal = CERO
 
     @property
@@ -224,16 +169,10 @@ class Pensiones:
 
 @dataclass
 class Dividendos:
-    """Dividendos y participaciones de residentes.
+    """Dividendos de residentes, según certificado de la sociedad.
 
-    Los valores se toman del certificado que expide la sociedad, incluida la
-    retención.
-
-    A los gravados (par. 2 del art. 49) se les aplica primero la tarifa del art.
-    240 —casilla 118— y solo el remanente entra a la tabla del art. 241. La
-    tarifa general es del 35 %; el art. 240 tiene tarifas diferenciales para
-    ciertas sociedades y el servicio de la DIAN deja digitarla, así que se
-    puede fijar aquí cuando el certificado indique otra.
+    Gravados (art. 49 par. 2): primero tarifa del art. 240 (casilla 118, 35 %
+    por defecto, ajustable), el remanente va a la tabla del art. 241.
     """
 
     no_gravados: Decimal = CERO
@@ -244,11 +183,11 @@ class Dividendos:
 
 @dataclass
 class GananciasOcasionales:
-    """Ganancias ocasionales (arts. 299 y siguientes ET)."""
+    """Ganancias ocasionales (arts. 299 y ss. ET)."""
 
     ingresos: Decimal = CERO
     costos: Decimal = CERO
-    ganancia_exenta: Decimal = CERO          # p. ej. venta de vivienda, art. 311-1
+    ganancia_exenta: Decimal = CERO  # venta de vivienda, art. 311-1
     loterias_rifas_apuestas: Decimal = CERO  # tarifa propia, art. 317
     retenciones: Decimal = CERO
 
@@ -285,13 +224,10 @@ class InsumosLiquidacion:
     otros_descuentos_tributarios: Decimal = CERO
     anticipo_pagado_anio_anterior: Decimal = CERO
     saldo_a_favor_anio_anterior: Decimal = CERO
-    # Sanciones que el contribuyente se liquida a sí mismo (casilla 135), hoy la
-    # de extemporaneidad. El motor no la calcula: depende de fechas y del
-    # calendario, y esta función no mira el reloj. La calcula `sanciones.py`
-    # y llega aquí ya resuelta, con su fórmula.
+    # Sanciones (casilla 135). Las calcula sanciones.py; el motor no mira fechas.
     sanciones: Decimal = CERO
     formula_sanciones: str = ""
-    anios_declarando: int = 3  # 1 = primer año, 2 = segundo, 3 o más = régimen pleno
+    anios_declarando: int = 3  # 1 = primer año, 2 = segundo, 3+ = pleno
 
     # Parte empresarial
     activos_depreciables: List[ActivoDepreciable] = field(default_factory=list)
@@ -301,43 +237,37 @@ class InsumosLiquidacion:
         default_factory=InsumosComparacionPatrimonial
     )
 
-    # Anticipo: "DIRECTO", "PROMEDIO" o "MENOR" (calcula los dos y toma el menor).
+    # Anticipo: "DIRECTO", "PROMEDIO" o "MENOR".
     metodo_anticipo: str = "DIRECTO"
     impuesto_neto_anio_anterior: Decimal = CERO
 
-    # Subcédula a la que se imputa la depreciación. Depende de la actividad que
-    # produce el activo, así que la decide el contador, no el motor.
+    # Subcédula de la depreciación. La fija el contador.
     cedula_depreciacion: str = "NO_LABORAL"
 
-    # Renglones y diagnósticos que arma quien llama (por ejemplo, el detalle de
-    # cada venta de inmuebles, ya sumada a las cifras de arriba). El motor solo
-    # los agrega al resultado: no recalcula nada con ellos.
+    # Renglones y diagnósticos ya calculados por quien llama (p. ej. ventas de
+    # inmuebles). Se agregan sin recalcular.
     renglones_informativos: list = field(default_factory=list)
     diagnosticos_adicionales: List[str] = field(default_factory=list)
 
 
-# ---------------------------------------------------------------------------
 # Resultado
-# ---------------------------------------------------------------------------
 
 
 @dataclass
 class Renglon:
-    """Un valor de la liquidación con su rastro completo."""
+    """Valor de la liquidación con fórmula y fuente."""
 
     codigo: str
     nombre: str
     valor: Decimal
     formula: str = ""
     fuente_legal: str = ""
-    # Número de casilla del formulario 210 cuando el renglón corresponde a una.
-    # Es lo que permite imprimir la grilla sin que nadie tenga que mantener un
-    # segundo mapa de códigos a casillas.
+    # Casilla del 210, si aplica.
     casilla: Optional[int] = None
 
     @property
     def valor_declarable(self) -> Decimal:
-        """El valor como se transcribe a la declaración (art. 577 ET)."""
+        """Valor aproximado a mil (art. 577 ET)."""
         return aproximar_al_multiplo_de_mil(self.valor)
 
 
@@ -349,7 +279,7 @@ class Liquidacion:
     renglones: List[Renglon] = field(default_factory=list)
     diagnosticos: List[str] = field(default_factory=list)
     notas: List[str] = field(default_factory=list)
-    # Casillas del formulario que no llevan valor sino una marca (hoy, la 140).
+    # Casillas de marca, sin valor (casilla 140).
     casillas_marcadas: List[int] = field(default_factory=list)
 
     def valor(self, codigo: str) -> Decimal:
@@ -360,16 +290,10 @@ class Liquidacion:
 
 
 class AnioGravableNoSoportadoError(Exception):
-    """El año pedido no tiene parámetros cargados.
-
-    Se prefiere fallar a liquidar con los parámetros de otro año: una cifra
-    equivocada que parece correcta es peor que un error visible.
-    """
+    """Año sin parámetros. Se falla en vez de usar los de otro año."""
 
 
-# ---------------------------------------------------------------------------
 # Tabla de tarifas
-# ---------------------------------------------------------------------------
 
 
 def aplicar_tabla(
@@ -377,9 +301,7 @@ def aplicar_tabla(
 ) -> Tuple[Decimal, str, Optional[TramoTarifa]]:
     """Aplica una tabla marginal en UVT a una base en pesos.
 
-    Devuelve el impuesto en pesos, la fórmula aplicada y el tramo usado. El
-    cálculo se hace en UVT, como está escrita la tabla, y solo al final se
-    convierte a pesos.
+    Calcula en UVT y convierte a pesos al final. Devuelve impuesto, fórmula y tramo.
     """
     if base_pesos <= CERO:
         return CERO, "Base gravable igual o menor a cero: impuesto 0", None
@@ -387,7 +309,7 @@ def aplicar_tabla(
     base_uvt = base_pesos / uvt
     tramo = next((t for t in tabla if t.contiene(base_uvt)), None)
     if tramo is None:
-        # Solo ocurre si la base cae en el primer tramo exento (0 a 1.090 UVT).
+        # Base en el tramo exento (0 a 1.090 UVT).
         return (
             CERO,
             f"Base de {base_uvt.quantize(_CENTAVO)} UVT en el tramo exento: impuesto 0",
@@ -409,9 +331,7 @@ def aplicar_tabla(
     return impuesto, formula, tramo
 
 
-# ---------------------------------------------------------------------------
-# Depuración de la cédula general (art. 336 ET)
-# ---------------------------------------------------------------------------
+# Cédula general (art. 336 ET)
 
 
 def _renta_exenta_trabajo(
@@ -419,14 +339,10 @@ def _renta_exenta_trabajo(
     parametros: ParametrosAnuales,
     otras_restas_de_trabajo: Decimal,
 ) -> Tuple[Decimal, str]:
-    """Calcula la renta exenta del 25 % de las rentas de trabajo (art. 206 num. 10).
+    """Renta exenta del 25 % de rentas de trabajo (art. 206 num. 10).
 
-    Se calcula sobre el subtotal que queda después de restar los ingresos no
-    constitutivos y las demás deducciones y rentas exentas imputables, no sobre
-    el ingreso bruto, y queda topada en 790 UVT.
-
-    Quien tiene honorarios sin vínculo laboral y optó por restar costos y gastos
-    pierde esta exención (art. 336 num. 4). El motor respeta esa exclusión.
+    Base: ingreso menos INCRNGO, deducciones y demás exentas. Tope 790 UVT.
+    No aplica a honorarios con opción de costos (art. 336 num. 4).
     """
     trabajo = insumos.trabajo
     limite = parametros.renta_exenta_trabajo
@@ -463,20 +379,11 @@ def _aplicar_topes_propios(
     parametros: ParametrosAnuales,
     ingresos_base: Decimal,
 ) -> Tuple[List[ConceptoDepuracion], List[Renglon], List[str]]:
-    """Recorta cada concepto a su propio tope, antes del límite general.
+    """Recorta cada concepto a su tope propio, antes del límite general.
 
-    El orden es el de la ley y no es intercambiable: primero el techo propio de
-    cada concepto (1.200 UVT los intereses de vivienda, 16 UVT mensuales la
-    medicina prepagada, 3.800 UVT los aportes previsionales), y solo después la
-    suma pasa por el 40 % / 1.340 UVT del art. 336 num. 3.
-
-    Al revés, una deducción improcedente entra a la bolsa y el límite general
-    la tapa: el total parece razonable, la composición está mal y, si el límite
-    general no alcanza a morder, el impuesto sale más bajo de lo que debe.
-
-    Los conceptos que comparten tope —los aportes voluntarios a pensión y el
-    ahorro en AFC comparten 3.800 UVT entre los dos— se recortan como grupo y
-    a prorrata, no uno por uno.
+    Orden obligatorio: tope propio (vivienda 1.200 UVT, prepagada 16 UVT/mes,
+    voluntarias 3.800 UVT) y luego el 40 % / 1.340 UVT. Los topes compartidos
+    (FVP + AFC) se recortan a prorrata dentro del grupo.
     """
     ajustados: List[ConceptoDepuracion] = []
     renglones: List[Renglon] = []
@@ -491,7 +398,7 @@ def _aplicar_topes_propios(
             return min(absoluto, ingresos_base * tope.porcentaje_de_ingresos)
         return absoluto
 
-    # Conceptos agrupados por tope compartido; None = tope individual.
+    # Agrupado por tope compartido; None = tope individual.
     grupos: dict = {}
     for concepto in conceptos:
         tope = parametros.topes_deducciones.get(concepto.codigo_tope or "")
@@ -535,7 +442,7 @@ def _aplicar_topes_propios(
                 )
             continue
 
-        # Tope compartido: se evalúa sobre la suma del grupo.
+        # Tope compartido: sobre la suma del grupo.
         tope = miembros[0][1]
         limite = tope_en_pesos(tope)
         solicitado = sum((c.valor for c, _ in miembros), CERO)
@@ -582,12 +489,9 @@ def _aplicar_limite_general(
     base_del_porcentaje: Decimal,
     parametros: ParametrosAnuales,
 ) -> Tuple[Decimal, str, List[str]]:
-    """Aplica el límite del art. 336 num. 3: 40 % con tope de 1.340 UVT.
+    """Límite del art. 336 num. 3: min(solicitado, 40 % de la base, 1.340 UVT).
 
-    La base del porcentaje son los ingresos de la cédula general menos los
-    ingresos no constitutivos de renta, antes de restar costos y gastos. El
-    resultado es el menor de tres cifras: lo solicitado, el 40 % de esa base y
-    el tope absoluto en UVT.
+    Base: ingresos de la cédula general − INCRNGO.
     """
     limite = parametros.limite_general
     porcentual = base_del_porcentaje * (limite.porcentaje or CERO)
@@ -617,16 +521,10 @@ def _aplicar_limite_general(
 def _deducciones_fuera_del_limite(
     insumos: InsumosLiquidacion, parametros: ParametrosAnuales
 ) -> Tuple[dict, List[Renglon]]:
-    """Deducciones que la ley dejó por fuera del límite del 40 %.
+    """Deducciones fuera del límite del 40 % (art. 336 num. 5).
 
-    Son dos: la deducción por dependientes (72 UVT por cada uno, hasta cuatro,
-    adicional al límite general) y el 1 % de las compras soportadas en factura
-    electrónica, topado en 240 UVT (art. 336 num. 5).
-
-    Se devuelven separadas y no sumadas porque el formulario 210 las pide en
-    casillas distintas —139 y 28— y cada una tiene además su propio techo: la
-    de dependientes no puede exceder la renta líquida ordinaria de las rentas
-    de trabajo, y la del 1 % no puede dar lugar a pérdidas.
+    Dependientes (casilla 139): 72 UVT c/u, máx. 4, tope 42 + 57.
+    1 % de compras con factura (casilla 28): tope 240 UVT, sin generar pérdida.
     """
     renglones: List[Renglon] = []
     montos: dict = {}
@@ -679,20 +577,16 @@ def _deducciones_fuera_del_limite(
     return montos, renglones
 
 
-# ---------------------------------------------------------------------------
-# Liquidación completa
-# ---------------------------------------------------------------------------
+# Liquidación
 
 
 def liquidar(
     insumos: InsumosLiquidacion, parametros: ParametrosAnuales
 ) -> Liquidacion:
-    """Liquida el impuesto de renta y complementarios de una persona natural residente.
+    """Liquida renta y complementarios de una persona natural residente.
 
-    El orden de los pasos es el del Estatuto, no uno conveniente: cédula general
-    depurada con su límite, cédula de pensiones, dividendos, tabla del art. 241,
-    ganancias ocasionales con tarifa propia, descuentos, anticipo y saldo. Cada
-    paso deja su renglón con la fórmula y la norma.
+    Orden del Estatuto: cédula general, pensiones, dividendos, tabla del art. 241,
+    ganancias ocasionales, descuentos, anticipo, saldo.
     """
     if insumos.anio_gravable != parametros.anio_gravable:
         raise AnioGravableNoSoportadoError(
@@ -709,7 +603,7 @@ def liquidar(
     )
     R = liq.renglones.append
 
-    # --- Patrimonio -------------------------------------------------------
+    # Patrimonio
     R(Renglon("PAT-BRUTO", "Total patrimonio bruto", insumos.patrimonio.patrimonio_bruto,
               "Suma de los activos poseídos a 31 de diciembre", "Arts. 261 y 267 ET",
               casilla=29))
@@ -719,11 +613,8 @@ def liquidar(
               insumos.patrimonio.patrimonio_liquido,
               "Patrimonio bruto − deudas", "Art. 282 ET", casilla=31))
 
-    # --- Depreciación (arts. 128 a 131 y 137 ET) --------------------------
-    # Se trabaja sobre copias: más abajo se les suma la depreciación y se les
-    # descuentan los costos no procedentes, y liquidar dos veces los mismos
-    # insumos —como hace el simulador de escenarios— no puede dar resultados
-    # distintos la segunda vez.
+    # Depreciación (arts. 128-131 y 137 ET). Sobre copias: liquidar dos veces
+    # los mismos insumos (simulador) debe dar lo mismo.
     trabajo = insumos.trabajo
     capital = replace(insumos.capital)
     no_laborales = replace(insumos.no_laborales)
@@ -741,25 +632,13 @@ def liquidar(
         destino = capital if insumos.cedula_depreciacion == "CAPITAL" else no_laborales
         destino.depreciacion += depreciacion.total
 
-    # --- Cédula general ----------------------------------------------------
-    #
-    # El formulario 210 no pide la cédula general como un total: la pide como
-    # una grilla de diecisiete filas por cuatro columnas, con una casilla en
-    # cada celda. El módulo `cedula_general` arma esa grilla y aplica el límite
-    # del art. 336 num. 3, que es uno solo para toda la cédula y se reparte
-    # entre las columnas en cascada, en el orden que fija el instructivo.
+    # Cédula general: grilla y límite del num. 3 en cedula_general.py.
     costos_cg = capital.total_costos + no_laborales.total_costos
     if trabajo.opta_por_costos_y_gastos:
         costos_cg += trabajo.costos_y_gastos_sin_vinculo_laboral
 
-    # --- Bancarización (art. 771-5 ET) ------------------------------------
-    #
-    # El efectivo rechazado no es un costo procedente, así que se descuenta de
-    # los costos de la columna que lo originó en vez de sumarse de vuelta a la
-    # renta líquida: así la casilla de costos del formulario queda con la cifra
-    # que de verdad se declara. Se reparte a prorrata de los costos de cada
-    # columna porque el art. 771-5 fija un límite global y no identifica a qué
-    # subcédula pertenece cada pago.
+    # Bancarización (art. 771-5). El rechazo se resta de los costos de cada
+    # columna, a prorrata de sus costos: la norma fija un límite global.
     banca = calcular_bancarizacion(insumos.bancarizacion, costos_cg, parametros)
     liq.diagnosticos.extend(banca.diagnosticos)
     if banca.aplica:
@@ -783,8 +662,7 @@ def liquidar(
                 con_costos = [(d, c) for d, c in destinos if c > CERO]
                 for indice, (destino, costos_destino) in enumerate(con_costos):
                     if indice == len(con_costos) - 1:
-                        # La última absorbe el redondeo para que las partes
-                        # sumen exactamente el rechazo y no se pierda un peso.
+                        # La última columna absorbe el redondeo.
                         parte = rechazado_restante
                     else:
                         parte = (
@@ -794,7 +672,7 @@ def liquidar(
                     destino.costos_no_procedentes += parte
                 costos_cg = _no_negativo(costos_cg - banca.efectivo_rechazado)
 
-    # --- Topes propios de cada concepto, antes del límite general ---------
+    # Topes propios
     base_limite = _no_negativo(
         trabajo.total_ingresos
         + capital.ingresos_brutos
@@ -821,14 +699,14 @@ def liquidar(
                   exenta_trabajo, formula_exenta,
                   parametros.renta_exenta_trabajo.fuente_legal))
 
-    # --- Deducciones que la ley dejó fuera del límite del num. 3 ----------
+    # Deducciones fuera del límite del num. 3
     fuera_calculadas, renglones_fuera = _deducciones_fuera_del_limite(insumos, parametros)
     for renglon in renglones_fuera:
         R(renglon)
     dependientes_336 = fuera_calculadas.get("DEPENDIENTES_336", CERO)
     compras_1_pct = fuera_calculadas.get("COMPRAS_1_PCT", CERO)
 
-    # --- La grilla ---------------------------------------------------------
+    # Grilla
     cg = depurar_cedula_general(
         trabajo,
         capital,
@@ -841,11 +719,8 @@ def liquidar(
         parametros,
     )
 
-    # --- Compensación de pérdidas de años anteriores ----------------------
-    #
-    # Va después del límite y no antes: el formulario compensa contra la renta
-    # líquida ordinaria del ejercicio (casillas 87, 70, 54), que ya tiene
-    # restadas las rentas exentas y deducciones limitadas de la columna.
+    # Compensación de pérdidas. Después del límite: se compensa contra la renta
+    # líquida ordinaria del ejercicio (casillas 54, 70, 87).
     renta_por_tipo = {
         "TRABAJO_SIN_VINCULO": cg.columnas[SIN_VINCULO].renta_liquida_ordinaria_ejercicio,
         "CAPITAL": cg.columnas[CAPITAL].renta_liquida_ordinaria_ejercicio,
@@ -866,11 +741,7 @@ def liquidar(
 
     liq.diagnosticos.extend(cg.diagnosticos)
 
-    # --- Totales agregados de la cédula general ---------------------------
-    #
-    # Se derivan de la grilla, no se calculan aparte: son la vista resumida que
-    # el contador lee primero y que usa el borrador en PDF. Calcularlos por
-    # separado sería tener dos verdades que con el tiempo se separan.
+    # Totales de la cédula general, derivados de la grilla.
     R(Renglon("CG-INGRESOS", "Ingresos brutos de la cédula general",
               sum((c.ingresos_brutos for c in cg.columnas.values()), CERO),
               "Casillas 32 + 43 + 58 + 74. No incluye dividendos ni ganancias "
@@ -927,7 +798,7 @@ def liquidar(
                   "vínculo laboral no admiten compensación",
                   parametros.fuente_compensacion_perdidas))
 
-    # --- Los renglones de la grilla, cada uno con su casilla --------------
+    # Renglones de la grilla con su casilla
     R(Renglon("CG-BASE-LIMITE", "Base para el límite del 40 %", cg.base_del_limite,
               "Ingresos brutos de las cuatro subcédulas − ingresos no constitutivos. "
               "Las devoluciones de la casilla 75 no se restan de esta base",
@@ -937,9 +808,7 @@ def liquidar(
                   f"Casilla {numero} del formulario 210",
                   "Arts. 335, 336, 338 y 340 ET", casilla=numero))
 
-    # Las pérdidas del ejercicio no desaparecen al truncar en cero: el art. 147
-    # permite compensarlas en los años siguientes y el contador tiene que
-    # registrarlas para poder hacerlo.
+    # Pérdida del ejercicio: compensable en años siguientes (art. 147).
     for subcedula in SUBCEDULAS:
         perdida = cg.columnas[subcedula].perdida_liquida
         if perdida > CERO:
@@ -972,12 +841,8 @@ def liquidar(
                   "sin que pueda dar lugar a pérdidas",
                   "Art. 336 num. 5 ET", casilla=28))
 
-    # --- Casilla 140: tope indicativo del art. 336-1 ET --------------------
-    #
-    # El instructivo pide marcarla cuando los costos y deducciones de las
-    # rentas de trabajo sin vínculo laboral (casilla 45) superan el 60 % de sus
-    # ingresos brutos (casilla 43). No cambia el impuesto: es un aviso a la
-    # DIAN, y a quien la marca le conviene tener los soportes a la mano.
+    # Casilla 140 (art. 336-1): marcar si casilla 45 > 60 % de casilla 43.
+    # No cambia el impuesto.
     sin_vinculo = cg.columnas[SIN_VINCULO]
     if (
         sin_vinculo.ingresos_brutos > CERO
@@ -1004,10 +869,8 @@ def liquidar(
     R(Renglon("CG-C93", "[93] Renta líquida ordinaria cédula general", cg.casilla_93,
               "Casilla 91 − casilla 92", "Art. 336 ET", casilla=93))
 
-    # Alias estable del total de la cédula general. El resto del motor y las
-    # pruebas lo consultan por este código; la casilla 97 lo vuelve a emitir
-    # más abajo, una vez conocidas las rentas gravables por comparación
-    # patrimonial.
+    # Alias del total de la cédula general. La casilla 97 se emite después,
+    # con la renta por comparación patrimonial.
     renta_liquida_cg = cg.casilla_93
     R(Renglon("CG-RENTA-LIQUIDA", "Renta líquida gravable de la cédula general",
               renta_liquida_cg,
@@ -1015,7 +878,7 @@ def liquidar(
               "exentas y deducciones imputables limitadas",
               "Art. 336 ET"))
 
-    # --- Cédula de pensiones ----------------------------------------------
+    # Pensiones
     pensiones = insumos.pensiones
     base_pensiones = _no_negativo(
         pensiones.ingresos_brutos - pensiones.ingresos_no_constitutivos
@@ -1045,7 +908,7 @@ def liquidar(
                   renta_liquida_pensiones, "Ingresos − no constitutivos − renta exenta",
                   "Art. 337 ET", casilla=103))
 
-    # --- Dividendos --------------------------------------------------------
+    # Dividendos
     div = insumos.dividendos
     tarifa_240 = (
         div.tarifa_gravados
@@ -1053,9 +916,8 @@ def liquidar(
         else parametros.tarifa_dividendos_gravados
     )
     impuesto_dividendos_gravados = redondear_pesos(div.gravados * tarifa_240)
-    # Lo que entra a la tabla del art. 241: los no gravados completos y los
-    # gravados una vez restado su propio impuesto (casilla 111 = … + 107 + 108
-    # − 118). Llevarlos completos gravaría dos veces la parte que ya pagó el 35 %.
+    # A la tabla: no gravados + gravados menos su impuesto
+    # (casilla 111 = ... + 107 + 108 − 118).
     renta_liquida_dividendos = (
         div.no_gravados + div.gravados - impuesto_dividendos_gravados
     )
@@ -1090,11 +952,8 @@ def liquidar(
                   "del art. 241",
                   "Arts. 242 y 331 ET, modificados por la Ley 2277 de 2022"))
 
-    # --- Ganancias ocasionales --------------------------------------------
-    #
-    # Se calculan antes de la base ordinaria porque la comparación patrimonial
-    # necesita la ganancia ocasional neta para saber qué parte del incremento
-    # del patrimonio está explicada.
+    # Ganancias ocasionales. Antes de la base: la comparación patrimonial
+    # necesita la GO neta.
     go = insumos.ganancias_ocasionales
     base_go = _no_negativo(go.ingresos - go.costos - go.ganancia_exenta)
     impuesto_go = redondear_pesos(base_go * parametros.tarifa_ganancia_ocasional)
@@ -1130,10 +989,10 @@ def liquidar(
                      if go.loterias_rifas_apuestas > CERO else ""),
                   parametros.fuente_ganancia_ocasional, casilla=127))
 
-    # --- Base gravable y tabla del art. 241 --------------------------------
+    # Base gravable y tabla del art. 241
     base_ordinaria = renta_liquida_cg + renta_liquida_pensiones + renta_liquida_dividendos
 
-    # --- Renta por comparación patrimonial (arts. 236 a 239 ET) -----------
+    # Renta por comparación patrimonial (arts. 236-239 ET)
     comparacion = calcular_comparacion_patrimonial(
         insumos.comparacion_patrimonial,
         insumos.patrimonio.patrimonio_liquido,
@@ -1161,9 +1020,8 @@ def liquidar(
               "Art. 336 ET", casilla=97))
 
     presuntiva = insumos.renta_presuntiva
-    # La presuntiva se compara solo contra la cédula general (casillas 97 y
-    # 98); pensiones y dividendos se suman después, gane quien gane: casilla
-    # 111 = mayor(97, 98) + 103 + 107 + 108 − 118.
+    # Presuntiva solo contra la cédula general:
+    # casilla 111 = max(97, 98) + 103 + 107 + 108 − 118.
     casilla_97 = renta_liquida_cg + renta_comparacion
     por_presuntiva = presuntiva > casilla_97
     base_241 = (
@@ -1193,8 +1051,7 @@ def liquidar(
     R(Renglon("IMP-RENTA", "Impuesto sobre la renta líquida gravable", impuesto_renta,
               formula_impuesto, parametros.fuente_tabla_renta,
               casilla=117 if por_presuntiva else 116))
-    # Desde aquí «impuesto de renta» es el total de la casilla 121: el de la
-    # tabla más el del art. 240 sobre los dividendos gravados.
+    # Impuesto de renta = casilla 121 (tabla + art. 240).
     impuesto_renta = impuesto_renta + impuesto_dividendos_gravados
     R(Renglon("IMP-TOTAL-RENTA", "Total impuesto sobre las rentas líquidas gravables",
               impuesto_renta, "Casillas 116 + 117 + 118 + 119 + 120",
@@ -1205,7 +1062,7 @@ def liquidar(
               "Impuesto sobre la renta + impuesto de ganancias ocasionales",
               "Art. 241 y arts. 313 y siguientes ET"))
 
-    # --- Descuentos tributarios --------------------------------------------
+    # Descuentos tributarios
     umbral_descuento = (parametros.descuento_dividendos.tope_uvt or CERO) * uvt
     exceso_dividendos = _no_negativo(renta_liquida_dividendos - umbral_descuento)
     descuento_dividendos = redondear_pesos(
@@ -1220,9 +1077,7 @@ def liquidar(
                   f"({pesos(umbral_descuento)})",
                   parametros.descuento_dividendos.fuente_legal, casilla=124))
 
-    # El techo es el impuesto de renta, no la suma con el de ganancias
-    # ocasionales: en el formulario la casilla 126 es 121 − 125, y el impuesto
-    # de ganancias ocasionales entra después, en la 127, sin descuentos.
+    # Tope: impuesto de renta (126 = 121 − 125). La GO (127) no admite descuentos.
     descuentos_solicitados = descuento_dividendos + insumos.otros_descuentos_tributarios
     descuentos = min(descuentos_solicitados, impuesto_renta)
     if descuentos < descuentos_solicitados:
@@ -1243,7 +1098,7 @@ def liquidar(
               "Total impuesto a cargo − descuentos tributarios. Es la casilla 129 "
               "del formulario: 126 + 127", "Art. 259 ET", casilla=129))
 
-    # --- Retenciones y anticipos -------------------------------------------
+    # Retenciones y anticipos
     retenciones = (
         insumos.retenciones_en_la_fuente + div.retencion_practicada + go.retenciones
     )
@@ -1261,12 +1116,7 @@ def liquidar(
                   "Sin solicitud de devolución ni compensación", "Art. 815 ET",
                   casilla=131))
 
-    # --- Anticipo del año siguiente (art. 807 ET) -------------------------
-    #
-    # La norma permite dos procedimientos y el contribuyente escoge libremente,
-    # pudiendo cambiar de año en año. Casi siempre conviene el menor, así que
-    # el motor calcula los dos y deja elegir —incluida la opción "MENOR", que
-    # toma automáticamente el que resulte más bajo—.
+    # Anticipo (art. 807): directo, promedio o el menor de los dos.
     porcentaje_anticipo = {
         1: parametros.anticipo_primer_anio,
         2: parametros.anticipo_segundo_anio,
@@ -1294,10 +1144,8 @@ def liquidar(
     )
 
     metodo = (insumos.metodo_anticipo or "DIRECTO").upper()
-    # Sin impuesto neto del año anterior registrado, el promedio sería
-    # (neto + 0) / 2: la mitad del anticipo que corresponde. Eso no es un
-    # ahorro, es un dato faltante, y declararlo así expondría al contribuyente
-    # a una sanción por anticipo insuficiente. Se cae al método directo.
+    # Sin impuesto neto del año anterior, el promedio daría la mitad: se usa
+    # el método directo.
     if (
         metodo in {"PROMEDIO", "MENOR"}
         and insumos.anios_declarando > 1
@@ -1348,7 +1196,7 @@ def liquidar(
             f"escoger el procedimiento, así que conviene revisarlo."
         )
 
-    # --- Saldo --------------------------------------------------------------
+    # Saldo
     por_impuesto = (
         impuesto_neto
         + anticipo

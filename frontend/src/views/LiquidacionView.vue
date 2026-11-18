@@ -50,8 +50,7 @@ const activos = ref([])
 const plantillaElegida = ref('')
 const valorPlantilla = ref('')
 
-// El panel empresarial solo le sirve a quien tiene negocio: a un asalariado le
-// estorbarían tres secciones vacías.
+// Panel empresarial: solo con negocio.
 const tieneNegocio = computed(
   () => contribuyente.value && contribuyente.value.tipo_contribuyente !== 'ASALARIADO',
 )
@@ -64,9 +63,7 @@ const nuevaDeduccion = reactive({
 })
 const renglonAbierto = ref(null)
 
-// Los renglones del motor se agrupan aquí por prefijo. El contador lee la
-// liquidación por bloques —patrimonio, cédula general, impuesto, saldo—, no
-// como una lista plana de treinta filas.
+// Renglones del motor agrupados por prefijo.
 const BLOQUES = [
   { titulo: 'Patrimonio', prefijos: ['PAT-'] },
   { titulo: 'Depreciación', prefijos: ['DEP-'] },
@@ -90,8 +87,7 @@ const bloques = computed(() => {
     renglones.forEach((r) => usados.add(r.codigo))
     return { titulo, renglones }
   }).filter((g) => g.renglones.length)
-  // Cualquier renglón nuevo del motor aparece aquí en vez de desaparecer
-  // silenciosamente de la pantalla.
+  // Renglones sin grupo.
   const sobrantes = resultado.value.renglones.filter((r) => !usados.has(r.codigo))
   if (sobrantes.length) grupos.push({ titulo: 'Otros renglones', renglones: sobrantes })
   return grupos
@@ -99,9 +95,7 @@ const bloques = computed(() => {
 
 const DESTACADOS = new Set(['CG-RENTA-LIQUIDA', 'BASE-GRAVABLE', 'IMP-NETO', 'SALDO-A-PAGAR', 'SALDO-A-FAVOR'])
 
-// Cifras que el contador busca primero al abrir la pestaña. Van arriba, no al
-// fondo: hasta ahora había que bajar toda la página para saber en qué terminó
-// la liquidación y dónde estaban las descargas.
+// Cifras del resumen superior.
 const valorDe = (codigo) =>
   Number(resultado.value?.renglones.find((r) => r.codigo === codigo)?.valor ?? 0)
 
@@ -127,8 +121,7 @@ function irAlDetalle() {
 
 const sinClasificar = computed(() => ingresos.value.filter((i) => i.cedula === 'SIN_CLASIFICAR'))
 
-// Secciones de la hoja. Se declaran como datos para que agregar un campo sea
-// una línea aquí y no otro bloque de plantilla.
+// Secciones de la hoja, como datos.
 const SECCIONES_HOJA = [
   {
     titulo: 'Patrimonio',
@@ -278,7 +271,7 @@ async function recalcular() {
   anioNoSoportado.value = ''
   try {
     resultado.value = await liquidar(cid.value, pid.value)
-    // Los escenarios son un complemento: si fallan, la liquidación sigue.
+    // Escenarios opcionales: un error no bloquea la liquidación.
     obtenerEscenarios(cid.value, pid.value)
       .then((e) => { escenarios.value = e.escenarios })
       .catch(() => { escenarios.value = [] })
@@ -383,7 +376,7 @@ const FILAS_210 = [
   { valor: 'EXENTA_OTRA', etiqueta: 'Otra renta exenta' },
 ]
 
-// La fila por omisión de una deducción vieja, igual que la resuelve el motor.
+// Fila por omisión, igual que en el motor.
 function filaDe(d) {
   if (d.fila_formulario) return d.fila_formulario
   return plantillas.value.find((p) => p.codigo === d.codigo_plantilla)?.fila ?? 'DEDUCCION_OTRA'
@@ -457,7 +450,7 @@ onMounted(cargar)
       {{ anioNoSoportado }}
     </EstadoVacio>
 
-    <!-- 0. Resultado y descargas, lo primero que se ve ------------------- -->
+    <!-- Resultado y descargas -->
     <section v-if="resumen" class="hoja border-l-4 border-libro p-5">
       <div class="flex flex-wrap items-start justify-between gap-4">
         <div>
@@ -530,7 +523,7 @@ onMounted(cargar)
       </p>
     </section>
 
-    <!-- 1. Clasificación por cédula ------------------------------------- -->
+    <!-- Clasificación por cédula -->
     <section class="hoja p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -601,9 +594,8 @@ onMounted(cargar)
       </table>
     </section>
 
-    <!-- 2. Hoja de liquidación ------------------------------------------- -->
-    <!-- v-if="hoja": si la carga falló, la sección no debe reventar la vista
-         entera. El mensaje de error ya está arriba. -->
+    <!-- Hoja de liquidación -->
+    <!-- v-if: si la carga falla, el error se muestra arriba -->
     <section v-if="hoja" class="hoja p-5">
       <div class="flex flex-wrap items-start justify-between gap-3">
         <div>
@@ -665,7 +657,7 @@ onMounted(cargar)
       </div>
     </section>
 
-    <!-- 3. Deducciones y rentas exentas solicitadas ---------------------- -->
+    <!-- Deducciones y rentas exentas -->
     <section class="hoja p-5">
       <h2>Deducciones y rentas exentas solicitadas</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">
@@ -772,7 +764,7 @@ onMounted(cargar)
       </form>
     </section>
 
-    <!-- 4. Parte empresarial (solo si el contribuyente tiene negocio) ----- -->
+    <!-- Parte empresarial -->
     <PanelEmpresarial
       v-if="tieneNegocio && hoja"
       :contribuyente-id="cid"
@@ -782,7 +774,7 @@ onMounted(cargar)
       @cambio="recalcular"
     />
 
-    <!-- Venta de inmuebles: para cualquier contribuyente, no solo con negocio -->
+    <!-- Venta de inmuebles (cualquier contribuyente) -->
     <VentasInmuebles
       v-if="hoja"
       :contribuyente-id="cid"
@@ -791,7 +783,7 @@ onMounted(cargar)
       @cambio="recalcular"
     />
 
-    <!-- Escenarios: la misma liquidación con una decisión cambiada -------- -->
+    <!-- Escenarios -->
     <section v-if="escenarios.length" class="hoja p-5">
       <h2>Escenarios</h2>
       <p class="mt-1 max-w-prose text-sm text-tinta-suave">
@@ -833,7 +825,7 @@ onMounted(cargar)
       </div>
     </section>
 
-    <!-- 5. Borrador de la liquidación ------------------------------------ -->
+    <!-- Borrador -->
     <template v-if="resultado">
       <section id="borrador-210" class="hoja p-5">
         <div class="flex flex-wrap items-start justify-between gap-3">

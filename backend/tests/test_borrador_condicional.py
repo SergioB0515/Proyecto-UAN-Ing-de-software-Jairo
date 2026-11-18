@@ -1,13 +1,5 @@
-"""Pruebas del borrador por renglón frente a sugerencias condicionales.
-
-El archivo de la DIAN no siempre asigna un renglón. A veces ofrece un menú:
-«Según el bien o derecho reportado se puede usar en renglones como ... | R112
-... | R29 Patrimonio Bruto | R30 Deudas». Tomar esos renglones como
-definitivos suma el mismo valor en todos y cuenta la misma plata como
-patrimonio, como deuda y como ganancia ocasional a la vez.
-
-Se detectó con un archivo real: el borrador decía R29 = $372.035.792 cuando el
-propio archivo reportaba un tope de patrimonio de $282.551.008.
+"""Renglones condicionales de la exógena ("se puede usar en renglones como
+... | R112 | R29 | R30"): no se suman a ninguno; los asigna el contador.
 """
 
 import io

@@ -1,9 +1,7 @@
 # modulos/gestion/
 
-La declaración como proceso de trabajo del contador: lo que pasa alrededor de la
-liquidación durante la temporada. Los cálculos están en `calculos.py`, funciones
-puras que citan su norma; `servicios.py` los conecta con la liquidación, el
-calendario y la exógena.
+Proceso de la declaración alrededor de la liquidación. `calculos.py`: funciones
+puras con su norma. `servicios.py`: conexión con liquidación, calendario y exógena.
 
 | Qué | Endpoint | Norma |
 |---|---|---|
@@ -21,35 +19,21 @@ calendario y la exógena.
 | Informe de la declaración para el cliente (PDF) | `GET …/informe-cliente` | — |
 | Tasas de interés moratorio (las publicadas vienen con la app; la base agrega o corrige meses) | `GET/PUT /tasas-interes-moratorio` | Art. 635 ET |
 
-## Decisiones
+## Reglas
 
-- **Las etapas que se pueden saber solas no se marcan.** Exógena cargada,
-  documentos completos y presentada se calculan; revisar el cruce, revisar la
-  liquidación, la aprobación del cliente y el pago los marca el contador.
-- **Lo presentado se guarda como copia.** La liquidación cambia cada vez que
-  cambia un dato; la declaración presentada no. La copia es la base de las
-  correcciones, del comparativo del año siguiente y del patrimonio líquido
-  anterior que usa la liquidación (casilla 31 declarada, si existe).
-- **La fecha se fija antes de copiar.** Sin fecha de presentación la
-  liquidación calcula la sanción «si se presentara hoy»; una copia tomada así
-  guardaría una sanción que la declaración presentada a tiempo no tiene.
-- **Sin tasa no hay interés.** Si falta la tasa de un mes, ese tramo no se
-  calcula y se avisa. Las tasas de enero de 2025 a septiembre de 2026 vienen
-  con la app, tomadas de la tabla publicada por la DIAN; la de octubre de 2026,
-  de la resolución de usura de la Superfinanciera menos dos puntos. Están en el
-  código y no en la base para que una instalación nueva nunca arranque sin
-  ellas; lo que el contador guarda en la base las completa o las corrige.
-- **Una casilla no copiada de una declaración anterior manual es desconocida,
-  no cero**: no se marca en el comparativo.
-- **Un certificado por tercero y tipo**: los bancos expiden un solo certificado
-  tributario anual, así que tarjetas, cuentas y CDT del mismo banco son una sola
-  solicitud. Lo que reporta la DIAN o el propio contribuyente no se pide.
+- Exógena, documentos y presentación se calculan; revisar, aprobar y pagar los
+  marca el contador.
+- Lo presentado se guarda como copia: base de correcciones, comparativo y
+  patrimonio anterior (casilla 31).
+- La fecha de presentación se fija antes de copiar la liquidación.
+- Mes sin tasa: el tramo no se calcula y se informa. Tasas oficiales ene. 2025 -
+  oct. 2026 incluidas en el código; la base las completa o corrige.
+- Declaración anterior manual: casilla ausente = desconocida, no cero.
+- Un certificado por tercero y tipo. No se pide lo reportado por la DIAN o el
+  propio contribuyente.
 
-## Lo que no hace
+## Fuera de alcance
 
-- Sanción por extemporaneidad después del emplazamiento (art. 642) y abonos
-  parciales en el cálculo de intereses.
-- Saber si la DIAN ya notificó requerimiento especial (interrumpe la firmeza y
-  cierra la corrección del art. 588): lo registra el contador.
-- Verificar las condiciones del beneficio de auditoría que dependen de hechos
-  externos (Zomac, Zese, zonas francas, retenciones inexistentes).
+- Art. 642 y abonos parciales en intereses.
+- Requerimiento especial notificado (interrumpe firmeza): lo registra el contador.
+- Condiciones externas del beneficio de auditoría (Zomac, Zese, zonas francas).

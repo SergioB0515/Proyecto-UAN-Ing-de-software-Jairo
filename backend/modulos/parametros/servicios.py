@@ -39,12 +39,8 @@ def registrar_umbral(
 
 
 def cargar_umbral_oficial(session: Session, anio_gravable: int) -> UmbralDeclaracion:
-    """Carga los topes para declarar del año desde la tabla oficial.
-
-    Mismo patrón que `cargar_calendario_oficial`: los topes los fija la ley
-    (arts. 592 y 594-3 ET), no son una preferencia del contador, así que no
-    deberían teclearse a mano. El endpoint de umbrales sigue disponible para
-    sobrescribirlos si una norma cambia antes de que salga una versión nueva.
+    """Carga los topes para declarar (arts. 592 y 594-3) desde la tabla oficial.
+    El endpoint de umbrales permite sobrescribirlos.
     """
     parametros = PARAMETROS_POR_ANIO.get(anio_gravable)
     if parametros is None:

@@ -81,12 +81,10 @@ def _buscar_registro(
 
 
 def _ventas_declaradas(session: Session, periodo_fiscal_id: int) -> List[_ItemDeclarado]:
-    """Las ventas de inmuebles registradas, para cruzarlas con lo que reporta la notaría.
+    """Ventas de inmuebles registradas, para cruzar con el reporte de la notaría.
 
-    La notaría reporta con el concepto 1032 tanto al que vende como al que
-    compra y la retención que practicó. Por eso no basta el código: se exige
-    además que el detalle hable de venta o de enajenante, o la venta quedaría
-    emparejada con una compra.
+    El concepto 1032 incluye vendedor y comprador: se exige además que el detalle
+    mencione venta o enajenante.
     """
     from ..liquidacion.modelos import VentaInmueble
 
@@ -179,11 +177,8 @@ def conciliar_contribuyente(
     for registro in candidatos:
         if registro.id in usados or registro.concepto_code == CONCEPTO_CONSUMO_TC:
             continue
-        # Consumos con tarjeta, compras y movimientos de cuentas son flujos, no
-        # bienes ni ingresos: no se «declaran» como un activo o una fuente de
-        # ingreso, así que marcarlos como no declarados sería una alarma falsa.
-        # Se analizan en el cruce con la DIAN, frente a los ingresos. Las
-        # inversiones (un CDT) sí se quedan: dejan un activo o un rendimiento.
+        # Tarjeta, compras y movimientos son flujos: no se marcan como no declarados.
+        # Se analizan en el cruce frente a ingresos. Las inversiones sí se buscan.
         if _a_cruce(registro).es_flujo_sin_bien:
             continue
         items.append(
@@ -241,11 +236,8 @@ def generar_borrador_renglones(
             key=_numero_renglon,
         )
 
-        # Cuando la DIAN ofrece varios renglones posibles en vez de asignar
-        # uno ("según el bien o derecho reportado se puede usar en renglones
-        # como..."), sumar el valor en todos cuenta la misma plata varias
-        # veces: como patrimonio, como deuda y como ganancia ocasional a la
-        # vez. Se aparta para que lo asigne el contador.
+        # Varios renglones posibles: se aparta para que lo asigne el contador,
+        # en vez de contarlo en todos.
         if registro.renglones_son_condicionales:
             sin_asignar.append(
                 RegistroSinAsignar(
@@ -262,12 +254,11 @@ def generar_borrador_renglones(
                 renglon,
                 RenglonSugerido(renglon=renglon, valor_total=0.0, cantidad_registros=0),
             )
-            # Un bien en copropiedad cuenta por el porcentaje de participación
-            # que trae el archivo, no completo.
+            # Copropiedad: cuenta por el porcentaje de participación.
             acumulado.valor_total += float(_a_cruce(registro).valor_propio)
             acumulado.cantidad_registros += 1
 
-    # Nombre oficial de la casilla, del catálogo del formulario 210.
+    # Nombre oficial de la casilla.
     for acumulado in acumulados.values():
         casilla = casilla_por_numero(_numero_renglon(acumulado.renglon), anio_gravable)
         if casilla is not None:
@@ -323,16 +314,9 @@ def _cuadrar_contra_topes(
     registros: List[RegistroExogena],
     acumulados: Dict[str, RenglonSugerido],
 ) -> Tuple[List[CuadreTope], List[str]]:
-    """Reconstruye los cinco topes desde el detalle del propio archivo.
+    """Reconstruye los cinco topes desde el detalle del archivo.
 
-    Es una verificación gratis: la DIAN informa el detalle y también el tope
-    consolidado, así que si el detalle no reproduce el tope, algo se leyó mal.
-
-    El tope de patrimonio NO es la suma del renglón 29: es el mayor entre lo
-    reportado por terceros y el patrimonio declarado el año anterior. Una
-    versión anterior los comparaba directamente y daba una falsa alarma cada
-    vez que el contribuyente había declarado el año pasado más de lo que los
-    terceros reportan este.
+    Tope de patrimonio = max(terceros, patrimonio declarado el año anterior).
     """
     cuadres: List[CuadreTope] = []
     diagnosticos: List[str] = []
@@ -366,9 +350,8 @@ def _cuadrar_contra_topes(
 def cruzar_con_la_dian(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> CruceDian:
-    """Compara el borrador de liquidación con lo que la DIAN ya sabe."""
-    # Import tardío: la liquidación depende de medio sistema y este módulo se
-    # carga antes en el arranque.
+    """Cruza la liquidación con la exógena."""
+    # Import tardío: liquidacion se carga después en el arranque.
     from ..liquidacion import servicios as liquidacion
     from ..parametros.servicios import obtener_umbral_vigente
 

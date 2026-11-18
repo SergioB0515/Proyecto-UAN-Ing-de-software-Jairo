@@ -1,9 +1,5 @@
-"""Informe de la declaración para el cliente, en PDF.
-
-El borrador del 210 es para el contador; este documento es para el
-contribuyente: qué va a declarar, cuánto paga y hasta cuándo, de dónde sale la
-cifra, qué tiene reportado la DIAN sobre él, qué documentos faltan y cuándo
-queda en firme. Sin casillas ni artículos en el cuerpo: las normas van al pie.
+"""Informe en PDF para el contribuyente: resultado, origen de la cifra,
+reporte de la DIAN, documentos y firmeza. Normas al pie.
 """
 
 import io
@@ -58,8 +54,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
         cruce = cruzar_con_la_dian(session, contador.id, contribuyente_id, periodo_id)
         riesgos = [k.mensaje for k in cruce.comparaciones if k.severidad == "ALTA"]
         hay_cruce = True
-        # El cruce compara totales: un ingreso no declarado puede quedar tapado
-        # por otros. La conciliación registro por registro no lo deja pasar.
+        # El cruce compara totales; se agregan los NO_DECLARADO de la conciliación.
         from ..conciliacion.modelos import EstadoConciliacion
         from ..conciliacion.servicios import conciliar_contribuyente
 
@@ -100,7 +95,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
         Spacer(1, 0.4 * cm),
     ]
 
-    # --- El resultado ---------------------------------------------------
+    # Resultado
     if g.saldo_a_pagar > 0:
         resultado, texto = _pesos(g.saldo_a_pagar), "es el valor a pagar"
     elif g.saldo_a_favor > 0:
@@ -129,7 +124,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
                            f"cobra sanción por cada mes de retraso"
                            + (" e intereses de mora." if g.saldo_a_pagar > 0 else "."), p))
 
-    # --- De dónde sale --------------------------------------------------
+    # De dónde sale
     e.append(Paragraph("De dónde sale la cifra", h))
     ingresos = sum((c(n) for n in (32, 43, 58, 74, 99, 107, 108)), CERO)
     filas = [
@@ -144,8 +139,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
     ]
     if c(135) > 0:
         filas.append(("Más: sanciones", c(135)))
-    # El impuesto de renta se muestra aunque sea cero: es lo que el cliente
-    # busca primero.
+    # El impuesto de renta se muestra aunque sea cero.
     filas = [(t, v) for t, v in filas if v != 0 or t.startswith("Impuesto de renta")]
     tabla = Table([[Paragraph(escape(t), p), Paragraph(_pesos(v) if v >= 0 else
                                                       "−" + _pesos(-v), derecha)]
@@ -167,7 +161,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
                 f"El impuesto de renta pasa de {_pesos(anterior.anterior)} a "
                 f"{_pesos(anterior.actual or CERO)}.", p))
 
-    # --- La DIAN --------------------------------------------------------
+    # DIAN
     e.append(Paragraph("Lo que la DIAN tiene reportado sobre usted", h))
     if not hay_cruce:
         e.append(Paragraph("No se cargó el reporte de información exógena, así que no "
@@ -180,7 +174,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
         e.append(Paragraph("Lo que se va a declarar cubre lo que bancos, empleadores y "
                            "demás terceros le reportaron a la DIAN.", p))
 
-    # --- Documentos -----------------------------------------------------
+    # Documentos
     pendientes = [d for d in docs.documentos if d.estado == EstadoDocumento.PENDIENTE]
     if pendientes:
         e.append(Paragraph("Documentos que todavía necesitamos", h))
@@ -188,7 +182,7 @@ def generar(session: Session, contador, contribuyente_id: int, periodo_id: int
             de = f" — {escape(d.tercero.title())}" if d.tercero else ""
             e.append(Paragraph(f"• {escape(d.descripcion)}{de}", p))
 
-    # --- Firmeza --------------------------------------------------------
+    # Firmeza
     e.append(Paragraph("Hasta cuándo puede revisarla la DIAN", h))
     if g.firmeza.fecha:
         e.append(Paragraph(f"La DIAN puede revisar esta declaración hasta el "

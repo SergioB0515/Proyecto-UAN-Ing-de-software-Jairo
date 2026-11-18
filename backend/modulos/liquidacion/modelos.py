@@ -1,15 +1,6 @@
-"""Modelos de la hoja de liquidación.
+"""Modelos de la hoja de liquidación: insumos que aporta el contador.
 
-La hoja guarda los insumos que el contador aporta y que no se pueden deducir de
-la exógena ni del resto de la aplicación: cuántos dependientes tiene el
-contribuyente, qué deducciones va a solicitar, si optó por costos y gastos en
-honorarios, qué dividendos le certificaron. Son decisiones profesionales, no
-datos: por eso se persisten con quién las guardó y cuándo, y no se infieren.
-
-Todos los importes son NUMERIC(18,2) en la base y Decimal en Python. El resto
-de la aplicación todavía usa float; la conversión ocurre en `servicios.py`, en
-la frontera, y está marcada ahí. Migrar los módulos antiguos a Decimal está en
-el roadmap como tarea aparte porque toca los 195 tests existentes.
+Importes en NUMERIC(18,2) / Decimal.
 """
 
 from datetime import date, datetime, timezone
@@ -28,12 +19,7 @@ def _dinero(**kwargs) -> Field:
 
 
 class CategoriaDepreciacion(str, Enum):
-    """Categorías de la tabla del art. 137 ET.
-
-    Es un enum y no texto libre porque cada categoría lleva su tasa máxima
-    asociada: un valor fuera de la tabla no tiene tasa y el activo quedaría sin
-    depreciar sin que nadie lo note.
-    """
+    """Categorías del art. 137 ET. Enum: cada una tiene su tasa máxima."""
 
     CONSTRUCCIONES_Y_EDIFICACIONES = "CONSTRUCCIONES_Y_EDIFICACIONES"
     ACUEDUCTO_PLANTA_Y_REDES = "ACUEDUCTO_PLANTA_Y_REDES"
@@ -60,18 +46,16 @@ class MetodoAnticipo(str, Enum):
 
 
 class ReduccionSancion(str, Enum):
-    """Reducción del art. 640 ET para la sanción que liquida el contribuyente."""
+    """Reducción del art. 640 ET."""
 
     NINGUNA = "NINGUNA"
-    AL_75 = "AL_75"   # sin la misma conducta en el último año
-    AL_50 = "AL_50"   # sin la misma conducta en los dos últimos años
+    AL_75 = "AL_75"  # sin la conducta en el último año
+    AL_50 = "AL_50"  # sin la conducta en los dos últimos años
 
 
 class TipoRentaPerdida(str, Enum):
-    """Tipos de renta que admiten compensación de pérdidas.
-
-    No están las rentas de trabajo con vínculo laboral (art. 156), ni pensiones
-    ni dividendos: en esas no se puede generar ni compensar pérdida.
+    """Rentas que admiten compensación de pérdidas. Excluye trabajo con vínculo
+    (art. 156), pensiones y dividendos.
     """
 
     CAPITAL = "CAPITAL"
@@ -80,13 +64,7 @@ class TipoRentaPerdida(str, Enum):
 
 
 class Cedula(str, Enum):
-    """Cédula o subcédula a la que pertenece un ingreso.
-
-    SIN_CLASIFICAR es un estado explícito, no un error silencioso: el motor
-    excluye esos ingresos de la liquidación y los reporta como diagnóstico para
-    que el contador los clasifique. Adivinar la cédula de un ingreso cambia el
-    impuesto y no es una decisión que deba tomar el software.
-    """
+    """Cédula de un ingreso. SIN_CLASIFICAR se excluye de la liquidación y se reporta."""
 
     TRABAJO = "TRABAJO"
     TRABAJO_SIN_VINCULO = "TRABAJO_SIN_VINCULO"
@@ -97,39 +75,34 @@ class Cedula(str, Enum):
 
 
 class HojaLiquidacionBase(SQLModel):
-    # Patrimonio. El patrimonio bruto se calcula desde los activos registrados;
-    # las deudas no existen como entidad en la aplicación y se capturan aquí.
+    # Patrimonio. Bruto desde activos; deudas se capturan aquí.
     deudas: Decimal = _dinero()
 
-    # Cédula general: rentas de trabajo
+    # Rentas de trabajo
     aportes_obligatorios_salud: Decimal = _dinero()
     aportes_obligatorios_pension: Decimal = _dinero()
     otros_ingresos_no_constitutivos: Decimal = _dinero()
     opta_por_costos_y_gastos: bool = Field(default=False)
     costos_y_gastos_sin_vinculo_laboral: Decimal = _dinero()
 
-    # Cédula general: rentas de capital y no laborales.
-    #
-    # El costo de ventas sale del kardex y la depreciación de los activos; lo
-    # que se captura aquí son los demás costos y gastos procedentes (arriendo,
-    # nómina, servicios, intereses) y las devoluciones en ventas, que no tienen
-    # otro lugar en la aplicación.
+    # Rentas de capital y no laborales: costos y gastos distintos de kardex y
+    # depreciación, y devoluciones.
     ingresos_no_constitutivos_capital: Decimal = _dinero()
     costos_y_gastos_capital: Decimal = _dinero()
     ingresos_no_constitutivos_no_laborales: Decimal = _dinero()
     devoluciones_no_laborales: Decimal = _dinero()
     costos_y_gastos_no_laborales: Decimal = _dinero()
 
-    # Deducciones fuera del límite general
+    # Fuera del límite general
     numero_dependientes: int = Field(default=0, ge=0, le=20)
     compras_con_factura_electronica: Decimal = _dinero()
 
-    # Cédula de pensiones
+    # Pensiones
     ingresos_pensiones: Decimal = _dinero()
     incrngo_pensiones: Decimal = _dinero()
     meses_pension_causados: int = Field(default=12, ge=0, le=12)
 
-    # Dividendos (del certificado de la sociedad)
+    # Dividendos (certificado de la sociedad)
     dividendos_no_gravados: Decimal = _dinero()
     dividendos_gravados: Decimal = _dinero()
     retencion_dividendos: Decimal = _dinero()
@@ -141,7 +114,7 @@ class HojaLiquidacionBase(SQLModel):
     go_loterias_rifas_apuestas: Decimal = _dinero()
     go_retenciones: Decimal = _dinero()
 
-    # Cierre de la liquidación
+    # Cierre
     renta_presuntiva: Decimal = _dinero()
     otros_descuentos_tributarios: Decimal = _dinero()
     anticipo_pagado_anio_anterior: Decimal = _dinero()
@@ -151,13 +124,11 @@ class HojaLiquidacionBase(SQLModel):
     reduccion_sancion: ReduccionSancion = Field(default=ReduccionSancion.NINGUNA)
     impuesto_neto_anio_anterior: Decimal = _dinero()
 
-    # Bancarización (art. 771-5). Se capturan los totales del año: la
-    # aplicación solo conoce las compras de inventario, no todos los pagos.
+    # Bancarización (art. 771-5): totales del año.
     total_pagos_del_anio: Decimal = _dinero()
     pagos_en_efectivo: Decimal = _dinero()
 
-    # Comparación patrimonial (art. 236). El patrimonio del año anterior se
-    # deduce de los activos del periodo previo; este campo solo lo sobrescribe.
+    # Comparación patrimonial (art. 236). Sobrescribe el patrimonio calculado.
     patrimonio_liquido_anterior_manual: Optional[Decimal] = Field(
         default=None, sa_type=Numeric(18, 2)
     )
@@ -165,7 +136,7 @@ class HojaLiquidacionBase(SQLModel):
     justificaciones_patrimoniales: Decimal = _dinero()
     aceptar_renta_comparacion_patrimonial: bool = Field(default=False)
 
-    # Subcédula a la que se imputa la depreciación.
+    # Subcédula de la depreciación.
     cedula_depreciacion: Cedula = Field(default=Cedula.NO_LABORAL)
 
 
@@ -185,7 +156,7 @@ class HojaLiquidacion(HojaLiquidacionBase, table=True):
 
 
 class HojaLiquidacionActualizar(SQLModel):
-    """Actualización parcial: solo se escriben los campos enviados."""
+    """Actualización parcial."""
 
     deudas: Optional[Decimal] = Field(default=None, ge=0)
     aportes_obligatorios_salud: Optional[Decimal] = Field(default=None, ge=0)
@@ -239,16 +210,12 @@ class DeduccionSolicitadaBase(SQLModel):
     valor: Decimal = Field(sa_type=Numeric(18, 2), ge=0)
     sujeto_a_limite_general: bool = Field(default=True)
     fuente_legal: str = Field(default="", max_length=200)
-    # De qué concepto del catálogo salió. Es lo que le permite al motor saber
-    # qué tope propio aplicarle: una deducción escrita a mano no tiene techo
-    # conocido y el motor no puede inventarle uno.
+    # Concepto del catálogo; define el tope propio.
     codigo_plantilla: Optional[str] = Field(default=None, max_length=60)
-    # Columna del formulario 210 a la que se imputa: TRABAJO,
-    # TRABAJO_SIN_VINCULO, CAPITAL o NO_LABORAL. Vacío deja que el motor la
-    # reparta entre las columnas con renta líquida, en el orden del formulario.
+    # Columna: TRABAJO, TRABAJO_SIN_VINCULO, CAPITAL o NO_LABORAL. Vacío: la
+    # imputa el motor.
     subcedula: Optional[str] = Field(default=None, max_length=30)
-    # Fila del formulario: EXENTA_AFC, EXENTA_OTRA, DEDUCCION_VIVIENDA o
-    # DEDUCCION_OTRA. Decide la casilla dentro de la columna.
+    # Fila: EXENTA_AFC, EXENTA_OTRA, DEDUCCION_VIVIENDA o DEDUCCION_OTRA.
     fila_formulario: Optional[str] = Field(default=None, max_length=30)
 
 
@@ -278,11 +245,7 @@ class FilaFormulario(str, Enum):
 
 
 class DeduccionImputacion(SQLModel):
-    """A qué columna y fila del formulario 210 va una deducción.
-
-    `subcedula` en nulo devuelve la imputación al motor, que la reparte entre
-    las columnas con renta líquida.
-    """
+    """Columna y fila del 210 de una deducción. subcedula nula: la imputa el motor."""
 
     subcedula: Optional[SubcedulaFormulario] = None
     fila_formulario: FilaFormulario
@@ -294,11 +257,8 @@ class DeduccionSolicitadaLeer(DeduccionSolicitadaBase):
 
 
 class ClasificacionIngreso(SQLModel, table=True):
-    """Cédula asignada a una fuente de ingreso.
-
-    Tabla aparte en vez de una columna en `fuentes_ingreso` para no alterar el
-    esquema de un módulo con pruebas en verde a tres semanas de la entrega. En
-    el roadmap figura unificarla como columna, que es el diseño correcto.
+    """Cédula asignada a una fuente de ingreso. Pendiente: pasarla a columna de
+    fuentes_ingreso.
     """
 
     __tablename__ = "clasificaciones_ingreso"
@@ -322,7 +282,7 @@ class IngresoClasificadoLeer(SQLModel):
     origen_clasificacion: str  # MANUAL | SUGERIDA
 
 
-# --- Esquemas de salida de la liquidación ----------------------------------
+# Salida de la liquidación
 
 
 class RenglonLeer(SQLModel):
@@ -364,7 +324,7 @@ class LiquidacionLeer(SQLModel):
     )
 
 
-# --- Escenarios ------------------------------------------------------------
+# Escenarios
 
 
 class CifrasEscenario(SQLModel):
@@ -375,7 +335,7 @@ class CifrasEscenario(SQLModel):
 
 
 class EscenarioLeer(SQLModel):
-    """La misma liquidación con una sola decisión cambiada."""
+    """Liquidación con una decisión cambiada."""
 
     clave: str
     titulo: str
@@ -383,7 +343,7 @@ class EscenarioLeer(SQLModel):
     opcion_alterna: str
     actual: CifrasEscenario
     alterna: CifrasEscenario
-    # Positivo: la alternativa cuesta menos que lo que hay hoy.
+    # Positivo: la alternativa cuesta menos.
     ahorro_en_impuesto: Decimal
     ahorro_en_saldo: Decimal
     explicacion: str
@@ -402,7 +362,7 @@ class EscenariosLeer(SQLModel):
     )
 
 
-# --- Activos depreciables ---------------------------------------------------
+# Activos depreciables
 
 
 class DatosDepreciacionBase(SQLModel):
@@ -414,13 +374,7 @@ class DatosDepreciacionBase(SQLModel):
 
 
 class DatosDepreciacion(DatosDepreciacionBase, table=True):
-    """Datos de depreciación de un activo ya registrado.
-
-    Tabla aparte y no columnas en `activos` por la misma razón que
-    `ClasificacionIngreso`: no alterar el esquema de un módulo con pruebas en
-    verde cerca de la entrega. Consolidar ambas en sus tablas de origen está en
-    el roadmap.
-    """
+    """Depreciación de un activo registrado. Pendiente: pasarla a columnas de activos."""
 
     __tablename__ = "datos_depreciacion"
 
@@ -442,7 +396,7 @@ class DatosDepreciacionLeer(DatosDepreciacionBase):
     formula: str
 
 
-# --- Pérdidas fiscales compensables ----------------------------------------
+# Pérdidas fiscales
 
 
 class PerdidaFiscalBase(SQLModel):
@@ -454,12 +408,7 @@ class PerdidaFiscalBase(SQLModel):
 
 
 class PerdidaFiscal(PerdidaFiscalBase, table=True):
-    """Pérdida de un año anterior pendiente de compensar.
-
-    Se guarda por contribuyente y no por periodo: una pérdida de 2019 se puede
-    compensar en cualquiera de los doce años siguientes, así que no pertenece a
-    un periodo en particular.
-    """
+    """Pérdida pendiente de compensar. Por contribuyente: aplica a varios periodos."""
 
     __tablename__ = "perdidas_fiscales"
 
@@ -478,7 +427,7 @@ class PerdidaFiscalLeer(PerdidaFiscalBase):
     vigente: bool
 
 
-# --- Pagos individuales en efectivo (art. 771-5 par. 2) --------------------
+# Pagos en efectivo (art. 771-5 par. 2)
 
 
 class PagoEfectivoBase(SQLModel):
@@ -504,7 +453,7 @@ class PagoEfectivoLeer(PagoEfectivoBase):
 
 
 
-# --- Venta de inmuebles ------------------------------------------------------
+# Venta de inmuebles
 
 
 class TipoInmueble(str, Enum):
@@ -521,14 +470,14 @@ class VentaInmuebleBase(SQLModel):
     valor_venta: Decimal = _dinero(ge=0)
     costo_adquisicion: Decimal = _dinero(ge=0)
     mejoras_y_valorizacion: Decimal = _dinero(ge=0)
-    # Avalúo catastral o autoavalúo del año anterior a la venta (art. 72 ET).
+    # Avalúo del año anterior a la venta (art. 72 ET).
     avaluo_catastral_anterior: Optional[Decimal] = Field(
         default=None, sa_type=Numeric(18, 2), ge=0)
     es_casa_de_habitacion: bool = Field(default=False)
     porcentaje_participacion: Decimal = Field(
         default=Decimal("100"), sa_type=Numeric(5, 2), gt=0, le=100)
     retencion: Decimal = _dinero(ge=0)
-    # Multiplicador del art. 73 escrito a mano, para un año sin tabla cargada.
+    # Factor del art. 73 manual, para años sin tabla.
     factor_manual: Optional[Decimal] = Field(default=None, sa_type=Numeric(12, 4), gt=0)
 
 

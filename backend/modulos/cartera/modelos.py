@@ -24,8 +24,7 @@ class FilaCartera(SQLModel):
     obligado: Optional[bool] = None
     alertas_no_declarado: Optional[int] = None
     vencimiento: Optional[VencimientoDeclaracion] = None
-    # Etapa del proceso de la declaración (módulo `gestion`): la primera que
-    # falta, y cuántas van de cuántas.
+    # Etapa pendiente del proceso (gestion) y avance.
     etapa_actual: Optional[str] = None
     etapa_nombre: Optional[str] = None
     etapas_hechas: Optional[int] = None

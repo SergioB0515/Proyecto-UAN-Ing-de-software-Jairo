@@ -1,9 +1,5 @@
-"""Pruebas de la API de liquidación.
-
-Cubren lo que el motor no puede cubrir solo: que la hoja persista, que la
-clasificación por cédula se respete, que un ingreso sin clasificar se excluya
-del cálculo en vez de colarse con una cédula adivinada, y que un contador no
-alcance los datos de otro.
+"""API de liquidación: persistencia, clasificación por cédula, exclusión de
+lo no clasificado y aislamiento entre contadores.
 """
 
 from decimal import Decimal as D
@@ -53,9 +49,7 @@ def _valor(liq, codigo):
     return D(next(r["valor"] for r in liq["renglones"] if r["codigo"] == codigo))
 
 
-# ---------------------------------------------------------------------------
 # Hoja de liquidación
-# ---------------------------------------------------------------------------
 
 
 def test_la_hoja_se_crea_vacia_la_primera_vez_que_se_consulta(client):
@@ -98,9 +92,7 @@ def test_la_hoja_rechaza_valores_negativos(client):
     assert respuesta.status_code == 422
 
 
-# ---------------------------------------------------------------------------
 # Deducciones solicitadas
-# ---------------------------------------------------------------------------
 
 
 def test_las_deducciones_se_crean_listan_y_eliminan(client):
@@ -143,9 +135,7 @@ def test_no_se_puede_borrar_una_deduccion_de_otro_periodo(client):
     assert respuesta.status_code == 404
 
 
-# ---------------------------------------------------------------------------
 # Clasificación por cédula
-# ---------------------------------------------------------------------------
 
 
 def test_los_ingresos_traen_una_cedula_sugerida_y_marcada_como_tal(client):
@@ -202,9 +192,7 @@ def test_el_catalogo_de_cedulas_explica_que_implica_cada_una(client):
     assert all(c["implicacion"] for c in catalogo)
 
 
-# ---------------------------------------------------------------------------
 # Liquidación de punta a punta
-# ---------------------------------------------------------------------------
 
 
 def test_liquida_un_asalariado_con_deducciones_y_activos(client):
@@ -257,14 +245,13 @@ def test_liquida_un_asalariado_con_deducciones_y_activos(client):
     assert _valor(liq, "RETENCIONES") == D("9500000.00")
     assert _valor(liq, "SALDO-A-PAGAR") == D("0.00")
     assert _valor(liq, "SALDO-A-FAVOR") > D("0")
-    # Nada se recortó: lo solicitado cabía en el límite del art. 336. El único
-    # aviso es que no hay año anterior contra el cual comparar el patrimonio.
+    # Sin recorte. Único aviso: no hay año anterior para comparar patrimonio.
     assert not any("límite" in d for d in liq["diagnosticos"])
     assert [d for d in liq["diagnosticos"] if "comparación patrimonial" in d]
 
 
 def test_un_ingreso_sin_clasificar_no_entra_en_la_liquidacion_y_se_reporta(client):
-    """Es la regla que evita una declaración equivocada en silencio."""
+    """Lo no clasificado no se liquida."""
     h = _token(client, "liq-11@example.com")
     cid, pid = _contribuyente(client, h)
     _fuente(client, h, cid, pid, "Salario de la empresa X", 100000000)
@@ -311,7 +298,7 @@ def test_cada_renglon_viaja_con_su_formula_su_fuente_y_su_valor_declarable(clien
 
 
 def test_un_ano_sin_parametros_devuelve_422_con_instrucciones(client):
-    """El periodo existe; lo que falta son los parámetros. 422, no 404."""
+    """Año sin parámetros: 422."""
     h = _token(client, "liq-14@example.com")
     cid, pid = _contribuyente(client, h, anio=2015)
 
@@ -334,9 +321,7 @@ def test_la_liquidacion_se_exporta_a_excel_y_pdf(client):
     assert "borrador_liquidacion" in xlsx.headers["content-disposition"]
 
 
-# ---------------------------------------------------------------------------
 # Aislamiento entre contadores y auditoría
-# ---------------------------------------------------------------------------
 
 
 def test_un_contador_no_alcanza_la_liquidacion_de_otro(client):

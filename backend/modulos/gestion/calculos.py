@@ -1,13 +1,5 @@
-"""Cálculos de la gestión de la declaración, sin base de datos ni reloj.
-
-Lo que el contador resuelve alrededor de la liquidación: cuándo queda en firme
-la declaración, si alcanza el beneficio de auditoría, cuánto cuesta corregirla,
-cuántos intereses de mora genera pagar tarde, cómo se compara con la del año
-anterior y qué documentos hay que pedirle al cliente.
-
-Cada regla cita su norma. Las que dependen de datos que solo existen en el
-mundo (la tasa de mora de cada mes, si la DIAN ya notificó un emplazamiento)
-los reciben como argumento: el módulo no los supone.
+"""Cálculos de gestión: firmeza, beneficio de auditoría, corrección, intereses,
+comparativo y documentos. Sin base de datos ni reloj.
 """
 
 import calendar
@@ -28,15 +20,13 @@ def _redondear(valor: Decimal) -> Decimal:
 
 
 def sumar_meses(fecha: date, meses: int) -> date:
-    """La misma fecha N meses después; el 31 cae al último día del mes."""
+    """Suma N meses; si el día no existe, último día del mes."""
     total = fecha.month - 1 + meses
     anio, mes = fecha.year + total // 12, total % 12 + 1
     return date(anio, mes, min(fecha.day, calendar.monthrange(anio, mes)[1]))
 
 
-# ---------------------------------------------------------------------------
 # Firmeza (art. 714 ET)
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -56,18 +46,14 @@ def calcular_firmeza(
     liquida_o_compensa_perdidas: bool = False,
     meses_beneficio_auditoria: Optional[int] = None,
 ) -> Firmeza:
-    """Fecha en que la DIAN pierde la facultad de revisar la declaración.
+    """Fecha de firmeza (art. 714).
 
-    - Regla general: tres años desde el vencimiento del plazo para declarar.
-    - Presentada tarde: tres años desde la presentación.
-    - Con saldo a favor cuya devolución o compensación se pidió: tres años
-      desde la solicitud.
-    - Si liquida o compensa pérdidas fiscales: cinco años.
-    - Beneficio de auditoría (art. 689-3): seis o doce meses desde la
-      presentación, si se cumplen sus condiciones.
-
-    La firmeza se interrumpe si la DIAN notifica requerimiento especial antes
-    de la fecha; eso no lo puede saber este cálculo.
+    - General: 3 años desde el vencimiento.
+    - Extemporánea: 3 años desde la presentación.
+    - Saldo a favor solicitado: 3 años desde la solicitud.
+    - Liquida o compensa pérdidas: 5 años.
+    - Beneficio de auditoría (art. 689-3): 6 o 12 meses.
+    No considera requerimientos especiales notificados.
     """
     fuente = "Art. 714 ET"
     if presentacion is None:
@@ -119,11 +105,9 @@ def calcular_firmeza(
     return Firmeza(fecha, f"{anios} años desde {motivo}", fuente, desde, notas)
 
 
-# ---------------------------------------------------------------------------
 # Beneficio de auditoría (art. 689-3 ET)
-# ---------------------------------------------------------------------------
 
-ANIOS_BENEFICIO = (2024, 2025, 2026)   # Ley 2294 de 2023, art. 69
+ANIOS_BENEFICIO = (2024, 2025, 2026)  # Ley 2294 de 2023, art. 69
 INCREMENTO_6_MESES = Decimal("0.35")
 INCREMENTO_12_MESES = Decimal("0.25")
 MINIMO_UVT_ANIO_ANTERIOR = Decimal("71")
@@ -132,15 +116,15 @@ MINIMO_UVT_ANIO_ANTERIOR = Decimal("71")
 @dataclass
 class Condicion:
     descripcion: str
-    cumple: Optional[bool]      # None = no se puede saber con los datos
+    cumple: Optional[bool]  # None = sin datos para saberlo
     detalle: str = ""
 
 
 @dataclass
 class BeneficioAuditoria:
     vigente: bool
-    meses: Optional[int]                # 6, 12 o None si no alcanza
-    incremento: Optional[Decimal]       # fracción: 0.35 = 35 %
+    meses: Optional[int]  # 6, 12 o None
+    incremento: Optional[Decimal]  # fracción: 0.35 = 35 %
     impuesto_actual: Decimal
     impuesto_anterior: Optional[Decimal]
     impuesto_para_12_meses: Optional[Decimal] = None
@@ -158,14 +142,8 @@ def calcular_beneficio_auditoria(
     presentada_a_tiempo: Optional[bool],
     pagada_a_tiempo: Optional[bool],
 ) -> BeneficioAuditoria:
-    """¿La declaración queda en firme en 6 o 12 meses?
-
-    Exige que el impuesto neto de renta suba al menos 35 % (6 meses) o 25 %
-    (12 meses) frente al del año anterior, que el del año anterior sea de al
-    menos 71 UVT, y que la declaración se presente y se pague a tiempo.
-
-    El impuesto neto de renta es la casilla 126 del 210: no incluye el de
-    ganancias ocasionales.
+    """Beneficio de auditoría: impuesto neto (casilla 126) +35 % -> 6 meses,
+    +25 % -> 12 meses. Año anterior >= 71 UVT; presentar y pagar a tiempo.
     """
     resultado = BeneficioAuditoria(
         vigente=anio_gravable in ANIOS_BENEFICIO,
@@ -254,9 +232,7 @@ def calcular_beneficio_auditoria(
     return resultado
 
 
-# ---------------------------------------------------------------------------
-# Corrección de la declaración (arts. 588, 589, 644 ET)
-# ---------------------------------------------------------------------------
+# Corrección (arts. 588, 589, 644 ET)
 
 SANCION_MINIMA_UVT = Decimal("10")
 REDUCCIONES_640 = {"NINGUNA": Decimal("1"), "AL_75": Decimal("0.75"), "AL_50": Decimal("0.50")}
@@ -264,8 +240,8 @@ REDUCCIONES_640 = {"NINGUNA": Decimal("1"), "AL_75": Decimal("0.75"), "AL_50": D
 
 @dataclass
 class Correccion:
-    tipo: str                       # AUMENTA | DISMINUYE | SIN_EFECTO
-    mayor_valor: Decimal            # positivo: más a pagar o menos saldo a favor
+    tipo: str  # AUMENTA | DISMINUYE | SIN_EFECTO
+    mayor_valor: Decimal  # positivo: más a pagar o menos saldo a favor
     sancion: Decimal = CERO
     plazo: Optional[date] = None
     vencida: Optional[bool] = None
@@ -279,7 +255,7 @@ def _neto(saldo_a_pagar: Decimal, saldo_a_favor: Decimal) -> Decimal:
 
 
 def meses_o_fraccion(desde: date, hasta: date) -> int:
-    """Meses o fracción de mes calendario entre dos fechas (mínimo 1)."""
+    """Meses o fracción entre dos fechas (mínimo 1)."""
     if hasta <= desde:
         return 0
     meses = (hasta.year - desde.year) * 12 + (hasta.month - desde.month)
@@ -300,11 +276,10 @@ def calcular_correccion(
     despues_de_emplazamiento: bool = False,
     reduccion: str = "NINGUNA",
 ) -> Correccion:
-    """Sanción y plazo de una corrección frente a la última declaración presentada.
+    """Sanción y plazo de una corrección.
 
-    El mayor valor es la diferencia en el resultado de la declaración (saldo a
-    pagar menos saldo a favor) entre la corrección y la inmediatamente
-    anterior, sin incluir la propia sanción por corrección (art. 644 par. 3).
+    Mayor valor: diferencia de (saldo a pagar − saldo a favor) frente a la
+    anterior, sin la propia sanción (art. 644 par. 3).
     """
     mayor_valor = (_neto(saldo_a_pagar_nuevo, saldo_a_favor_nuevo)
                    - _neto(saldo_a_pagar_anterior, saldo_a_favor_anterior))
@@ -357,9 +332,7 @@ def calcular_correccion(
                       formula, "Arts. 588, 639, 640 y 644 ET", notas)
 
 
-# ---------------------------------------------------------------------------
 # Intereses moratorios (arts. 634 y 635 ET)
-# ---------------------------------------------------------------------------
 
 
 @dataclass
@@ -367,7 +340,7 @@ class TramoInteres:
     desde: date
     hasta: date
     dias: int
-    tasa: Decimal          # efectiva anual en fracción
+    tasa: Decimal  # efectiva anual, en fracción
     interes: Decimal
 
 
@@ -390,11 +363,9 @@ def calcular_intereses(
     fecha_pago: date,
     tasas: Dict[Tuple[int, int], Decimal],
 ) -> Intereses:
-    """Intereses de mora sobre el impuesto pagado después del vencimiento.
+    """Intereses de mora: capital × tasa del mes / días del año × días, por mes.
 
-    La tasa es la de usura para crédito de consumo menos dos puntos, la que
-    publica la DIAN para cada mes. Si falta la de algún mes, no se calcula ese
-    tramo y se informa: un interés calculado con una tasa supuesta no sirve.
+    Mes sin tasa: no se calcula y se reporta.
     """
     resultado = Intereses(capital=capital)
     if capital <= CERO or fecha_pago <= vencimiento:
@@ -420,9 +391,7 @@ def calcular_intereses(
     return resultado
 
 
-# ---------------------------------------------------------------------------
-# Comparación con la declaración del año anterior
-# ---------------------------------------------------------------------------
+# Comparación con el año anterior
 
 CASILLAS_COMPARADAS = (29, 30, 31, 32, 43, 58, 74, 91, 93, 97, 99, 107, 108,
                        111, 112, 116, 125, 126, 127, 129, 132, 133, 136, 137)
@@ -460,14 +429,10 @@ def comparar_con_anterior(
     umbral_minimo: Decimal,
     anterior_incompleto: bool = False,
 ) -> Comparativo:
-    """Casilla por casilla, más las dos coherencias que la DIAN cruza sola.
+    """Comparativo casilla por casilla y dos coherencias.
 
-    Se marcan las variaciones de más del 30 % que además superan un monto
-    mínimo (para no alarmar por diferencias de pocos pesos). Si la declaración
-    anterior se copió a mano (`anterior_incompleto`), una casilla que falta es
-    desconocida, no cero, y no se marca. La casilla 130 de
-    este año debe ser la 133 del anterior (el anticipo que se liquidó), y la
-    131 la 137 del anterior (el saldo a favor que no se pidió en devolución).
+    Marca variaciones > 30 % sobre un monto mínimo. Con anterior_incompleto, una
+    casilla ausente no se marca. Coherencias: 130 = 133 anterior; 131 = 137 anterior.
     """
     filas: List[FilaComparativo] = []
     for n in CASILLAS_COMPARADAS:
@@ -505,9 +470,7 @@ def comparar_con_anterior(
     return Comparativo(filas, coherencias)
 
 
-# ---------------------------------------------------------------------------
-# Documentos a pedirle al cliente
-# ---------------------------------------------------------------------------
+# Documentos para el cliente
 
 
 @dataclass
@@ -530,16 +493,13 @@ class RegistroParaDocumentos:
     es_dian: bool = False
 
 
-# Los bancos expiden un solo certificado tributario anual con saldos, deudas,
-# rendimientos, intereses y GMF: tarjetas, cuentas y CDT del mismo banco van a
-# la misma solicitud.
+# Un certificado tributario por banco (saldos, deudas, rendimientos, GMF).
 _CERT_BANCARIO = ("Certificado tributario anual: saldos y deudas a 31 de diciembre, "
                   "rendimientos, intereses y GMF pagados")
 
-# (expresión sobre «concepto + detalle», tipo, descripción). Se evalúan en
-# orden: la primera que coincide define el documento.
+# (patrón sobre concepto + detalle, tipo, descripción). Gana la primera.
 _REGLAS: Sequence[Tuple[str, str, str]] = (
-    (r"retenci[oó]n", "", ""),   # va dentro del certificado del mismo tercero
+    (r"retenci[oó]n", "", ""),  # incluido en el certificado del mismo tercero
     (r"\b(5001|5002)\b|salario|pagos laborales|pensi[oó]n de jubilaci",
      "CERT_220", "Certificado de ingresos y retenciones por rentas de trabajo y "
      "de pensiones (formulario 220)"),
@@ -584,11 +544,8 @@ def sugerir_documentos(
     tiene_declaracion_anterior: bool = False,
     tiene_deudas: bool = False,
 ) -> List[DocumentoSugerido]:
-    """Lista de documentos que respaldan lo que se va a declarar.
-
-    Uno por tercero y tipo de documento: un banco que reporta saldos y
-    rendimientos genera un solo certificado tributario. Lo que reporta la
-    propia DIAN o el mismo contribuyente no genera solicitud.
+    """Documentos que soportan la declaración: uno por tercero y tipo.
+    No se piden los reportados por la DIAN o el propio contribuyente.
     """
     docs: Dict[str, DocumentoSugerido] = {}
 

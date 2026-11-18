@@ -110,9 +110,7 @@ def test_la_sancion_entra_en_la_135_y_sube_el_total_a_pagar():
 
 
 def test_liquidar_dos_veces_los_mismos_insumos_da_lo_mismo():
-    """El motor sumaba la depreciación y restaba el efectivo rechazado sobre los
-    propios insumos: la segunda liquidación salía distinta de la primera.
-    """
+    """Liquidar dos veces los mismos insumos da lo mismo."""
     P = PARAMETROS_POR_ANIO[2025]
     insumos = InsumosLiquidacion(
         anio_gravable=2025,

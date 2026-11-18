@@ -72,11 +72,8 @@ def cruce_dian(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Compara el borrador de liquidación con lo que la DIAN ya sabe.
-
-    Reconstruye los cinco topes desde el detalle de la exógena y contrasta el
-    patrimonio, los ingresos, las retenciones y las ganancias ocasionales que
-    se van a declarar con lo que reportaron los terceros.
+    """Cruce con la DIAN: cuadre de topes y comparación de patrimonio, ingresos,
+    retenciones y GO.
     """
     try:
         return servicios.cruzar_con_la_dian(

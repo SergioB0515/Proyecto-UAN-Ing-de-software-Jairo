@@ -49,7 +49,7 @@ def cargar_umbral_oficial(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Carga los topes para declarar del año desde la tabla oficial de la aplicación."""
+    """Carga los topes para declarar del año desde la tabla oficial."""
     try:
         return servicios.cargar_umbral_oficial(session, anio_gravable)
     except AnioGravableNoSoportadoError as exc:

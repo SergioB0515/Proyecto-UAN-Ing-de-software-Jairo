@@ -1,7 +1,5 @@
 <script setup>
-// La declaración del año anterior: registrarla si no se hizo en la app,
-// compararla casilla por casilla y traer a la hoja lo que esta declaración
-// toma de ella.
+// Declaración anterior: registro, comparativo y traslado a la hoja.
 import { computed, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../../api/cliente'

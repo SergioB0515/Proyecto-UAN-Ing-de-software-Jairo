@@ -1,9 +1,4 @@
-"""Modelos de la gestión de la declaración.
-
-Lo que el contador lleva alrededor de cada declaración y que no es parte de su
-liquidación: en qué etapa va, qué documentos pidió y recibió, qué se presentó
-(y cuándo), y la tasa de mora de cada mes.
-"""
+"""Modelos de gestión: etapas, documentos, declaraciones presentadas, tasas."""
 
 from datetime import date, datetime, timezone
 from decimal import Decimal
@@ -14,17 +9,11 @@ from sqlalchemy import JSON, Column, Numeric, UniqueConstraint
 from sqlmodel import Field, SQLModel
 
 
-# ---------------------------------------------------------------------------
 # Tablas
-# ---------------------------------------------------------------------------
 
 
 class SeguimientoDeclaracion(SQLModel, table=True):
-    """Hitos del proceso que dependen del criterio del contador o del cliente.
-
-    Los que se pueden saber solos (si hay exógena, si se presentó) no se
-    guardan aquí: se calculan.
-    """
+    """Hitos que marca el contador o el cliente. Los calculables no se guardan."""
 
     __tablename__ = "seguimientos_declaracion"
 
@@ -35,8 +24,7 @@ class SeguimientoDeclaracion(SQLModel, table=True):
     pagada_en: Optional[date] = None
     valor_pagado: Optional[Decimal] = Field(default=None, sa_type=Numeric(18, 2))
     solicitud_devolucion_en: Optional[date] = None
-    # Si la DIAN ya notificó emplazamiento para corregir, la sanción por
-    # corrección es del 20 % y no del 10 % (art. 644 ET).
+    # Con emplazamiento notificado la sanción es 20 %, no 10 % (art. 644).
     emplazamiento_notificado: bool = Field(default=False)
     notas: str = Field(default="", max_length=2000)
 
@@ -48,12 +36,7 @@ class EstadoDocumento(str, Enum):
 
 
 class DocumentoSolicitado(SQLModel, table=True):
-    """Estado de un documento pedido al cliente.
-
-    Las sugerencias se recalculan cada vez desde la exógena y la hoja; esta
-    tabla guarda solo lo que el contador decidió sobre cada una (recibido, no
-    aplica) y los documentos que agregó a mano.
-    """
+    """Decisión del contador sobre un documento (recibido, no aplica) o uno manual."""
 
     __tablename__ = "documentos_solicitados"
     __table_args__ = (UniqueConstraint("periodo_fiscal_id", "clave"),)
@@ -72,13 +55,7 @@ class DocumentoSolicitado(SQLModel, table=True):
 
 
 class DeclaracionPresentada(SQLModel, table=True):
-    """Lo que se presentó ante la DIAN, casilla por casilla.
-
-    Se guarda al registrar la presentación desde la app (copia de la
-    liquidación en ese momento) o a mano, para la declaración de un año que no
-    se hizo en la app. Es la base del comparativo, del beneficio de auditoría
-    del año siguiente y de las correcciones.
-    """
+    """Declaración presentada, casilla por casilla (APP o MANUAL)."""
 
     __tablename__ = "declaraciones_presentadas"
 
@@ -87,18 +64,14 @@ class DeclaracionPresentada(SQLModel, table=True):
     fecha_presentacion: date
     numero_formulario: Optional[str] = Field(default=None, max_length=30)
     es_correccion: bool = Field(default=False)
-    origen: str = Field(default="APP", max_length=10)   # APP | MANUAL
-    # Casilla → valor, como texto para no perder precisión en JSON.
+    origen: str = Field(default="APP", max_length=10)  # APP | MANUAL
+    # Casilla -> valor como texto, sin perder precisión.
     casillas: Dict[str, str] = Field(default_factory=dict, sa_column=Column(JSON))
     registrada_en: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 
 class TasaInteresMoratorio(SQLModel, table=True):
-    """Tasa de interés moratorio tributario de un mes (art. 635 ET).
-
-    Es la usura de consumo que certifica la Superfinanciera menos dos puntos,
-    y la publica la DIAN. Se guarda en porcentaje efectivo anual (27,66).
-    """
+    """Tasa de interés moratorio de un mes (art. 635), % efectivo anual."""
 
     __tablename__ = "tasas_interes_moratorio"
 
@@ -108,9 +81,7 @@ class TasaInteresMoratorio(SQLModel, table=True):
     fuente: str = Field(default="", max_length=300)
 
 
-# ---------------------------------------------------------------------------
 # Entradas
-# ---------------------------------------------------------------------------
 
 
 class SeguimientoActualizar(SQLModel):
@@ -154,15 +125,13 @@ class TasaInteresDatos(SQLModel):
     fuente: str = Field(default="", max_length=300)
 
 
-# ---------------------------------------------------------------------------
 # Salidas
-# ---------------------------------------------------------------------------
 
 
 class EtapaLeer(SQLModel):
     clave: str
     nombre: str
-    # Lo que hay que hacer cuando es la etapa pendiente: «Cargar la exógena».
+    # Acción de la etapa pendiente.
     accion: str = ""
     hecha: bool
     automatica: bool

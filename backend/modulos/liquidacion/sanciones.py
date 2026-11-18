@@ -1,14 +1,7 @@
-"""Sanción por extemporaneidad (arts. 639, 640 y 641 ET).
+"""Sanción por extemporaneidad antes de emplazamiento (arts. 639, 640, 641 ET).
 
-Solo la del art. 641: la de quien presenta tarde por su cuenta, antes de que la
-DIAN lo emplace. Después del emplazamiento las tarifas se duplican (art. 642) y
-eso ya no es una liquidación privada corriente; este módulo no la cubre.
-
-Los intereses de mora tampoco se calculan. Dependen de la tasa de usura que
-certifica la Superintendencia Financiera cada mes (arts. 634 y 635 ET), y una
-tasa desactualizada daría una cifra con apariencia exacta que no lo es.
-
-Función pura: no consulta la base de datos ni el reloj.
+No cubre la del art. 642. Intereses de mora: gestion/calculos.py.
+Función pura.
 """
 
 from core.formato import pesos
@@ -19,7 +12,7 @@ from typing import List, Optional
 
 CERO = Decimal("0")
 
-TARIFA_SOBRE_IMPUESTO = Decimal("0.05")       # por mes o fracción
+TARIFA_SOBRE_IMPUESTO = Decimal("0.05")  # por mes o fracción
 TARIFA_SOBRE_INGRESOS = Decimal("0.005")
 TOPE_SOBRE_INGRESOS = Decimal("0.05")
 TARIFA_SOBRE_PATRIMONIO = Decimal("0.01")
@@ -27,11 +20,11 @@ TOPE_SOBRE_PATRIMONIO = Decimal("0.10")
 TOPE_SIN_SALDO_A_FAVOR_UVT = Decimal("2500")
 SANCION_MINIMA_UVT = Decimal("10")
 
-# Reducciones del art. 640 para la sanción que liquida el propio contribuyente.
+# Reducciones del art. 640.
 REDUCCIONES = {
     "NINGUNA": Decimal("1"),
-    "AL_75": Decimal("0.75"),   # sin la misma conducta en el último año
-    "AL_50": Decimal("0.50"),   # sin la misma conducta en los dos últimos años
+    "AL_75": Decimal("0.75"),  # sin la conducta en el último año
+    "AL_50": Decimal("0.50"),  # sin la conducta en los dos últimos años
 }
 
 
@@ -45,12 +38,7 @@ class ResultadoSancion:
 
 
 def meses_de_retardo(vencimiento: date, presentacion: date) -> int:
-    """Meses o fracción de mes calendario entre el vencimiento y la presentación.
-
-    El art. 641 cuenta «cada mes o fracción de mes calendario de retardo»: un
-    día de retraso ya es un mes, y el segundo empieza al día siguiente de
-    cumplirse el primero.
-    """
+    """Meses o fracción de retardo (art. 641): un día cuenta como un mes."""
     if presentacion <= vencimiento:
         return 0
     meses = (presentacion.year - vencimiento.year) * 12 + (

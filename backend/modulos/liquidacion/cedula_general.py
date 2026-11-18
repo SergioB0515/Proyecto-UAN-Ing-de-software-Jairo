@@ -1,33 +1,12 @@
-"""Depuración de la cédula general, subcédula por subcédula.
+"""Grilla de la cédula general del formulario 210 (casillas 32 a 97).
 
-Por qué existe este módulo
---------------------------
-El formulario 210 no pide la cédula general como un total: la pide como una
-grilla de diecisiete filas por cuatro columnas —rentas de trabajo, rentas de
-trabajo sin vínculo laboral, rentas de capital y rentas no laborales—, con una
-casilla distinta en cada celda.
+Cuatro columnas: trabajo, trabajo sin vínculo, capital, no laborales.
+Fuente: instructivo oficial del formulario 210.
 
-El motor venía calculando el agregado, que da el impuesto correcto pero no se
-puede transcribir: el contador tenía que desagregar a mano justo lo que la
-herramienta debería darle hecho.
-
-La aritmética de cada casilla está tomada del instructivo oficial del
-formulario 210 del año gravable 2024.
-
-Reglas que no son evidentes
----------------------------
-- **Los honorarios cambian de columna según la opción del art. 336 num. 4.**
-  Si el contribuyente opta por restar costos y gastos, van a la columna de
-  rentas de trabajo sin vínculo laboral (casilla 43). Si no, van junto con el
-  salario en la columna de rentas de trabajo (casilla 32) y toman la renta
-  exenta del 25 %.
-- **El límite del art. 336 num. 3 es uno solo para toda la cédula general**,
-  no uno por columna. Se calcula sobre el total y se reparte entre las
-  columnas a prorrata de lo que cada una solicitó, que es como lo presenta el
-  formulario en las casillas 41, 53, 69 y 86.
-- **La deducción por dependientes y el 1 % de compras no van en ninguna
-  columna.** Entran directo a la casilla 92 (casillas 139 y 28), por encima
-  del límite.
+- Honorarios: columna sin vínculo (43) si opta por costos y gastos (art. 336
+  num. 4); si no, columna de trabajo (32) con la exenta del 25 %.
+- Límite del art. 336 num. 3: uno para toda la cédula, repartido en cascada.
+- Dependientes (139) y 1 % de compras (28) van directo a la casilla 92.
 """
 
 from dataclasses import dataclass, field
@@ -43,7 +22,7 @@ _CENTAVO = Decimal("0.01")
 
 TRABAJO, SIN_VINCULO, CAPITAL, NO_LABORAL = SUBCEDULAS
 
-# Tipos de concepto, que deciden en qué casilla de la columna cae cada uno.
+# Tipo de concepto: define la fila de la columna.
 EXENTA_AFC = "EXENTA_AFC"
 EXENTA_OTRA = "EXENTA_OTRA"
 DEDUCCION_VIVIENDA = "DEDUCCION_VIVIENDA"
@@ -69,7 +48,7 @@ def _no_negativo(valor: Decimal) -> Decimal:
 
 
 def porcentaje_legible(fraccion: Decimal) -> str:
-    """0.40 → «40». No se usa Decimal.normalize(), que devuelve 4E+1."""
+    """0.40 -> "40". Decimal.normalize() devolvería 4E+1."""
     texto = f"{(fraccion * 100):f}"
     if "." in texto:
         texto = texto.rstrip("0").rstrip(".")
@@ -78,7 +57,7 @@ def porcentaje_legible(fraccion: Decimal) -> str:
 
 @dataclass
 class Columna:
-    """Una columna de la grilla: todos los valores de una subcédula."""
+    """Una columna de la grilla."""
 
     subcedula: str
     ingresos_brutos: Decimal = CERO
@@ -90,11 +69,8 @@ class Columna:
     exenta_otra: Decimal = CERO
     deduccion_vivienda: Decimal = CERO
     deduccion_otra: Decimal = CERO
-    # Parte de las rentas exentas de esta columna que la ley dejó fuera del
-    # límite del art. 336 num. 3 (art. 206 nums. 6 a 9, art. 206-1, art. 207-2
-    # nums. 3 y 4, convenios de doble tributación, Decisión 578 de la CAN). Se
-    # imprime en la misma fila de rentas exentas, pero no compite por el cupo
-    # del 40 %.
+    # Exentas fuera del límite del num. 3 (art. 206 nums. 6-9, 206-1, 207-2
+    # nums. 3-4, CDI, Decisión 578). Misma fila, no consumen el 40 %.
     sin_limite: Decimal = CERO
     limitadas: Decimal = CERO
     compensaciones: Decimal = CERO
@@ -129,12 +105,12 @@ class Columna:
 
     @property
     def solicitado(self) -> Decimal:
-        """Todo lo solicitado en esta columna, con límite y sin él."""
+        """Total solicitado, con y sin límite."""
         return self.total_rentas_exentas + self.total_deducciones
 
     @property
     def solicitado_limitable(self) -> Decimal:
-        """Lo que compite por el cupo del 40 % / 1.340 UVT."""
+        """Lo que consume el cupo del 40 % / 1.340 UVT."""
         return _no_negativo(self.solicitado - self.sin_limite)
 
     @property
@@ -153,12 +129,9 @@ class ResultadoCedulaGeneral:
     columnas: Dict[str, Columna]
     base_del_limite: Decimal = CERO
     limitadas_total: Decimal = CERO
-    # Casilla 139. El instructivo la topa en la suma de las casillas 42 y 57:
-    # la adición por dependientes no puede exceder la renta líquida ordinaria de
-    # las dos columnas de rentas de trabajo.
+    # Casilla 139. Tope: casillas 42 + 57.
     deduccion_dependientes: Decimal = CERO
-    # Casilla 28. El art. 336 num. 5 no la sujeta al límite del num. 3, pero el
-    # instructivo advierte que «no podrá dar lugar a pérdidas».
+    # Casilla 28. Fuera del límite del num. 3; no puede generar pérdida.
     deduccion_compras: Decimal = CERO
     rentas_gravables: Decimal = CERO
     compensacion_2018_y_anteriores: Decimal = CERO
@@ -167,7 +140,7 @@ class ResultadoCedulaGeneral:
 
     @property
     def casilla_91(self) -> Decimal:
-        """Renta líquida cédula general = Σ(41,42,53,57,69,73,86,90)."""
+        """Casilla 91 = Σ(41, 42, 53, 57, 69, 73, 86, 90)."""
         return sum(
             (c.limitadas + c.renta_liquida_ordinaria for c in self.columnas.values()),
             CERO,
@@ -175,7 +148,7 @@ class ResultadoCedulaGeneral:
 
     @property
     def casilla_92(self) -> Decimal:
-        """Rentas exentas y deducciones imputables limitadas = 28+41+53+69+86+139."""
+        """Casilla 92 = 28 + 41 + 53 + 69 + 86 + 139."""
         return (
             self.deduccion_compras
             + self.limitadas_total
@@ -184,12 +157,12 @@ class ResultadoCedulaGeneral:
 
     @property
     def casilla_93(self) -> Decimal:
-        """Renta líquida ordinaria de la cédula general = 91 − 92."""
+        """Casilla 93 = 91 − 92."""
         return _no_negativo(self.casilla_91 - self.casilla_92)
 
     @property
     def casilla_97(self) -> Decimal:
-        """Renta líquida gravable de la cédula general = 93 + 96 − 94 − 95."""
+        """Casilla 97 = 93 + 96 − 94 − 95."""
         return _no_negativo(
             self.casilla_93
             + self.rentas_gravables
@@ -201,17 +174,10 @@ class ResultadoCedulaGeneral:
 def _imputar_automaticamente(
     columnas: Dict[str, Columna], valor: Decimal
 ) -> List[Tuple[Columna, Decimal]]:
-    """Reparte un concepto sin subcédula asignada entre las columnas con renta.
+    """Imputa un concepto sin subcédula, llenando columnas en orden del formulario.
 
-    Va en el orden del formulario —trabajo, trabajo sin vínculo, capital, no
-    laborales— y llena cada columna hasta el espacio que le queda, que es su
-    renta líquida menos lo que ya tiene solicitado. Es el mismo orden en que el
-    servicio de la DIAN reparte el cupo del art. 336 num. 3, así que el
-    resultado coincide con el que vería el contribuyente al diligenciar.
-
-    Si no queda espacio en ninguna columna, el remanente se imputa a la última
-    con renta líquida para que aparezca en el borrador y el contador vea que lo
-    solicitó: dejarlo fuera lo haría desaparecer sin rastro.
+    Cada columna recibe hasta su renta líquida menos lo ya solicitado. El
+    remanente va a la última columna con renta para que quede visible.
     """
     reparto: List[Tuple[Columna, Decimal]] = []
     restante = valor
@@ -233,24 +199,11 @@ def _imputar_automaticamente(
 def _repartir_en_cascada(
     columnas: Dict[str, Columna], aceptado: Decimal
 ) -> List[str]:
-    """Reparte el monto aceptado entre las columnas, en el orden del formulario.
+    """Reparte lo aceptado en cascada: trabajo, sin vínculo, capital, no laborales.
 
-    El instructivo del 210 es explícito y no deja margen: «se distribuirá en
-    las casillas correspondientes (…) de la siguiente manera: primero a las
-    Rentas de trabajo, segundo a las Rentas de trabajo que no provengan de una
-    relación laboral o legal y reglamentaria, después a las Rentas de capital y
-    por último a las Rentas no laborales, hasta agotar el valor total».
-
-    Es una cascada, no un reparto a prorrata: la primera columna toma todo lo
-    que puede y las siguientes reciben el saldo. Repartir proporcionalmente da
-    el mismo impuesto total pero casillas distintas a las que calcula el
-    servicio de diligenciamiento de la DIAN, y el contribuyente que transcriba
-    el borrador vería su declaración corregida.
-
-    Cada columna tiene además dos techos propios, también del instructivo: lo
-    que efectivamente solicitó, y su propia renta líquida más las rentas
-    pasivas ECE. El segundo techo es el que evita que una columna quede en
-    negativo; cuando muerde, el beneficio se pierde y hay que decirlo.
+    Orden del instructivo del 210. Prorratear da el mismo impuesto pero casillas
+    distintas a las de la DIAN. Techo por columna: lo solicitado y su renta
+    líquida + rentas pasivas ECE; el exceso se pierde y se informa.
     """
     diagnosticos: List[str] = []
     saldo = aceptado
@@ -288,12 +241,10 @@ def depurar(
     rentas_gravables: Decimal,
     parametros: ParametrosAnuales,
 ) -> ResultadoCedulaGeneral:
-    """Arma la grilla de la cédula general y aplica el límite del art. 336."""
+    """Arma la grilla y aplica el límite del art. 336 num. 3."""
     columnas = {s: Columna(subcedula=s) for s in SUBCEDULAS}
 
-    # --- Rentas de trabajo -------------------------------------------------
-    # Los honorarios van a su propia columna solo si se optó por restar costos
-    # y gastos (art. 336 num. 4); si no, acompañan al salario.
+    # Rentas de trabajo. Honorarios aparte solo si opta por costos (art. 336 num. 4).
     col_trabajo = columnas[TRABAJO]
     col_trabajo.ingresos_brutos = trabajo.ingresos_brutos
     col_trabajo.ingresos_no_constitutivos = trabajo.total_incrngo
@@ -304,7 +255,7 @@ def depurar(
     else:
         col_trabajo.ingresos_brutos += trabajo.ingresos_sin_vinculo_laboral
 
-    # --- Rentas de capital y no laborales ----------------------------------
+    # Rentas de capital y no laborales.
     columnas[CAPITAL].ingresos_brutos = capital.ingresos_brutos
     columnas[CAPITAL].ingresos_no_constitutivos = capital.ingresos_no_constitutivos
     columnas[CAPITAL].costos_y_deducciones = capital.total_costos
@@ -315,15 +266,8 @@ def depurar(
 
     resultado = ResultadoCedulaGeneral(columnas=columnas)
 
-    # --- Conceptos imputados a su columna y a su fila ----------------------
-    #
-    # Si el contador fijó la subcédula, se respeta: él sabe de dónde salió el
-    # gasto. Si no la fijó, hay que imputarla, y no sirve mandarla toda a
-    # rentas de trabajo: el formulario no permite que una columna reste más que
-    # su propia renta líquida, así que una deducción imputada a una columna sin
-    # ingresos se perdería completa y el contribuyente pagaría impuesto sobre
-    # una base que la ley no le exige. Se reparte entonces en el orden del
-    # formulario, llenando cada columna hasta su renta líquida.
+    # Conceptos. Se respeta la subcédula fijada por el contador; sin ella se
+    # imputa por orden, porque una columna no puede restar más que su renta líquida.
     for concepto in conceptos:
         if concepto.subcedula:
             destinos = [(columnas[concepto.subcedula], concepto.valor)]
@@ -343,17 +287,11 @@ def depurar(
             else:
                 destino.exenta_otra += parte
 
-    # La renta exenta del 25 % es de las rentas de trabajo por definición.
+    # Exenta del 25 %: siempre rentas de trabajo.
     col_trabajo.exenta_otra += exenta_25_por_ciento
 
-    # --- Límite del art. 336 num. 3 ----------------------------------------
-    #
-    # La base del 40 % es la suma de los ingresos brutos de las cuatro columnas
-    # más las rentas pasivas ECE, menos los ingresos no constitutivos. Las
-    # devoluciones de la casilla 75 NO se restan de esta base: el instructivo
-    # enumera lo que se suma y dice «y se restan los ingresos no
-    # constitutivos», sin mencionarlas. Restarlas daría un límite más bajo y un
-    # impuesto más alto que el que calcula la DIAN.
+    # Límite del num. 3. Base: ingresos brutos + rentas pasivas ECE − INCRNGO.
+    # Las devoluciones (casilla 75) no se restan: el instructivo no las incluye.
     ingresos_cg = sum(
         (c.ingresos_brutos + c.rentas_pasivas_ece for c in columnas.values()), CERO
     )
@@ -368,11 +306,7 @@ def depurar(
     tope = (limite.tope_uvt or CERO) * parametros.uvt
     aceptado_limitable = min(solicitado_limitable, porcentual, tope)
 
-    # Las rentas exentas que la ley dejó fuera del límite (art. 206 nums. 6 a 9,
-    # art. 206-1, art. 207-2 nums. 3 y 4, convenios de doble tributación y
-    # Decisión 578 de la CAN) se suman ENCIMA del 40 %: no compiten por el
-    # mismo cupo. Van en la fila de rentas exentas de su columna, no en una
-    # deducción aparte.
+    # Exentas fuera del límite: se suman sobre el 40 %.
     aceptado = aceptado_limitable + sum(
         (c.sin_limite for c in columnas.values()), CERO
     )
@@ -396,12 +330,7 @@ def depurar(
             f"menor. El exceso no se traslada a otros años ni a otras cédulas."
         )
 
-    # --- Casilla 139: adición por dependientes -----------------------------
-    #
-    # Topada en la suma de las casillas 42 y 57, es decir en la renta líquida
-    # ordinaria de las dos columnas de rentas de trabajo. Sin este techo, un
-    # contribuyente con dependientes y poca renta de trabajo restaría más de lo
-    # que tiene.
+    # Casilla 139: tope en 42 + 57.
     techo_dependientes = (
         columnas[TRABAJO].renta_liquida_ordinaria
         + columnas[SIN_VINCULO].renta_liquida_ordinaria
@@ -416,11 +345,7 @@ def depurar(
             f"{pesos(dependientes)}."
         )
 
-    # --- Casilla 28: 1 % de compras con factura electrónica ----------------
-    #
-    # No está sujeta al límite del num. 3, pero «no podrá dar lugar a pérdidas»:
-    # se topa en lo que quede de renta líquida ordinaria después de los
-    # dependientes.
+    # Casilla 28: tope en la renta líquida ordinaria restante.
     ordinarias = sum((c.renta_liquida_ordinaria for c in columnas.values()), CERO)
     techo_compras = _no_negativo(ordinarias - resultado.deduccion_dependientes)
     resultado.deduccion_compras = min(compras_1_por_ciento, techo_compras)
@@ -437,11 +362,7 @@ def depurar(
 
 
 def casillas_de(resultado: ResultadoCedulaGeneral) -> List[Tuple[int, str, Decimal]]:
-    """Las celdas de la grilla con valor, como (casilla, nombre de la fila, valor).
-
-    Solo se devuelven las celdas con valor distinto de cero: un formulario con
-    cien ceros impresos es ilegible, y las casillas vacías se dejan vacías.
-    """
+    """Celdas con valor distinto de cero: (casilla, fila, valor)."""
     filas = [
         ("Ingresos brutos", lambda c: c.ingresos_brutos),
         ("Devoluciones, rebajas y descuentos", lambda c: c.devoluciones),

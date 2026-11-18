@@ -1,7 +1,5 @@
 <script setup>
-// Tasas de interés moratorio tributario de cada mes (art. 635 ET): la usura de
-// consumo menos dos puntos, que publica la DIAN. Sin la del mes, los intereses
-// de ese tramo no se calculan.
+// Tasa de interés moratorio por mes (art. 635 ET). Mes sin tasa: no se calcula.
 import { computed, onMounted, reactive, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'

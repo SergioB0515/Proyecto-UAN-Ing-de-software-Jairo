@@ -1,7 +1,5 @@
 <script setup>
-// La declaración como proceso: en qué etapa va, qué documentos faltan, qué se
-// presentó, cómo se compara con el año anterior, cuándo queda en firme y qué
-// cuesta pagar tarde o corregir.
+// Gestión: etapas, documentos, presentación, comparativo, firmeza e intereses.
 import { onMounted, ref, watch } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'

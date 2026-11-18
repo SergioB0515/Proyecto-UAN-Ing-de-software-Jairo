@@ -49,12 +49,7 @@ class RenglonSugerido(SQLModel):
 
 
 class RegistroSinAsignar(SQLModel):
-    """Un valor que la DIAN no asignó a un renglón concreto.
-
-    Trae el menú de renglones posibles para que el contador escoja. No se suma
-    a ninguno: la DIAN está diciendo «depende del bien», y repartirlo en todos
-    contaría la misma plata varias veces.
-    """
+    """Valor sin renglón asignado por la DIAN. Lo asigna el contador; no se suma."""
 
     detalle: str
     valor: float
@@ -63,7 +58,7 @@ class RegistroSinAsignar(SQLModel):
 
 
 class CuadreTope(SQLModel):
-    """Contraste del borrador contra los topes que trae el mismo archivo."""
+    """Topes del archivo frente al borrador."""
 
     etiqueta: str
     valor_tope: float
@@ -87,7 +82,7 @@ class BorradorRenglones(SQLModel):
     )
 
 
-# --- Cruce de la liquidación contra la exógena ------------------------------
+# Cruce liquidación / exógena
 
 
 class DetalleTopeLeer(SQLModel):
@@ -99,7 +94,7 @@ class DetalleTopeLeer(SQLModel):
 
 
 class TopeCruzado(SQLModel):
-    """Un tope de la exógena, reconstruido desde su detalle."""
+    """Tope reconstruido desde el detalle."""
 
     numero: int
     nombre: str

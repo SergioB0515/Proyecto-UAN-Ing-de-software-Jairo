@@ -1,15 +1,7 @@
-"""Costeo del inventario: PEPS y promedio ponderado.
+"""Costeo de inventario: PEPS y promedio ponderado.
 
-La aritmética se hace en `Decimal`, no en `float`
--------------------------------------------------
-Las cantidades y los valores entran y salen como `float` porque así están en la
-base de datos y en la API, y cambiar eso es una migración de esquema aparte.
-Pero el cálculo intermedio —acumular saldos, promediar, repartir capas— es donde
-el binario pierde centavos: un promedio ponderado recalculado en cada salida
-arrastra el error de todas las anteriores, y ese costo de ventas es el que
-termina en la declaración. Cada valor se convierte con `Decimal(str(x))`, que
-toma el número tal como se digitó, y solo al final se redondea, a la mitad
-hacia arriba como en el resto de la liquidación.
+Entra y sale float (base y API); el cálculo intermedio es Decimal vía str
+y se redondea al final, a la mitad hacia arriba.
 """
 
 from collections import deque
@@ -30,7 +22,7 @@ _MICRO = Decimal("0.000001")
 
 
 def _d(valor) -> Decimal:
-    """`float` → `Decimal` sin heredar el error binario: 0.1 entra como 0.1."""
+    """float -> Decimal vía str."""
     return valor if isinstance(valor, Decimal) else Decimal(str(valor))
 
 

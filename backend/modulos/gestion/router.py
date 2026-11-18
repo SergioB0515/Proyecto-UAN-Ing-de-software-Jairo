@@ -49,8 +49,7 @@ def ver_gestion(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Etapas, presentación, comparativo, firmeza, beneficio de auditoría,
-    corrección e intereses de una declaración."""
+    """Etapas, presentación, comparativo, firmeza, beneficio, corrección e intereses."""
     try:
         return servicios.gestion(session, contador.id, contribuyente_id,
                                  periodo_fiscal_id, fecha_pago)
@@ -83,7 +82,7 @@ def registrar_presentacion_declaracion(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Guarda la declaración presentada (o su corrección) tal como está liquidada."""
+    """Guarda la declaración presentada (o corrección) según la liquidación actual."""
     try:
         d = servicios.registrar_presentacion(session, contador.id, contribuyente_id,
                                              periodo_fiscal_id, datos)
@@ -102,7 +101,7 @@ def registrar_declaracion_anterior(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Registra a mano una declaración presentada que no se hizo en la app."""
+    """Registra una declaración hecha fuera de la app."""
     try:
         d = servicios.registrar_declaracion_anterior(session, contador.id,
                                                      contribuyente_id, datos)
@@ -118,7 +117,7 @@ def traer_datos_del_anio_anterior(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Copia a la hoja el impuesto neto, el anticipo y el saldo a favor del año anterior."""
+    """Trae del año anterior impuesto neto, anticipo y saldo a favor."""
     try:
         return servicios.traer_datos_del_anio_anterior(
             session, contador.id, contribuyente_id, periodo_fiscal_id)
@@ -179,7 +178,7 @@ def informe_para_el_cliente(
     contador: Contador = Depends(obtener_contador_actual),
     session: Session = Depends(obtener_sesion),
 ):
-    """Informe de la declaración en PDF, escrito para el contribuyente."""
+    """Informe en PDF para el contribuyente."""
     try:
         contenido, nombre = informe.generar(session, contador, contribuyente_id,
                                             periodo_fiscal_id)

@@ -1,26 +1,11 @@
-"""Carga un conjunto de datos de demostración en la base de datos.
+"""Carga los datos de demostración.
 
-Pensado para mostrar la aplicación funcionando (sustentación, evaluación del
-coordinador, despliegue público) sin tener que registrar nada a mano y sin que
-la demo dependa de la máquina de quien la presenta.
+    python semilla_demo.py              # carga si no existen
+    python semilla_demo.py --reiniciar  # borra y vuelve a crear
+    python semilla_demo.py --estado     # informa qué hay cargado
 
-Uso, desde la carpeta ``backend/`` y con el entorno virtual activo:
-
-    python semilla_demo.py              # carga los datos si no existen
-    python semilla_demo.py --reiniciar  # borra los datos demo y los vuelve a crear
-    python semilla_demo.py --estado     # solo informa qué hay cargado
-
-Es **idempotente**: si el contador demo ya existe, no duplica nada.
-
-Los seis contribuyentes no son relleno: cada uno existe para enseñar un estado
-distinto de la aplicación. Ver ``demo/README.md`` para el guion de la demo.
-
-AVISO SOBRE LAS CIFRAS
-----------------------
-Los umbrales UVT de ``UMBRALES`` y los códigos de concepto de la exógena son
-valores de referencia para la demostración. Antes de usarlos como dato real
-hay que contrastarlos con la resolución de la DIAN del año gravable
-correspondiente. Las cédulas, NIT, nombres y matrículas son ficticios.
+Idempotente. Cada contribuyente muestra un estado distinto (ver demo/README.md).
+Nombres, NIT y cédulas son ficticios.
 """
 
 from __future__ import annotations
@@ -75,23 +60,19 @@ from modulos.parametros.calendario_oficial import CALENDARIOS_OFICIALES
 from modulos.parametros.modelos import PlazoDeclaracion, UmbralDeclaracion
 from modulos.reportes.modelos import CierrePeriodo
 
-# --------------------------------------------------------------------------
-# Constantes de la demo
-# --------------------------------------------------------------------------
+# Constantes
 
 EMAIL_DEMO = "contador@demo.co"
 CONTRASENA_DEMO = "demo1234"
 NOMBRE_DEMO = "Contador de demostración"
 
-# Año gravable fijo. NO derivarlo de date.today(): si cambia, los cálculos
-# dejan de ser reproducibles y la demo deja de coincidir con las capturas.
+# Año fijo, no date.today(): la demo debe ser reproducible.
 ANIO = 2025
 ANIO_ANTERIOR = 2024
 
 NIT_DIAN = "800197268"
 
-# Umbrales para estar obligado a declarar renta del año gravable 2025.
-# UVT y topes en UVT: verificar contra la resolución vigente de la DIAN.
+# Umbrales para declarar, AG 2025.
 UMBRALES = {
     ANIO: dict(
         valor_uvt=49_799.0,
@@ -103,16 +84,12 @@ UMBRALES = {
     ),
 }
 
-# El calendario oficial del AG 2025 termina el 2026-10-26. Después de esa
-# fecha, todo contribuyente sin fecha manual aparece como VENCIDA. Para que el
-# panel de cartera muestre varios estados el día de la demo, algunos
-# contribuyentes llevan fecha_vencimiento_manual relativa a hoy.
+# El calendario del AG 2025 vence el 2026-10-26; algunas fechas son relativas
+# a hoy para que la cartera muestre varios estados.
 HOY = date.today()
 
 
-# --------------------------------------------------------------------------
 # Utilidades
-# --------------------------------------------------------------------------
 
 
 def _tope(etiqueta: str, valor: float) -> Tuple[str, float]:
@@ -129,7 +106,7 @@ def _reg(
     concepto: Optional[str] = None,
     auto_reportado: bool = False,
 ) -> dict:
-    """Un renglón de la exógena, tal como lo dejaría el importador de Excel."""
+    """Registro de exógena, como lo deja el importador."""
     renglones = None
     if uso:
         import re
@@ -160,22 +137,14 @@ _USO_PATRIMONIO_ANTERIOR = (
 def _completar_detalle(
     topes: Sequence[Tuple[str, float]], registros: List[dict]
 ) -> List[dict]:
-    """Deja la exógena de ejemplo coherente consigo misma, como una real.
-
-    En el archivo de la DIAN cada tope sale de su detalle: es la suma de los
-    registros marcados con ese tope, y el de patrimonio es el mayor entre esa
-    suma y lo declarado el año anterior. Los casos de la semilla fijan los
-    topes a mano para contar una historia, así que aquí se agrega el detalle
-    que les falta. Sin esto el cruce con la DIAN, que reconstruye cada tope,
-    marcaría los cinco como descuadrados en todos los contribuyentes de la demo.
-    """
+    """Agrega el detalle que falta para que cada tope cuadre con sus registros."""
     def suma(numero: int) -> float:
         return sum(
             r["valor"] for r in registros
             if (r.get("uso_sugerido") or "").startswith(f"Tope {numero}:")
         )
 
-    # El registro de patrimonio del año anterior trae siempre este texto.
+    # Texto fijo del registro de patrimonio del año anterior.
     for r in registros:
         if "declarado en el año anterior" in r["detalle"]:
             r["uso_sugerido"] = _USO_PATRIMONIO_ANTERIOR
@@ -336,9 +305,7 @@ def _ingreso(
     return fuente
 
 
-# --------------------------------------------------------------------------
-# Parámetros globales (umbrales y calendario)
-# --------------------------------------------------------------------------
+# Umbrales y calendario
 
 
 def cargar_parametros(session: Session) -> None:
@@ -363,17 +330,12 @@ def cargar_parametros(session: Session) -> None:
     session.flush()
 
 
-# --------------------------------------------------------------------------
-# Los seis casos
-# --------------------------------------------------------------------------
+# Casos
 
 
 def caso_todo_cuadra(session: Session, contador_id: int) -> None:
-    """Asalariada obligada, ya presentó, conciliación limpia (3 COINCIDE).
-
-    Sirve para abrir la demo: así se ve un contribuyente sin pendientes.
-    También tiene periodo 2024 con activos, para mostrar «copiar activos
-    de otro año».
+    """Asalariada obligada, presentada, conciliación limpia (3 COINCIDE).
+    Incluye periodo 2024 para copiar activos entre años.
     """
     contribuyente, periodos = _crear_contribuyente(
         session,
@@ -388,7 +350,7 @@ def caso_todo_cuadra(session: Session, contador_id: int) -> None:
     actual = periodos[ANIO].id
     previo = periodos[ANIO_ANTERIOR].id
 
-    # Año anterior: solo patrimonio, para la copia de activos entre años.
+    # Año anterior: solo patrimonio.
     _activo(session, cid, previo, "Cuenta de ahorros Banco de Bogotá",
             TipoActivo.CUENTA, 15_900_000, concepto="1110")
     _activo(session, cid, previo, "Apartamento Suba, matrícula 50N-20384756",
@@ -424,7 +386,7 @@ def caso_todo_cuadra(session: Session, contador_id: int) -> None:
                  "Tope 2: Patrimonio | R29 Patrimonio Bruto",
                  info="Matrícula: 50N-20384756 | Participación: 100.00",
                  concepto="1476"),
-            # Las tres filas siguientes el sistema las excluye del cruce.
+            # Filas excluidas del cruce.
             _reg("860007336", "FUNDACION SANTA FE DE BOGOTA",
                  "Retención en la fuente practicada por salarios", 10_368_000,
                  "R132 Retenciones año gravable a declarar"),
@@ -439,11 +401,7 @@ def caso_todo_cuadra(session: Session, contador_id: int) -> None:
 
 
 def caso_diferencia_tolerada(session: Session, contador_id: int) -> None:
-    """Diferencia de $80.000 que NO se marca como error (está en tolerancia),
-    más un vehículo que ningún tercero reportó.
-
-    Sirve para responder «¿y no les saltan alarmas por cualquier peso?».
-    """
+    """Diferencia de $80.000 dentro de la tolerancia y un vehículo no reportado."""
     contribuyente, periodos = _crear_contribuyente(
         session, contador_id,
         "Héctor Fabio Quintero Pardo", "79548112-4",
@@ -473,7 +431,7 @@ def caso_diferencia_tolerada(session: Session, contador_id: int) -> None:
                  "Pagos por salarios (Concepto: 5001)", 72_000_000,
                  "Tope 1: Ingresos brutos | R32 Rentas de trabajo",
                  concepto="5001"),
-            # $80.000 de diferencia: dentro de la tolerancia (0,5 %), COINCIDE.
+            # Dentro de la tolerancia (0,5 %): COINCIDE.
             _reg("890903938", "BANCOLOMBIA S A",
                  "Saldo de cuentas de ahorro y corrientes a 31 de diciembre "
                  "(Concepto: 1110)", 24_080_000,
@@ -486,11 +444,7 @@ def caso_diferencia_tolerada(session: Session, contador_id: int) -> None:
 
 
 def caso_ingreso_no_declarado(session: Session, contador_id: int) -> None:
-    """EL caso que justifica la aplicación: un tercero reportó $42.300.000 de
-    honorarios que el contribuyente no declaró, más una discrepancia real.
-
-    Es el contribuyente con el que se abre la pantalla de conciliación.
-    """
+    """Honorarios por $42.300.000 reportados y no declarados, más una discrepancia."""
     contribuyente, periodos = _crear_contribuyente(
         session, contador_id,
         "Diana Carolina Mosquera Luna", "1026587413-2",
@@ -514,13 +468,13 @@ def caso_ingreso_no_declarado(session: Session, contador_id: int) -> None:
             _tope("Tope 5 - Compras", 22_000_000),
         ],
         registros=[
-            # Declaró 54.000.000; el tercero reportó 61.500.000 -> DISCREPANCIA.
+            # Declaró 54.000.000, el tercero reportó 61.500.000: DISCREPANCIA.
             _reg("900556781", "CONSULTORIA JURIDICA ANDINA S A S",
                  "Honorarios, comisiones y servicios (Concepto: 5004)",
                  61_500_000,
                  "Tope 1: Ingresos brutos | R43 Rentas de trabajo honorarios",
                  concepto="5004"),
-            # Nunca lo declaró -> NO_DECLARADO. Este es el hallazgo de la demo.
+            # No declarado: NO_DECLARADO.
             _reg("900778234", "INVERSIONES MEDICAS DEL ORIENTE S A S",
                  "Honorarios, comisiones y servicios (Concepto: 5004)",
                  42_300_000,
@@ -530,8 +484,7 @@ def caso_ingreso_no_declarado(session: Session, contador_id: int) -> None:
                  "Saldo de cuentas de ahorro y corrientes a 31 de diciembre "
                  "(Concepto: 1110)", 9_200_000,
                  "Tope 2: Patrimonio | R29 Patrimonio Bruto", concepto="1110"),
-            # Consumo con tarjeta: alimenta el tope, pero el sistema no lo
-            # lista como «no declarado» (no es un ingreso ni un activo).
+            # Consumo con tarjeta: suma al tope, no se marca como no declarado.
             _reg("860035827", "BANCO COLPATRIA MULTIBANCA S A",
                  "Total consumos o gastos con tarjeta Crédito o Débito "
                  "(Concepto: 1023)", 31_400_000, "Tope 3: Consumos TC",
@@ -544,10 +497,7 @@ def caso_ingreso_no_declarado(session: Session, contador_id: int) -> None:
 
 
 def caso_no_obligado(session: Session, contador_id: int) -> None:
-    """Todos los topes por debajo del umbral: el sistema dice «no obligado».
-
-    Sirve para mostrar que la app también ahorra trabajo descartando clientes.
-    """
+    """Topes bajo el umbral: no obligado."""
     contribuyente, periodos = _crear_contribuyente(
         session, contador_id,
         "Jorge Enrique Lamprea Ávila", "80234119-6",
@@ -584,12 +534,8 @@ def caso_no_obligado(session: Session, contador_id: int) -> None:
 
 
 def caso_con_inventario(session: Session, contador_id: int) -> None:
-    """Comerciante con inventario: categorías, productos, proveedores,
-    documentos soporte y movimientos para kardex y costo de ventas.
-
-    Usa los dos métodos de costeo (PEPS y promedio ponderado). Queda VENCIDA y
-    con una alerta sin declarar: es la fila roja del panel de cartera.
-    El periodo queda ABIERTO para poder demostrar el cierre en vivo.
+    """Comerciante con inventario (PEPS y promedio ponderado).
+    Vencido, con alerta y periodo ABIERTO para cerrarlo en vivo.
     """
     contribuyente, periodos = _crear_contribuyente(
         session, contador_id,
@@ -612,8 +558,7 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
     _crear_exogena(
         session, cid, periodo, "exogena_beltran_gomez_2025.xlsx",
         topes=[
-            # La suma de lo que reportan los terceros: el negocio vende más
-            # de lo que la exógena alcanza a ver, y eso no infla el tope.
+            # Suma de terceros: el tope no incluye todas las ventas.
             _tope("Tope 1 - Ingresos", 119_240_000),
             _tope("Tope 2 - Patrimonio", 310_000_000),
             _tope("Tope 3 - Consumo TC", 18_600_000),
@@ -630,14 +575,13 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
                  "Saldo de cuentas de ahorro y corrientes a 31 de diciembre "
                  "(Concepto: 1110)", 34_200_000,
                  "Tope 2: Patrimonio | R29 Patrimonio Bruto", concepto="1110"),
-            # Avalúo catastral 198,5 M contra costo fiscal declarado 185 M:
-            # DISCREPANCIA legítima que el contador debe revisar, no un error.
+            # Avalúo 198,5 M frente a costo fiscal 185 M: DISCREPANCIA a revisar.
             _reg("899999061", "SECRETARIA DISTRITAL DE HACIENDA",
                  "Valor avalúo catastral (Concepto: 1476)", 198_500_000,
                  "Tope 2: Patrimonio | R29 Patrimonio Bruto",
                  info="Matrícula: 50S-40117823 | Participación: 100.00",
                  concepto="1476"),
-            # Rendimientos nunca declarados -> NO_DECLARADO.
+            # Rendimientos no declarados: NO_DECLARADO.
             _reg("860002503", "SEGUROS BOLIVAR S A",
                  "Rendimientos financieros e intereses (Concepto: 1301)",
                  6_840_000,
@@ -649,7 +593,7 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
         ],
     )
 
-    # ---- Inventario -----------------------------------------------------
+    # Inventario
     repuestos = Categoria(contribuyente_id=cid, nombre="Repuestos",
                           descripcion="Filtros, frenos y partes de motor")
     lubricantes = Categoria(contribuyente_id=cid, nombre="Lubricantes",
@@ -775,11 +719,7 @@ def caso_con_inventario(session: Session, contador_id: int) -> None:
 
 
 def caso_sin_exogena(session: Session, contador_id: int) -> None:
-    """Contribuyente con periodo abierto y SIN exógena importada.
-
-    Es el que se usa para cargar el archivo en vivo durante la demo: el panel
-    de cartera lo muestra con el aviso «aún no se ha importado la exógena».
-    """
+    """Periodo abierto sin exógena, para cargarla en vivo."""
     contribuyente, periodos = _crear_contribuyente(
         session, contador_id,
         "Sandra Milena Osorio Peña", "1015442308-5",
@@ -806,26 +746,15 @@ CASOS = (
 )
 
 
-# --------------------------------------------------------------------------
-# Soportes adjuntos de demostración
-#
-# Los adjuntos se guardan en disco (ALMACEN_ADJUNTOS), no en la base de datos.
-# En un despliegue SIN disco persistente —Render en plan Free, por ejemplo— ese
-# disco se borra cada vez que el servicio se reinicia o despierta de la
-# suspensión, y la pantalla de Soportes quedaría con filas apuntando a archivos
-# que ya no existen.
-#
-# Por eso los archivos se generan aquí en vez de subirse a mano, con una ruta
-# fija por adjunto, y `asegurar_adjuntos_demo` los vuelve a crear en cada
-# arranque si faltan. Así la demo aguanta un reinicio.
-# --------------------------------------------------------------------------
+# Adjuntos de demostración. Viven en disco; sin disco persistente se pierden
+# al reiniciar, así que se regeneran en cada arranque.
 
 PDF = "application/pdf"
 PNG = "image/png"
 
 
 def _pdf(titulo: str, subtitulo: str, lineas: Sequence[Tuple[str, str]]) -> bytes:
-    """Un PDF de una página con aspecto de certificado o recibo."""
+    """PDF de una página tipo certificado."""
     from reportlab.lib.pagesizes import LETTER
     from reportlab.pdfgen import canvas
 
@@ -855,10 +784,10 @@ def _pdf(titulo: str, subtitulo: str, lineas: Sequence[Tuple[str, str]]) -> byte
 
 
 def _png(ancho: int, alto: int, pintar: Callable[[int, int], Tuple[int, int, int]]) -> bytes:
-    """PNG RGB sin dependencias externas (Pillow no está en requirements)."""
+    """PNG RGB sin Pillow."""
     filas = bytearray()
     for y in range(alto):
-        filas.append(0)  # filtro «None» de cada línea
+        filas.append(0)  # filtro None por línea
         for x in range(ancho):
             filas.extend(pintar(x, y))
 
@@ -880,29 +809,29 @@ def _png(ancho: int, alto: int, pintar: Callable[[int, int], Tuple[int, int, int
 
 
 def _captura_factura() -> bytes:
-    """Imagen que simula la captura de una factura, para probar la vista previa."""
+    """Imagen tipo factura, para la vista previa."""
     ancho, alto = 620, 380
 
     def pintar(x: int, y: int) -> Tuple[int, int, int]:
         if y < 56:
-            return (37, 60, 92)            # barra de título
+            return (37, 60, 92)  # barra de título
         if y < 60:
             return (24, 40, 62)
         if 84 <= y < 104 and 40 <= x < 360:
-            return (203, 213, 225)         # «encabezado» del documento
+            return (203, 213, 225)  # encabezado
         if 132 <= y < 300 and 40 <= x < ancho - 40:
             fila = (y - 132) // 28
             if (y - 132) % 28 < 18:
                 return (241, 245, 249) if fila % 2 == 0 else (226, 232, 240)
         if 316 <= y < 344 and ancho - 240 <= x < ancho - 40:
-            return (191, 219, 254)         # «total»
+            return (191, 219, 254)  # total
         return (255, 255, 255)
 
     return _png(ancho, alto, pintar)
 
 
 def _especificaciones_adjuntos(session: Session, contador_id: int) -> List[dict]:
-    """Define qué adjuntos lleva la demo, resolviendo las entidades reales."""
+    """Adjuntos de la demo, con sus entidades."""
 
     def contribuyente(rut: str) -> Optional[Contribuyente]:
         return session.exec(
@@ -1026,11 +955,7 @@ def _especificaciones_adjuntos(session: Session, contador_id: int) -> List[dict]
 
 
 def asegurar_adjuntos_demo(session: Session, contador_id: int) -> int:
-    """Crea los adjuntos demo que falten, en la base o en el disco.
-
-    Devuelve cuántos archivos escribió. Es seguro llamarla en cada arranque:
-    si todo está en su sitio, no hace nada.
-    """
+    """Crea los adjuntos que falten. Devuelve cuántos archivos escribió."""
     base = Path(ALMACEN_ADJUNTOS)
     escritos = 0
 
@@ -1078,9 +1003,7 @@ def asegurar_adjuntos_demo(session: Session, contador_id: int) -> int:
     return escritos
 
 
-# --------------------------------------------------------------------------
 # Carga y borrado
-# --------------------------------------------------------------------------
 
 
 def _contador_demo(session: Session) -> Optional[Contador]:
@@ -1099,7 +1022,7 @@ def borrar_demo(session: Session) -> bool:
     )
 
     if ids:
-        # Los adjuntos viven en disco: borrar la fila no borra el archivo.
+        # Borrar la fila no borra el archivo.
         base_almacen = Path(ALMACEN_ADJUNTOS)
         for ruta_relativa in session.exec(
             select(Adjunto.ruta_relativa).where(Adjunto.contribuyente_id.in_(ids))
@@ -1124,8 +1047,7 @@ def borrar_demo(session: Session) -> bool:
                     TopeExogena.reporte_exogena_id.in_(reportes)
                 )
             )
-        # Las tablas de la liquidación cuelgan de los periodos y de los
-        # activos: se borran antes, o la llave foránea impide borrar lo demás.
+        # Primero las tablas de liquidación (llaves foráneas).
         from modulos.liquidacion.modelos import (
             ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
             HojaLiquidacion, PagoEfectivo, PerdidaFiscal, VentaInmueble,
@@ -1163,16 +1085,12 @@ def borrar_demo(session: Session) -> bool:
 
 
 def gestion_demo(session: Session, contador_id: int) -> None:
-    """La temporada en tres momentos distintos, para la pantalla de gestión.
+    """Gestión en tres estados.
 
-    - Luz Marina: proceso terminado. Declaración de 2024 registrada a mano,
-      documentos recibidos, revisada, aprobada y presentada a tiempo.
-    - Diana: a mitad de la recolección de documentos, a una semana del plazo.
-    - Nelson: venció el 20 de agosto y no ha presentado. La pantalla muestra
-      la sanción y los intereses que siguen corriendo.
-
-    Las tasas de mora publicadas por la DIAN vienen con la app; la de
-    noviembre de 2026 no está, y se deja así para que se vea el aviso.
+    - Luz Marina: presentada a tiempo, proceso completo.
+    - Diana: recogiendo documentos, a una semana del plazo.
+    - Nelson: vencido sin presentar; sanción e intereses.
+    Noviembre de 2026 queda sin tasa para mostrar el aviso.
     """
     from modulos.gestion import servicios as gestion
     from modulos.gestion.modelos import (
@@ -1194,7 +1112,7 @@ def gestion_demo(session: Session, contador_id: int) -> None:
             gestion.actualizar_documento(session, contador_id, cid, pid, d.clave,
                                          DocumentoActualizar(estado=EstadoDocumento.RECIBIDO))
 
-    # --- Luz Marina: todo hecho -----------------------------------------
+    # Luz Marina
     cid, pid = ubicar("52814903-1")
     gestion.registrar_declaracion_anterior(session, contador_id, cid, DeclaracionAnteriorRegistrar(
         anio_gravable=ANIO_ANTERIOR, fecha_presentacion=date(2025, 8, 14),
@@ -1210,11 +1128,11 @@ def gestion_demo(session: Session, contador_id: int) -> None:
     gestion.registrar_presentacion(session, contador_id, cid, pid, PresentacionRegistrar(
         fecha_presentacion=date(2026, 8, 12), numero_formulario="2105123456789"))
 
-    # --- Diana: recogiendo documentos -----------------------------------
+    # Diana
     cid, pid = ubicar("1026587413-2")
     marcar_documentos(cid, pid, 2)
 
-    # --- Nelson: vencido sin presentar ----------------------------------
+    # Nelson
     cid, pid = ubicar("900845612-7")
     marcar_documentos(cid, pid)
     gestion.actualizar_seguimiento(session, contador_id, cid, pid, SeguimientoActualizar(

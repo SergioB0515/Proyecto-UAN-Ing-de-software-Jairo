@@ -1,6 +1,5 @@
 <script setup>
-// Las siete etapas de una declaración. Las automáticas se calculan; las de
-// criterio (revisar, aprobar, pagar) las marca el contador con su fecha.
+// Siete etapas. Automáticas calculadas; revisar, aprobar y pagar las marca el contador.
 import { reactive } from 'vue'
 
 import { fecha } from '../../formato'

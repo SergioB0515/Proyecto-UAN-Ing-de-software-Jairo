@@ -1,18 +1,11 @@
-"""Venta de inmuebles de una persona natural: costo fiscal, utilidad y destino.
+"""Venta de inmuebles: costo fiscal, utilidad y tratamiento. Función pura.
 
-- Poseído dos años o más: la utilidad es ganancia ocasional (art. 300 ET),
-  casillas 112 a 115. Si menos: renta líquida ordinaria (rentas no laborales).
-- Costo fiscal: el mayor entre (a) el costo de adquisición reajustado con la
-  tabla del art. 73 más las mejoras y contribuciones por valorización, y (b) el
-  avalúo catastral o autoavalúo del año anterior a la venta (art. 72). Se usa
-  uno de los dos, no se mezclan.
-- Casa o apartamento de habitación: las primeras 5.000 UVT de la utilidad son
-  exentas (art. 311-1 ET, modificado por la Ley 2277 de 2022), repartidas por el
-  porcentaje de participación de cada copropietario (Concepto DIAN 6970 de
-  2024). Exige que el dinero de la venta vaya a una cuenta AFC o al crédito
-  hipotecario del inmueble: eso lo confirma el contador.
-
-Función pura: no consulta la base de datos.
+- >= 2 años: ganancia ocasional (art. 300, casillas 112-115); si no, renta no laboral.
+- Costo fiscal: max(art. 73 reajustado + mejoras y valorización, avalúo del
+  año anterior art. 72). Uno de los dos, sin mezclar.
+- Vivienda de habitación: 5.000 UVT exentas (art. 311-1), por participación
+  (Concepto DIAN 6970 de 2024). La destinación a AFC o al crédito la confirma
+  el contador.
 """
 
 import calendar
@@ -33,7 +26,7 @@ def _peso(v: Decimal) -> Decimal:
 
 
 def _porcentaje(p: Decimal) -> str:
-    """50.00 → «50»; 33.50 → «33,5». Sin normalize(), que da 1E+2 para 100."""
+    """50.00 -> "50"; 33.50 -> "33,5". normalize() daría 1E+2 para 100."""
     texto = f"{p:f}"
     if "." in texto:
         texto = texto.rstrip("0").rstrip(".")
@@ -47,7 +40,7 @@ def _mas_anios(f: date, n: int) -> date:
 @dataclass
 class VentaInmueble:
     descripcion: str
-    tipo: str                         # URBANO | RURAL_AGROPECUARIO | RURAL
+    tipo: str  # URBANO | RURAL_AGROPECUARIO | RURAL
     fecha_adquisicion: date
     fecha_venta: date
     valor_venta: Decimal
@@ -57,8 +50,7 @@ class VentaInmueble:
     es_casa_de_habitacion: bool = False
     porcentaje_participacion: Decimal = Decimal("100")
     retencion: Decimal = CERO
-    # Para un año gravable sin tabla cargada, el contador escribe el
-    # multiplicador del decreto de ese año.
+    # Año sin tabla: el contador escribe el factor del decreto.
     factor_manual: Optional[Decimal] = None
 
 
@@ -68,7 +60,7 @@ class ResultadoVenta:
     costo_reajustado: Optional[Decimal]
     factor: Optional[Decimal]
     costo_fiscal: Decimal
-    metodo_costo: str                 # ART_73 | ART_72
+    metodo_costo: str  # ART_73 | ART_72
     utilidad: Decimal
     perdida: Decimal
     exenta: Decimal
