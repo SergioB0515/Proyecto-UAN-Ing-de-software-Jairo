@@ -129,3 +129,16 @@ DIAN del año gravable correspondiente.
 El año gravable está fijo en `ANIO = 2025`. **No lo derives de la fecha
 actual**: si cambia, los cálculos dejan de ser reproducibles y la demo deja
 de coincidir con las capturas de `documentacion/10-evidencias-funcionamiento.md`.
+
+## Gestión de la temporada (pestaña «Gestión y presentación»)
+
+La semilla deja tres declaraciones en momentos distintos del proceso:
+
+| Contribuyente | Qué muestra |
+|---|---|
+| Luz Marina Cifuentes Rojas | Proceso terminado (7 de 7). Declaración de 2024 registrada a mano: comparativo casilla por casilla, coherencia del anticipo y del saldo a favor, y el beneficio de auditoría negado por el mínimo de 71 UVT del año anterior. Firmeza en 2029. |
+| Diana Carolina Mosquera Luna | Recolección de documentos a una semana del plazo: dos recibidos, el resto pendiente, y el mensaje listo para mandarle al cliente. |
+| Nelson Andrés Beltrán Gómez | Venció el 20 de agosto sin presentar. Sanción mínima incluida en el saldo, intereses de mora por tramos mensuales con la tasa de la DIAN y el aviso de que falta la tasa de noviembre de 2026 (se deja sin cargar a propósito). |
+
+En la cartera, la columna «Etapa» dice qué sigue en cada declaración. El
+botón «Descargar informe» genera el PDF para el cliente.

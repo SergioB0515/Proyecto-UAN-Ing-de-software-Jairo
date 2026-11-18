@@ -27,6 +27,12 @@ def registrar_modelos() -> None:
         TopeExogena,
     )
     from modulos.inventario.modelos import Categoria, Producto
+    from modulos.gestion.modelos import (
+        DeclaracionPresentada,
+        DocumentoSolicitado,
+        SeguimientoDeclaracion,
+        TasaInteresMoratorio,
+    )
     from modulos.liquidacion.modelos import (
         ClasificacionIngreso,
         DatosDepreciacion,

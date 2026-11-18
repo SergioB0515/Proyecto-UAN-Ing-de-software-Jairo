@@ -36,6 +36,7 @@ from typing import Dict, List, Optional, Tuple
 
 from ..parametros.tablas_oficiales import ParametrosAnuales
 from .formulario_210 import SUBCEDULAS, casilla_de_subcedula
+from core.formato import pesos
 
 CERO = Decimal("0")
 _CENTAVO = Decimal("0.01")
@@ -265,11 +266,11 @@ def _repartir_en_cascada(
         if columna.solicitado > techo_renta and min(saldo + asignado, columna.solicitado) > techo_renta:
             diagnosticos.append(
                 f"En {_NOMBRE_COLUMNA[subcedula]} las rentas exentas y deducciones "
-                f"solicitadas (${columna.solicitado.quantize(_CENTAVO)}) superan la "
+                f"solicitadas ({pesos(columna.solicitado)}) superan la "
                 f"renta líquida de esa misma columna "
-                f"(${techo_renta.quantize(_CENTAVO)}): el formulario no permite "
+                f"({pesos(techo_renta)}): el formulario no permite "
                 f"imputar más de la renta líquida de la columna, así que "
-                f"${(columna.solicitado - techo_renta).quantize(_CENTAVO)} no se "
+                f"{pesos((columna.solicitado - techo_renta))} no se "
                 f"restan en ninguna parte. Revise si esas deducciones corresponden "
                 f"realmente a esta subcédula."
             )
@@ -388,10 +389,10 @@ def depurar(
         )
         resultado.diagnosticos.append(
             f"El límite del art. 336 num. 3 recortó "
-            f"${(solicitado_limitable - aceptado_limitable).quantize(_CENTAVO)} de las "
+            f"{pesos((solicitado_limitable - aceptado_limitable))} de las "
             f"rentas exentas y deducciones solicitadas: se aceptaron "
-            f"${aceptado_limitable.quantize(_CENTAVO)} de "
-            f"${solicitado_limitable.quantize(_CENTAVO)} porque {cual} es la cifra "
+            f"{pesos(aceptado_limitable)} de "
+            f"{pesos(solicitado_limitable)} porque {cual} es la cifra "
             f"menor. El exceso no se traslada a otros años ni a otras cédulas."
         )
 
@@ -409,10 +410,10 @@ def depurar(
     if dependientes > resultado.deduccion_dependientes:
         resultado.diagnosticos.append(
             f"La adición por dependientes de la casilla 139 se limitó a "
-            f"${resultado.deduccion_dependientes.quantize(_CENTAVO)}: el instructivo "
+            f"{pesos(resultado.deduccion_dependientes)}: el instructivo "
             f"no permite que exceda la renta líquida ordinaria de las rentas de "
             f"trabajo (casillas 42 y 57). Se solicitaron "
-            f"${dependientes.quantize(_CENTAVO)}."
+            f"{pesos(dependientes)}."
         )
 
     # --- Casilla 28: 1 % de compras con factura electrónica ----------------
@@ -426,9 +427,9 @@ def depurar(
     if compras_1_por_ciento > resultado.deduccion_compras:
         resultado.diagnosticos.append(
             f"La deducción del 1 % de compras con factura electrónica se limitó a "
-            f"${resultado.deduccion_compras.quantize(_CENTAVO)}: el art. 336 num. 5 "
+            f"{pesos(resultado.deduccion_compras)}: el art. 336 num. 5 "
             f"no la sujeta al límite del 40 %, pero no puede dar lugar a pérdidas. Se "
-            f"solicitaron ${compras_1_por_ciento.quantize(_CENTAVO)}."
+            f"solicitaron {pesos(compras_1_por_ciento)}."
         )
 
     resultado.rentas_gravables = rentas_gravables

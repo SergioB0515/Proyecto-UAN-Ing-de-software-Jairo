@@ -59,6 +59,16 @@ def panel_cartera(
             conciliacion[EstadoConciliacion.NO_DECLARADO] if conciliacion is not None else None
         )
         fila.avisos = avisos
+        from ..gestion.servicios import proceso_resumido
+
+        proceso = proceso_resumido(session, contribuyente.id, periodo)
+        fila.etapa_actual = proceso.etapa_actual
+        fila.etapa_nombre = next(
+            (e.accion for e in proceso.etapas if e.clave == proceso.etapa_actual),
+            "Terminada",
+        )
+        fila.etapas_hechas, fila.etapas_total = proceso.hechas, proceso.total
+        fila.documentos_pendientes = proceso.documentos_pendientes
         filas.append(fila)
 
     if orden == OrdenCartera.NOMBRE:

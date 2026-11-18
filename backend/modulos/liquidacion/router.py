@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
+from core.formato import pesos
 from core.excepciones import (
     ActivoNoEncontradoError,
     AnioGravableNoSoportadoError,
@@ -259,7 +260,7 @@ def exportar_liquidacion(
         encabezado=[
             f"{datos_contribuyente.nombre} — NIT {datos_contribuyente.rut}",
             f"Año gravable {liq.anio_gravable}",
-            f"Régimen aplicado: {liq.parametros.regimen} — UVT ${liq.parametros.uvt}",
+            f"Régimen aplicado: {liq.parametros.regimen} — UVT {pesos(liq.parametros.uvt)}",
             f"Fuente de la UVT: {liq.parametros.fuente_uvt}",
         ],
         secciones=[

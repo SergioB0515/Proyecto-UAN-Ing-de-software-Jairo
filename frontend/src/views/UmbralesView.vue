@@ -4,6 +4,7 @@ import { onMounted, reactive, ref } from 'vue'
 import { mensajeDeError } from '../api/cliente'
 import { guardarUmbral, listarUmbrales } from '../api/parametros'
 import CalendarioVencimientos from '../components/CalendarioVencimientos.vue'
+import TasasInteresMoratorio from '../components/TasasInteresMoratorio.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { cantidad, dinero } from '../formato'
 
@@ -129,5 +130,6 @@ onMounted(cargar)
     </div>
 
     <CalendarioVencimientos class="border-t border-papel-linea pt-6" />
+    <TasasInteresMoratorio class="border-t border-papel-linea pt-6" />
   </div>
 </template>

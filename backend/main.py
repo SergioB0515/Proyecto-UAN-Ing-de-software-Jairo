@@ -17,6 +17,7 @@ from modulos.conciliacion.router import router as router_conciliacion
 from modulos.contadores.router import router as router_contadores
 from modulos.contribuyentes.router import router as router_contribuyentes
 from modulos.exogena.router import router as router_exogena
+from modulos.gestion.router import router as router_gestion
 from modulos.inventario.router import router as router_inventario
 from modulos.liquidacion.router import router as router_liquidacion
 from modulos.movimientos.router import router as router_movimientos
@@ -104,6 +105,7 @@ for _router in (
     router_conciliacion,
     router_inventario,
     router_liquidacion,
+    router_gestion,
     router_movimientos,
     router_reportes,
     router_cartera,

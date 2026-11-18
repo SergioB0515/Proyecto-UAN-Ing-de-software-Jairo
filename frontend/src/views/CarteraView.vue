@@ -124,6 +124,7 @@ watch(orden, cargar)
                 <th>Contribuyente</th>
                 <th>Año</th>
                 <th>Declaración</th>
+                <th>Etapa</th>
                 <th>¿Obligado?</th>
                 <th class="cifra">Sin declarar</th>
                 <th>Pendiente</th>
@@ -155,6 +156,23 @@ watch(orden, cargar)
                 </td>
                 <td>
                   <EstadoVencimiento v-if="fila.vencimiento" :vencimiento="fila.vencimiento" compacto />
+                  <span v-else class="text-tinta-tenue">—</span>
+                </td>
+                <td>
+                  <RouterLink
+                    v-if="fila.etapas_total"
+                    :to="{ name: 'gestion', params: { id: fila.contribuyente_id }, query: { periodo: fila.periodo_fiscal_id } }"
+                    class="block hover:underline"
+                  >
+                    <span class="text-sm">
+                      <template v-if="fila.etapa_actual"><span class="text-tinta-suave">Sigue:</span> {{ fila.etapa_nombre.charAt(0).toLowerCase() + fila.etapa_nombre.slice(1) }}</template>
+                      <template v-else>Terminada</template>
+                    </span>
+                    <span class="ml-1 text-xs text-tinta-tenue">{{ fila.etapas_hechas }}/{{ fila.etapas_total }}</span>
+                    <span v-if="fila.documentos_pendientes" class="block text-xs text-tinta-suave">
+                      {{ fila.documentos_pendientes }} documento(s) por recibir
+                    </span>
+                  </RouterLink>
                   <span v-else class="text-tinta-tenue">—</span>
                 </td>
                 <td>

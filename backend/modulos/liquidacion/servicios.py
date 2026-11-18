@@ -507,7 +507,17 @@ def construir_insumos(
 def _patrimonio_liquido_anterior(
     session: Session, contador_id: int, contribuyente_id: int, anio_gravable: int
 ) -> Optional[Decimal]:
-    """Patrimonio líquido del año inmediatamente anterior, si está registrado."""
+    """Patrimonio líquido del año inmediatamente anterior.
+
+    Lo que cuenta para la DIAN es lo declarado: si la declaración del año
+    anterior está registrada, se toma su casilla 31. Si no, se reconstruye con
+    los activos y las deudas que se registraron para ese año en la app.
+    """
+    from ..gestion.servicios import declaracion_vigente
+
+    declarada = declaracion_vigente(session, contribuyente_id, anio_gravable - 1)
+    if declarada is not None and "31" in (declarada.casillas or {}):
+        return Decimal(declarada.casillas["31"])
     anterior = session.exec(
         select(PeriodoFiscal).where(
             PeriodoFiscal.contribuyente_id == contribuyente_id,
@@ -658,7 +668,7 @@ def liquidar_periodo(
         total = sum((i.valor_anual for i in sin_clasificar), CERO)
         diagnosticos.insert(
             0,
-            f"{len(sin_clasificar)} fuente(s) de ingreso por ${total} quedaron sin "
+            f"{len(sin_clasificar)} fuente(s) de ingreso por {pesos(total)} quedaron sin "
             f"clasificar y NO entraron en la liquidación. Asígneles una cédula "
             f"para que el borrador esté completo.",
         )

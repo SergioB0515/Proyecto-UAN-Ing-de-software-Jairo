@@ -1136,8 +1136,12 @@ def borrar_demo(session: Session) -> bool:
             ).all()
         )
         if periodos:
+            from modulos.gestion.modelos import (
+                DeclaracionPresentada, DocumentoSolicitado, SeguimientoDeclaracion,
+            )
             for modelo in (ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
-                           PagoEfectivo, HojaLiquidacion):
+                           PagoEfectivo, HojaLiquidacion, DeclaracionPresentada,
+                           DocumentoSolicitado, SeguimientoDeclaracion):
                 session.exec(delete(modelo).where(modelo.periodo_fiscal_id.in_(periodos)))
         session.exec(delete(PerdidaFiscal).where(PerdidaFiscal.contribuyente_id.in_(ids)))
 
@@ -1157,6 +1161,67 @@ def borrar_demo(session: Session) -> bool:
     return True
 
 
+def gestion_demo(session: Session, contador_id: int) -> None:
+    """La temporada en tres momentos distintos, para la pantalla de gestión.
+
+    - Luz Marina: proceso terminado. Declaración de 2024 registrada a mano,
+      documentos recibidos, revisada, aprobada y presentada a tiempo.
+    - Diana: a mitad de la recolección de documentos, a una semana del plazo.
+    - Nelson: venció el 20 de agosto y no ha presentado. La pantalla muestra
+      la sanción y los intereses que siguen corriendo.
+
+    Las tasas de mora se cargan de la tabla de la DIAN; la de noviembre de
+    2026 se deja sin cargar a propósito, para que se vea el aviso.
+    """
+    from modulos.gestion import servicios as gestion
+    from modulos.gestion.modelos import (
+        DeclaracionAnteriorRegistrar, DocumentoActualizar, EstadoDocumento,
+        PresentacionRegistrar, SeguimientoActualizar,
+    )
+
+    gestion.cargar_tasas_oficiales(session)
+
+    def ubicar(rut: str) -> Tuple[int, int]:
+        c = session.exec(select(Contribuyente).where(
+            Contribuyente.contador_id == contador_id, Contribuyente.rut == rut)).one()
+        p = session.exec(select(PeriodoFiscal).where(
+            PeriodoFiscal.contribuyente_id == c.id,
+            PeriodoFiscal.anio_gravable == ANIO)).one()
+        return c.id, p.id
+
+    def marcar_documentos(cid: int, pid: int, cuantos: Optional[int] = None) -> None:
+        docs = gestion.solicitud_documentos(session, contador_id, cid, pid).documentos
+        for d in docs[:cuantos]:
+            gestion.actualizar_documento(session, contador_id, cid, pid, d.clave,
+                                         DocumentoActualizar(estado=EstadoDocumento.RECIBIDO))
+
+    # --- Luz Marina: todo hecho -----------------------------------------
+    cid, pid = ubicar("52814903-1")
+    gestion.registrar_declaracion_anterior(session, contador_id, cid, DeclaracionAnteriorRegistrar(
+        anio_gravable=ANIO_ANTERIOR, fecha_presentacion=date(2025, 8, 14),
+        numero_formulario="2104987654321",
+        casillas={29: 153_900_000, 30: 0, 31: 153_900_000, 32: 79_200_000,
+                  111: 41_300_000, 126: 1_450_000, 132: 9_100_000, 133: 0,
+                  136: 0, 137: 0},
+    ))
+    marcar_documentos(cid, pid)
+    gestion.actualizar_seguimiento(session, contador_id, cid, pid, SeguimientoActualizar(
+        cruce_revisado_en=date(2026, 8, 3), liquidacion_revisada_en=date(2026, 8, 5),
+        aprobada_cliente_en=date(2026, 8, 10)))
+    gestion.registrar_presentacion(session, contador_id, cid, pid, PresentacionRegistrar(
+        fecha_presentacion=date(2026, 8, 12), numero_formulario="2105123456789"))
+
+    # --- Diana: recogiendo documentos -----------------------------------
+    cid, pid = ubicar("1026587413-2")
+    marcar_documentos(cid, pid, 2)
+
+    # --- Nelson: vencido sin presentar ----------------------------------
+    cid, pid = ubicar("900845612-7")
+    marcar_documentos(cid, pid)
+    gestion.actualizar_seguimiento(session, contador_id, cid, pid, SeguimientoActualizar(
+        cruce_revisado_en=date(2026, 8, 14), liquidacion_revisada_en=date(2026, 8, 18)))
+
+
 def cargar_demo(session: Session) -> Contador:
     contador = Contador(
         nombre=NOMBRE_DEMO,
@@ -1171,6 +1236,7 @@ def cargar_demo(session: Session) -> Contador:
         caso(session, contador.id)
 
     session.commit()
+    gestion_demo(session, contador.id)
     asegurar_adjuntos_demo(session, contador.id)
     return contador
 

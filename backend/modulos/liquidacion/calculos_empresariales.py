@@ -15,6 +15,7 @@ from decimal import Decimal
 from typing import List, Optional, Tuple
 
 from ..parametros.tablas_oficiales import ParametrosAnuales
+from core.formato import pesos
 
 CERO = Decimal("0")
 _CENTAVO = Decimal("0.01")
@@ -118,25 +119,25 @@ def calcular_depreciacion(
         del_periodo = min(por_vida_util, tope_fiscal, pendiente)
 
         formula = (
-            f"base ${base.quantize(_CENTAVO)} (costo fiscal − valor residual) "
+            f"base {pesos(base)} (costo fiscal − valor residual) "
             f"÷ {activo.vida_util_anios} años"
             + (f" × {meses}/12 meses" if meses != 12 else "")
-            + f" = ${por_vida_util.quantize(_CENTAVO)}"
+            + f" = {pesos(por_vida_util)}"
         )
         if tope_fiscal < por_vida_util:
             formula += (
                 f", recortado al tope del art. 137 para {activo.categoria} "
                 f"({_pct(tasa_maxima)}% anual) = "
-                f"${tope_fiscal.quantize(_CENTAVO)}"
+                f"{pesos(tope_fiscal)}"
             )
             resultado.diagnosticos.append(
                 f"La vida útil registrada para «{activo.descripcion}» da una "
                 f"depreciación mayor a la tasa máxima del art. 137; la deducción "
-                f"se recortó a ${_redondear(tope_fiscal)}. La diferencia es una "
+                f"se recortó a {pesos(_redondear(tope_fiscal))}. La diferencia es una "
                 f"diferencia entre contabilidad y fiscal, no una pérdida."
             )
         if pendiente < min(por_vida_util, tope_fiscal):
-            formula += f", limitado al saldo pendiente de ${pendiente.quantize(_CENTAVO)}"
+            formula += f", limitado al saldo pendiente de {pesos(pendiente)}"
 
         valor = _redondear(del_periodo)
         resultado.total += valor
@@ -216,8 +217,8 @@ def calcular_bancarizacion(
         total = sum((op.valor for op in resultado.operaciones_sobre_el_limite), CERO)
         resultado.diagnosticos.append(
             f"{len(resultado.operaciones_sobre_el_limite)} operación(es) en efectivo "
-            f"por ${_redondear(total)} superan el límite individual de "
-            f"{limite.limite_individual_uvt} UVT (${_redondear(tope_individual)}) del "
+            f"por {pesos(_redondear(total))} superan el límite individual de "
+            f"{limite.limite_individual_uvt} UVT ({pesos(_redondear(tope_individual))}) del "
             f"art. 771-5 par. 2. Revíselas: si no se canalizaron por el sistema "
             f"financiero, ese costo no es procedente."
         )
@@ -244,12 +245,12 @@ def calcular_bancarizacion(
     resultado.efectivo_rechazado = _redondear(insumos.pagos_en_efectivo - aceptado)
 
     resultado.formula = (
-        f"efectivo pagado ${insumos.pagos_en_efectivo.quantize(_CENTAVO)}; aceptado = "
+        f"efectivo pagado {pesos(insumos.pagos_en_efectivo)}; aceptado = "
         f"menor entre {_pct(limite.porcentaje_de_pagos)}% de los pagos "
-        f"(${resultado.limite_porcentaje_pagos.quantize(_CENTAVO)}), "
-        f"{limite.tope_uvt} UVT (${resultado.limite_tope_uvt.quantize(_CENTAVO)}) y "
+        f"({pesos(resultado.limite_porcentaje_pagos)}), "
+        f"{limite.tope_uvt} UVT ({pesos(resultado.limite_tope_uvt)}) y "
         f"{_pct(limite.porcentaje_de_costos)}% de los costos y "
-        f"deducciones (${resultado.limite_porcentaje_costos.quantize(_CENTAVO)})"
+        f"deducciones ({pesos(resultado.limite_porcentaje_costos)})"
     )
 
     if resultado.efectivo_rechazado > CERO:
@@ -260,7 +261,7 @@ def calcular_bancarizacion(
             key=lambda par: par[0],
         )[1]
         resultado.diagnosticos.append(
-            f"El art. 771-5 rechaza ${resultado.efectivo_rechazado} de los pagos en "
+            f"El art. 771-5 rechaza {pesos(resultado.efectivo_rechazado)} de los pagos en "
             f"efectivo porque {cual} es la cifra menor. Ese valor se devuelve a la "
             f"renta líquida: no es un costo deducible."
         )
@@ -315,7 +316,7 @@ def calcular_compensacion_perdidas(
     if vencidas:
         total = sum((p.valor_disponible for p in vencidas), CERO)
         resultado.diagnosticos.append(
-            f"{len(vencidas)} pérdida(s) por ${_redondear(total)} ya superaron los "
+            f"{len(vencidas)} pérdida(s) por {pesos(_redondear(total))} ya superaron los "
             f"{parametros.anios_compensacion_perdidas} periodos gravables del art. 147 "
             f"y no se pueden compensar en {anio_gravable}."
         )
@@ -341,7 +342,7 @@ def calcular_compensacion_perdidas(
                     f"Pérdida de {perdida.anio_origen} ({tipo})",
                     _redondear(usado),
                     f"imputada contra la renta líquida de {tipo}; disponible era "
-                    f"${perdida.valor_disponible.quantize(_CENTAVO)}",
+                    f"{pesos(perdida.valor_disponible)}",
                 )
             )
         resultado.por_tipo[tipo] = _redondear(usado_total)
@@ -426,8 +427,8 @@ def calcular_comparacion_patrimonial(
     if resultado.incremento <= CERO:
         resultado.formula = (
             f"el patrimonio líquido no aumentó "
-            f"(${patrimonio_liquido_actual.quantize(_CENTAVO)} frente a "
-            f"${insumos.patrimonio_liquido_anterior.quantize(_CENTAVO)}): "
+            f"({pesos(patrimonio_liquido_actual)} frente a "
+            f"{pesos(insumos.patrimonio_liquido_anterior)}): "
             f"no hay renta por comparación patrimonial"
         )
         return resultado
@@ -441,19 +442,19 @@ def calcular_comparacion_patrimonial(
     )
     resultado.diferencia = _no_negativo(resultado.incremento - resultado.justificado)
     resultado.formula = (
-        f"incremento ${resultado.incremento.quantize(_CENTAVO)} − (renta gravable "
-        f"${renta_gravable.quantize(_CENTAVO)} + rentas exentas "
-        f"${rentas_exentas.quantize(_CENTAVO)} + ganancia ocasional neta "
-        f"${ganancia_ocasional_neta.quantize(_CENTAVO)} − impuestos pagados "
-        f"${insumos.impuestos_pagados_en_el_anio.quantize(_CENTAVO)} + justificaciones "
-        f"${insumos.justificaciones.quantize(_CENTAVO)})"
+        f"incremento {pesos(resultado.incremento)} − (renta gravable "
+        f"{pesos(renta_gravable)} + rentas exentas "
+        f"{pesos(rentas_exentas)} + ganancia ocasional neta "
+        f"{pesos(ganancia_ocasional_neta)} − impuestos pagados "
+        f"{pesos(insumos.impuestos_pagados_en_el_anio)} + justificaciones "
+        f"{pesos(insumos.justificaciones)})"
     )
 
     if resultado.diferencia > CERO:
         resultado.diagnosticos.append(
-            f"El patrimonio líquido creció ${_redondear(resultado.incremento)} y las "
-            f"rentas declaradas solo explican ${_redondear(resultado.justificado)}. "
-            f"Quedan ${_redondear(resultado.diferencia)} sin justificar (art. 236 ET). "
+            f"El patrimonio líquido creció {pesos(_redondear(resultado.incremento))} y las "
+            f"rentas declaradas solo explican {pesos(_redondear(resultado.justificado))}. "
+            f"Quedan {pesos(_redondear(resultado.diferencia))} sin justificar (art. 236 ET). "
             f"{'Se incorporó a la base gravable porque así se indicó.' if insumos.aceptar_como_renta_gravable else 'NO se incorporó a la base: la norma admite prueba en contrario. Documente la causa (valorizaciones, reajuste fiscal del art. 70, herencias, pasivos no declarados antes) o márquelo como renta gravable.'}"
         )
 

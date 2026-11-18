@@ -11,6 +11,14 @@ from .servicios import registrar_evento
 
 ACCIONES_AUDITADAS = {
     "cambiar_contrasena": "Cambió su contraseña",
+    "actualizar_seguimiento_declaracion": "Actualizó las etapas de la declaración",
+    "registrar_presentacion_declaracion": "Registró la presentación de la declaración",
+    "registrar_declaracion_anterior": "Registró una declaración anterior",
+    "traer_datos_del_anio_anterior": "Trajo los datos de la declaración anterior",
+    "actualizar_documento_solicitado": "Actualizó un documento solicitado al cliente",
+    "agregar_documento_solicitado": "Agregó un documento a la solicitud del cliente",
+    "guardar_tasa_interes": "Guardó una tasa de interés moratorio",
+    "cargar_tasas_interes_oficiales": "Cargó las tasas de interés moratorio oficiales",
     "crear": "Registró un contribuyente",
     "actualizar": "Editó los datos del contribuyente",
     "eliminar": "Eliminó un contribuyente",

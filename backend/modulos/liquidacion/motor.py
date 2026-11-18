@@ -59,6 +59,7 @@ from .calculos_empresariales import (
     calcular_compensacion_perdidas,
     calcular_depreciacion,
 )
+from core.formato import pesos
 
 CERO = Decimal("0")
 _CENTAVO = Decimal("0.01")
@@ -397,7 +398,7 @@ def aplicar_tabla(
         f"{tramo.impuesto_acumulado_uvt} UVT + "
         f"{porcentaje(tramo.tarifa_marginal)}% × "
         f"{exceso_uvt.quantize(_CENTAVO)} UVT = "
-        f"{impuesto_uvt.quantize(_CENTAVO)} UVT × ${uvt}"
+        f"{impuesto_uvt.quantize(_CENTAVO)} UVT × {pesos(uvt)}"
     )
     return impuesto, formula, tramo
 
@@ -439,9 +440,9 @@ def _renta_exenta_trabajo(
     exenta = min(porcentual, tope)
 
     formula = (
-        f"25% × ${subtotal.quantize(_CENTAVO)} (pagos laborales depurados) = "
-        f"${porcentual.quantize(_CENTAVO)}, topado en "
-        f"{limite.tope_uvt} UVT = ${tope.quantize(_CENTAVO)}"
+        f"25% × {pesos(subtotal)} (pagos laborales depurados) = "
+        f"{pesos(porcentual)}, topado en "
+        f"{limite.tope_uvt} UVT = {pesos(tope)}"
     )
     if trabajo.opta_por_costos_y_gastos and trabajo.ingresos_sin_vinculo_laboral > CERO:
         formula += (
@@ -513,17 +514,17 @@ def _aplicar_topes_propios(
                         f"CG-TOPE-{_slug(concepto.nombre)}",
                         f"{concepto.nombre} — recortado a su tope propio",
                         redondear_pesos(limite),
-                        f"solicitado ${concepto.valor.quantize(_CENTAVO)}, tope "
-                        f"${limite.quantize(_CENTAVO)}",
+                        f"solicitado {pesos(concepto.valor)}, tope "
+                        f"{pesos(limite)}",
                         tope.fuente_legal,
                     )
                 )
                 diagnosticos.append(
                     f"«{concepto.nombre}»: se solicitaron "
-                    f"${concepto.valor.quantize(_CENTAVO)} y el tope propio del "
-                    f"concepto es ${limite.quantize(_CENTAVO)} "
+                    f"{pesos(concepto.valor)} y el tope propio del "
+                    f"concepto es {pesos(limite)} "
                     f"({tope.fuente_legal}). Se recortaron "
-                    f"${recorte.quantize(_CENTAVO)} antes de aplicar el límite "
+                    f"{pesos(recorte)} antes de aplicar el límite "
                     f"general del art. 336."
                 )
             continue
@@ -553,17 +554,17 @@ def _aplicar_topes_propios(
                 f"Tope compartido — {clave.replace('_', ' ').lower()}",
                 redondear_pesos(limite),
                 f"solicitado entre {len(miembros)} concepto(s) "
-                f"${solicitado.quantize(_CENTAVO)}, tope conjunto "
-                f"${limite.quantize(_CENTAVO)}, repartido a prorrata",
+                f"{pesos(solicitado)}, tope conjunto "
+                f"{pesos(limite)}, repartido a prorrata",
                 tope.fuente_legal,
             )
         )
         diagnosticos.append(
             f"Los conceptos que comparten el tope de "
             f"{clave.replace('_', ' ').lower()} suman "
-            f"${solicitado.quantize(_CENTAVO)} y ese tope es "
-            f"${limite.quantize(_CENTAVO)} ({tope.fuente_legal}). No es un tope "
-            f"por concepto: se recortaron ${(solicitado - limite).quantize(_CENTAVO)} "
+            f"{pesos(solicitado)} y ese tope es "
+            f"{pesos(limite)} ({tope.fuente_legal}). No es un tope "
+            f"por concepto: se recortaron {pesos((solicitado - limite))} "
             f"repartidos a prorrata."
         )
 
@@ -592,17 +593,17 @@ def _aplicar_limite_general(
         recorte = solicitado - aceptado
         cual = "el 40 % de los ingresos depurados" if porcentual <= tope else f"el tope de {limite.tope_uvt} UVT"
         diagnosticos.append(
-            f"El límite del art. 336 num. 3 recortó ${recorte.quantize(_CENTAVO)} "
+            f"El límite del art. 336 num. 3 recortó {pesos(recorte)} "
             f"de las rentas exentas y deducciones solicitadas: se aceptaron "
-            f"${aceptado.quantize(_CENTAVO)} de ${solicitado.quantize(_CENTAVO)} "
+            f"{pesos(aceptado)} de {pesos(solicitado)} "
             f"porque {cual} es la cifra menor. El exceso no se traslada a otros "
             f"años ni a otras cédulas."
         )
 
     formula = (
-        f"menor entre: solicitado ${solicitado.quantize(_CENTAVO)}, "
-        f"40% × ${base_del_porcentaje.quantize(_CENTAVO)} = ${porcentual.quantize(_CENTAVO)}, "
-        f"y {limite.tope_uvt} UVT = ${tope.quantize(_CENTAVO)}"
+        f"menor entre: solicitado {pesos(solicitado)}, "
+        f"40% × {pesos(base_del_porcentaje)} = {pesos(porcentual)}, "
+        f"y {limite.tope_uvt} UVT = {pesos(tope)}"
     )
     return redondear_pesos(aceptado), formula, diagnosticos
 
@@ -637,7 +638,7 @@ def _deducciones_fuera_del_limite(
                 valor=valor,
                 formula=(
                     f"{dependientes} dependiente(s) × "
-                    f"{parametros.deduccion_dependientes.tope_uvt} UVT × ${parametros.uvt}"
+                    f"{parametros.deduccion_dependientes.tope_uvt} UVT × {pesos(parametros.uvt)}"
                 ),
                 fuente_legal=parametros.deduccion_dependientes.fuente_legal,
             )
@@ -660,9 +661,9 @@ def _deducciones_fuera_del_limite(
                 nombre="Deducción del 1 % de compras con factura electrónica",
                 valor=valor,
                 formula=(
-                    f"menor entre 1% × ${insumos.compras_con_factura_electronica.quantize(_CENTAVO)} "
-                    f"= ${porcentual.quantize(_CENTAVO)} y {limite.tope_uvt} UVT = "
-                    f"${tope.quantize(_CENTAVO)}. Requiere pago por medio electrónico y "
+                    f"menor entre 1% × {pesos(insumos.compras_con_factura_electronica)} "
+                    f"= {pesos(porcentual)} y {limite.tope_uvt} UVT = "
+                    f"{pesos(tope)}. Requiere pago por medio electrónico y "
                     f"factura electrónica de venta con validación previa"
                 ),
                 fuente_legal=limite.fuente_legal,
@@ -945,7 +946,7 @@ def liquidar(
                       "Arts. 147 y 330 ET"))
             liq.diagnosticos.append(
                 f"Los costos imputados a {_NOMBRE_SUBCEDULA[subcedula]} superan sus "
-                f"ingresos en ${perdida.quantize(_CENTAVO)}: esa parte NO se dedujo "
+                f"ingresos en {pesos(perdida)}: esa parte NO se dedujo "
                 f"este año. Regístrela como pérdida fiscal de {insumos.anio_gravable} "
                 f"para poder compensarla en los próximos "
                 f"{parametros.anios_compensacion_perdidas} años, o revise si la "
@@ -980,8 +981,8 @@ def liquidar(
         liq.casillas_marcadas.append(140)
         liq.diagnosticos.append(
             f"Los costos de las rentas de trabajo sin vínculo laboral "
-            f"(${sin_vinculo.costos_y_deducciones.quantize(_CENTAVO)}) superan el 60 % "
-            f"de sus ingresos (${sin_vinculo.ingresos_brutos.quantize(_CENTAVO)}): hay "
+            f"({pesos(sin_vinculo.costos_y_deducciones)}) superan el 60 % "
+            f"de sus ingresos ({pesos(sin_vinculo.ingresos_brutos)}): hay "
             f"que marcar la casilla 140 del formulario (tope indicativo del art. "
             f"336-1 ET). No cambia el impuesto, pero la DIAN puede pedir los "
             f"soportes de esos costos."
@@ -1032,7 +1033,7 @@ def liquidar(
                   "Casilla 99 − casilla 100", "Art. 337 ET", casilla=101))
         R(Renglon("PEN-EXENTA", "Renta exenta de pensiones", exenta_pensiones,
                   f"Topada en {parametros.renta_exenta_pensiones_uvt_mensual} UVT × "
-                  f"{meses} mes(es) = ${tope_pensiones.quantize(_CENTAVO)}",
+                  f"{meses} mes(es) = {pesos(tope_pensiones)}",
                   parametros.fuente_renta_exenta_pensiones, casilla=102))
         R(Renglon("PEN-RENTA-LIQUIDA", "Renta líquida gravable de pensiones",
                   renta_liquida_pensiones, "Ingresos − no constitutivos − renta exenta",
@@ -1065,7 +1066,7 @@ def liquidar(
         R(Renglon("DIV-IMPUESTO-GRAVADOS",
                   "Impuesto por dividendos gravados, 2a subcédula",
                   impuesto_dividendos_gravados,
-                  f"{porcentaje(tarifa_240)}% × ${div.gravados.quantize(_CENTAVO)}. "
+                  f"{porcentaje(tarifa_240)}% × {pesos(div.gravados)}. "
                   "Se resta de la base de la tabla del art. 241 y se suma al "
                   "impuesto en la casilla 121",
                   parametros.fuente_dividendos_gravados, casilla=118))
@@ -1117,9 +1118,9 @@ def liquidar(
         R(Renglon("GO-IMPUESTO", "Impuesto de ganancias ocasionales",
                   impuesto_go + impuesto_loterias,
                   f"{porcentaje(parametros.tarifa_ganancia_ocasional)}% × "
-                  f"${base_go.quantize(_CENTAVO)}"
+                  f"{pesos(base_go)}"
                   + (f" + {porcentaje(parametros.tarifa_ganancia_ocasional_loterias)}% × "
-                     f"${go.loterias_rifas_apuestas.quantize(_CENTAVO)} (loterías, rifas y apuestas)"
+                     f"{pesos(go.loterias_rifas_apuestas)} (loterías, rifas y apuestas)"
                      if go.loterias_rifas_apuestas > CERO else ""),
                   parametros.fuente_ganancia_ocasional, casilla=127))
 
@@ -1170,9 +1171,9 @@ def liquidar(
                   parametros.fuente_renta_presuntiva, casilla=98))
         if por_presuntiva:
             liq.diagnosticos.append(
-                f"La renta presuntiva (${presuntiva.quantize(_CENTAVO)}) superó la renta "
+                f"La renta presuntiva ({pesos(presuntiva)}) superó la renta "
                 f"líquida gravable de la cédula general "
-                f"(${casilla_97.quantize(_CENTAVO)}) y la reemplazó en la base del "
+                f"({pesos(casilla_97)}) y la reemplazó en la base del "
                 f"impuesto; las rentas de pensiones y de dividendos se suman igual."
             )
 
@@ -1210,7 +1211,7 @@ def liquidar(
                   f"{porcentaje(parametros.descuento_dividendos.porcentaje)}% × "
                   f"el exceso de la renta líquida cedular de dividendos sobre "
                   f"{parametros.descuento_dividendos.tope_uvt} UVT "
-                  f"(${umbral_descuento.quantize(_CENTAVO)})",
+                  f"({pesos(umbral_descuento)})",
                   parametros.descuento_dividendos.fuente_legal, casilla=124))
 
     # El techo es el impuesto de renta, no la suma con el de ganancias
@@ -1220,9 +1221,9 @@ def liquidar(
     descuentos = min(descuentos_solicitados, impuesto_renta)
     if descuentos < descuentos_solicitados:
         liq.diagnosticos.append(
-            f"Los descuentos tributarios se recortaron a ${descuentos.quantize(_CENTAVO)}: "
+            f"Los descuentos tributarios se recortaron a {pesos(descuentos)}: "
             f"no pueden exceder el impuesto sobre la renta y el excedente de "
-            f"${(descuentos_solicitados - descuentos).quantize(_CENTAVO)} se pierde."
+            f"{pesos((descuentos_solicitados - descuentos))} se pierde."
         )
     R(Renglon("TOTAL-DESCUENTOS", "Total descuentos tributarios", descuentos,
               "Limitados al impuesto sobre la renta", "Arts. 254-1 y 259 ET",
@@ -1270,8 +1271,8 @@ def liquidar(
         redondear_pesos(impuesto_neto * porcentaje_anticipo - retenciones)
     )
     formula_directo = (
-        f"{pct_texto} × impuesto neto ${impuesto_neto.quantize(_CENTAVO)} − retenciones "
-        f"${retenciones.quantize(_CENTAVO)}"
+        f"{pct_texto} × impuesto neto {pesos(impuesto_neto)} − retenciones "
+        f"{pesos(retenciones)}"
     )
 
     promedio_base = (impuesto_neto + insumos.impuesto_neto_anio_anterior) / Decimal(2)
@@ -1280,10 +1281,10 @@ def liquidar(
     )
     formula_promedio = (
         f"{pct_texto} × promedio de los dos últimos años "
-        f"(${impuesto_neto.quantize(_CENTAVO)} y "
-        f"${insumos.impuesto_neto_anio_anterior.quantize(_CENTAVO)}) = "
-        f"${promedio_base.quantize(_CENTAVO)} − retenciones "
-        f"${retenciones.quantize(_CENTAVO)}"
+        f"({pesos(impuesto_neto)} y "
+        f"{pesos(insumos.impuesto_neto_anio_anterior)}) = "
+        f"{pesos(promedio_base)} − retenciones "
+        f"{pesos(retenciones)}"
     )
 
     metodo = (insumos.metodo_anticipo or "DIRECTO").upper()
@@ -1320,8 +1321,8 @@ def liquidar(
         else:
             anticipo, formula_anticipo = directo, formula_directo
         formula_anticipo += (
-            f". Se escogió el menor entre el método directo (${directo}) y el del "
-            f"promedio (${promedio})"
+            f". Se escogió el menor entre el método directo ({pesos(directo)}) y el del "
+            f"promedio ({pesos(promedio)})"
         )
     else:
         anticipo, formula_anticipo = directo, formula_directo
@@ -1336,8 +1337,8 @@ def liquidar(
         and insumos.anios_declarando > 1
     ):
         liq.diagnosticos.append(
-            f"El método del promedio del art. 807 daría un anticipo de ${promedio} en "
-            f"vez de ${directo}: ${directo - promedio} menos. El contribuyente puede "
+            f"El método del promedio del art. 807 daría un anticipo de {pesos(promedio)} en "
+            f"vez de {pesos(directo)}: {pesos(directo - promedio)} menos. El contribuyente puede "
             f"escoger el procedimiento, así que conviene revisarlo."
         )
 
