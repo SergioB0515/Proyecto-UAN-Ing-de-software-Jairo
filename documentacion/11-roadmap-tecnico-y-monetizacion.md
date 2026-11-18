@@ -257,14 +257,23 @@ pequeñas que atienden carteras de 20 a 300 personas naturales. Aun tomando el
 
 | Producto | Rango mensual |
 |---|---|
+| **Siigo Contador ilimitado** (para contadores, empresas ilimitadas) | **$44.658** (pago anual de $535.900) — [fuente](https://www.siigo.com/siigo-contador/), consultada en noviembre de 2026 |
 | Alegra Contabilidad | $69.900 – $279.900 |
 | Siigo Nube | ~$146.000 – ~$208.000 |
 | Loggro Pymes | $108.990 – $279.990 |
 | World Office Cloud / Helisa | Por cotización |
 
-Son productos de **contabilidad general**, no de renta de personas naturales.
-Esa es la grieta: ninguno resuelve bien conciliar exógena contra lo registrado y
-liquidar el 210 de una cartera de cien personas.
+La comparación que importa es la primera fila: es el producto pensado para el
+mismo cliente (un contador con cartera) y cuesta menos de la tercera parte del
+plan «Profesional» propuesto abajo. Los demás son productos de **contabilidad
+general**, no de renta de personas naturales.
+
+La grieta no es el precio sino el alcance: Siigo Contador calcula datos para
+IVA, renta, ICA y retención y exporta la exógena que reportan las empresas,
+pero no concilia la exógena que **recibe** una persona natural contra lo que
+declara ni liquida el 210 de una cartera con cada casilla trazada a su norma.
+Por eso este producto se plantea como **complemento** del software contable
+que el contador ya paga, no como reemplazo.
 
 ### Modelo de cobro propuesto
 
@@ -279,9 +288,12 @@ a su cliente, y escala con el valor que recibe.
 | Firma | hasta 400, varios usuarios | $390.000 |
 | Firma grande | más de 400 | Por cotización |
 
-Son precios de referencia construidos para quedar por debajo de la
-competencia general y por encima de lo gratuito. **Hay que validarlos
-hablando con contadores antes de fijarlos**, no deducirlos de una tabla.
+**Estos precios no se sostienen frente a Siigo Contador** y quedan como
+hipótesis a descartar, no como propuesta. Si el producto es un complemento,
+el techo razonable está por debajo de lo que el contador ya paga por su
+software contable. Un modelo más defendible es cobrar por declaración liquidada
+en temporada (lo que el contador le factura a su cliente), y el valor hay que
+validarlo hablando con contadores, no deducirlo de una tabla.
 
 ### Por qué un contador cambiaría
 

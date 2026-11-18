@@ -4,7 +4,7 @@ FastAPI + SQLModel sobre PostgreSQL. Ver
 [../documentacion/04-arquitectura.md](../documentacion/04-arquitectura.md)
 para las razones de cada elección técnica.
 
-**Estado**: los cinco incrementos implementados y probados: **195/195 pruebas**.
+**Estado**: implementado y probado; las pruebas se corren con `pytest` desde esta carpeta.
 
 | Incremento | Historias | Módulos |
 |---|---|---|
