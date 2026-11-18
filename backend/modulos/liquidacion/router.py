@@ -29,6 +29,8 @@ from ..reportes.exportacion import DocumentoReporte, Seccion, a_excel, a_pdf
 from ..reportes.modelos import FormatoReporte
 from ..reportes.servicios import _MEDIA_TYPES
 from .modelos import (
+    VentaInmuebleCrear,
+    VentaInmuebleLeer,
     DeduccionImputacion,
     EscenariosLeer,
     ClasificacionIngresoDatos,
@@ -63,6 +65,12 @@ def _traducir(exc: Exception) -> HTTPException:
                         ActivoNoEncontradoError, PerdidaNoEncontradaError,
                         PagoEfectivoNoEncontradoError)):
         return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    from core.excepciones import DatosVentaInvalidosError, VentaNoEncontradaError
+
+    if isinstance(exc, VentaNoEncontradaError):
+        return HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(exc))
+    if isinstance(exc, DatosVentaInvalidosError):
+        return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, (PlantillaNoEncontradaError, SinPeriodoAnteriorError)):
         return HTTPException(status_code=422, detail=str(exc))
     if isinstance(exc, AnioGravableNoSoportadoError):
@@ -591,5 +599,56 @@ def copiar_hoja_del_anterior(
         return servicios.copiar_hoja_del_anio_anterior(
             session, contador.id, contribuyente_id, periodo_fiscal_id
         )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+
+# --- Venta de inmuebles ------------------------------------------------------
+
+
+@router.get(f"{_BASE}/ventas-inmuebles", response_model=List[VentaInmuebleLeer])
+def listar_ventas_inmuebles(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        return servicios.listar_ventas_inmuebles(session, contador.id, contribuyente_id,
+                                                 periodo_fiscal_id)
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.post(f"{_BASE}/ventas-inmuebles", response_model=VentaInmuebleLeer,
+             status_code=status.HTTP_201_CREATED)
+def crear_venta_inmueble(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    datos: VentaInmuebleCrear,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Registra la venta de un inmueble: costo fiscal (arts. 69, 72 y 73), utilidad
+    y si va como ganancia ocasional o como renta ordinaria (art. 300)."""
+    try:
+        return servicios.crear_venta_inmueble(session, contador.id, contribuyente_id,
+                                              periodo_fiscal_id, datos)
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.delete(f"{_BASE}/ventas-inmuebles/{{venta_id}}", status_code=status.HTTP_204_NO_CONTENT)
+def eliminar_venta_inmueble(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    venta_id: int,
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    try:
+        servicios.eliminar_venta_inmueble(session, contador.id, contribuyente_id,
+                                          periodo_fiscal_id, venta_id)
     except Exception as exc:
         raise _traducir(exc)

@@ -12,7 +12,7 @@ la frontera, y está marcada ahí. Migrar los módulos antiguos a Decimal está 
 el roadmap como tarea aparte porque toca los 195 tests existentes.
 """
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
@@ -501,3 +501,58 @@ class PagoEfectivoLeer(PagoEfectivoBase):
     id: int
     periodo_fiscal_id: int
     supera_limite_individual: bool
+
+
+
+# --- Venta de inmuebles ------------------------------------------------------
+
+
+class TipoInmueble(str, Enum):
+    URBANO = "URBANO"
+    RURAL_AGROPECUARIO = "RURAL_AGROPECUARIO"
+    RURAL = "RURAL"
+
+
+class VentaInmuebleBase(SQLModel):
+    descripcion: str = Field(min_length=3, max_length=300)
+    tipo: TipoInmueble = Field(default=TipoInmueble.URBANO)
+    fecha_adquisicion: date
+    fecha_venta: date
+    valor_venta: Decimal = _dinero(ge=0)
+    costo_adquisicion: Decimal = _dinero(ge=0)
+    mejoras_y_valorizacion: Decimal = _dinero(ge=0)
+    # Avalúo catastral o autoavalúo del año anterior a la venta (art. 72 ET).
+    avaluo_catastral_anterior: Optional[Decimal] = Field(
+        default=None, sa_type=Numeric(18, 2), ge=0)
+    es_casa_de_habitacion: bool = Field(default=False)
+    porcentaje_participacion: Decimal = Field(
+        default=Decimal("100"), sa_type=Numeric(5, 2), gt=0, le=100)
+    retencion: Decimal = _dinero(ge=0)
+    # Multiplicador del art. 73 escrito a mano, para un año sin tabla cargada.
+    factor_manual: Optional[Decimal] = Field(default=None, sa_type=Numeric(12, 4), gt=0)
+
+
+class VentaInmueble(VentaInmuebleBase, table=True):
+    __tablename__ = "ventas_inmuebles"
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
+
+
+class VentaInmuebleCrear(VentaInmuebleBase):
+    pass
+
+
+class VentaInmuebleLeer(VentaInmuebleBase):
+    id: int
+    periodo_fiscal_id: int
+    es_ganancia_ocasional: bool
+    factor: Optional[Decimal]
+    costo_reajustado: Optional[Decimal]
+    costo_fiscal: Decimal
+    metodo_costo: str
+    utilidad: Decimal
+    perdida: Decimal
+    exenta: Decimal
+    formula: str
+    avisos: List[str] = []

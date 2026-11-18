@@ -80,6 +80,29 @@ def _buscar_registro(
     return min(coincidencias, key=lambda r: abs(r.valor - item.valor))
 
 
+def _ventas_declaradas(session: Session, periodo_fiscal_id: int) -> List[_ItemDeclarado]:
+    """Las ventas de inmuebles registradas, para cruzarlas con lo que reporta la notaría.
+
+    La notaría reporta con el concepto 1032 tanto al que vende como al que
+    compra y la retención que practicó. Por eso no basta el código: se exige
+    además que el detalle hable de venta o de enajenante, o la venta quedaría
+    emparejada con una compra.
+    """
+    from ..liquidacion.modelos import VentaInmueble
+
+    return [
+        _ItemDeclarado(
+            concepto=f"Venta: {v.descripcion}",
+            valor=float(v.valor_venta),
+            origen=OrigenItemConciliacion.VENTA_INMUEBLE,
+            vinculo_codigo_concepto=None,
+            vinculo_palabra_clave="enajenante principal",
+        )
+        for v in session.exec(select(VentaInmueble).where(
+            VentaInmueble.periodo_fiscal_id == periodo_fiscal_id)).all()
+    ]
+
+
 def conciliar_contribuyente(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> ResultadoConciliacion:
@@ -115,7 +138,7 @@ def conciliar_contribuyente(
         for fuente in listar_fuentes_ingreso(
             session, contador_id, contribuyente_id, periodo_fiscal_id
         )
-    ]
+    ] + _ventas_declaradas(session, periodo_fiscal_id)
 
     items: List[ItemConciliacion] = []
     usados: set = set()

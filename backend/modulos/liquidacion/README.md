@@ -175,3 +175,27 @@ página. Las casillas que el motor no calcula (94, 95, 104–106, 109, 110,
 El costeo del inventario (PEPS y promedio) hace su aritmética en `Decimal`. Los
 campos de dinero de los módulos anteriores siguen guardados como `float` en la
 base de datos; migrarlos es un cambio de esquema pendiente.
+
+
+## Venta de inmuebles (`venta_inmuebles.py`)
+
+`GET/POST …/ventas-inmuebles`, `DELETE …/ventas-inmuebles/{id}`. Cada venta se
+suma a la liquidación donde la ley la manda:
+
+- **Dos años o más de posesión:** ganancia ocasional (art. 300 ET), casillas
+  112 a 115. Una pérdida no se resta de otras ganancias ocasionales.
+- **Menos de dos años:** renta ordinaria, en rentas no laborales (74 y 77).
+- **Costo fiscal:** el mayor entre el costo de compra reajustado con la tabla
+  del art. 73 más mejoras y valorización (art. 69), y el avalúo catastral del
+  año anterior (art. 72). La tabla de 2025 es la del Decreto 0449 de 2026
+  (`parametros/reajuste_activos.py`), contrastada contra una segunda
+  publicación en 14 años de muestra. Para un año sin tabla, el contador escribe
+  el multiplicador; si no lo hace, se usa el costo sin reajustar y se avisa.
+- **Casa de habitación:** las primeras 5.000 UVT de la utilidad son exentas
+  (art. 311-1), en proporción a la participación (Concepto DIAN 6970 de 2024).
+  La condición de llevar el dinero a una cuenta AFC o al crédito hipotecario la
+  confirma el contador.
+- **Retención de la notaría:** suma a las retenciones (casilla 132).
+- **Conciliación:** la venta registrada se cruza con el registro del concepto
+  1032 de la notaría en el que el contribuyente figura como enajenante, no con
+  el de una compra.

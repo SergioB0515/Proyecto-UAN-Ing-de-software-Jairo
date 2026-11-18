@@ -174,3 +174,11 @@ class PagoEfectivoNoEncontradoError(ErrorAplicacion):
 
 class PlantillaNoEncontradaError(ErrorAplicacion):
     pass
+
+
+class VentaNoEncontradaError(ErrorAplicacion):
+    pass
+
+
+class DatosVentaInvalidosError(ErrorAplicacion):
+    pass

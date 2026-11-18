@@ -38,7 +38,7 @@ const items = computed(() => {
 })
 
 function origenTexto(item) {
-  const origen = { FuenteIngreso: 'Ingreso', Activo: 'Activo' }[item.origen] ?? 'Solo en la exógena'
+  const origen = { FuenteIngreso: 'Ingreso', Activo: 'Activo', VentaInmueble: 'Venta de inmueble' }[item.origen] ?? 'Solo en la exógena'
   return item.concepto_code ? `${origen}, concepto ${item.concepto_code}` : origen
 }
 

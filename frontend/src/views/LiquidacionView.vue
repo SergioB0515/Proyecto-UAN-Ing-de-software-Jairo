@@ -24,6 +24,7 @@ import {
 import Cargando from '../components/Cargando.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
 import PanelEmpresarial from '../components/liquidacion/PanelEmpresarial.vue'
+import VentasInmuebles from '../components/liquidacion/VentasInmuebles.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { useContribuyente } from '../contexto'
 import { dinero } from '../formato'
@@ -778,6 +779,15 @@ onMounted(cargar)
       :periodo-fiscal-id="pid"
       :anio-gravable="periodo.anio_gravable"
       :activos="activos"
+      @cambio="recalcular"
+    />
+
+    <!-- Venta de inmuebles: para cualquier contribuyente, no solo con negocio -->
+    <VentasInmuebles
+      v-if="hoja"
+      :contribuyente-id="cid"
+      :periodo-fiscal-id="pid"
+      :anio-gravable="periodo.anio_gravable"
       @cambio="recalcular"
     />
 

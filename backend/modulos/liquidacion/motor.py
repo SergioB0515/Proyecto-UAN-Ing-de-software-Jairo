@@ -309,6 +309,12 @@ class InsumosLiquidacion:
     # produce el activo, así que la decide el contador, no el motor.
     cedula_depreciacion: str = "NO_LABORAL"
 
+    # Renglones y diagnósticos que arma quien llama (por ejemplo, el detalle de
+    # cada venta de inmuebles, ya sumada a las cifras de arriba). El motor solo
+    # los agrega al resultado: no recalcula nada con ellos.
+    renglones_informativos: list = field(default_factory=list)
+    diagnosticos_adicionales: List[str] = field(default_factory=list)
+
 
 # ---------------------------------------------------------------------------
 # Resultado
@@ -1370,6 +1376,8 @@ def liquidar(
               "devolución o compensación",
               "Arts. 850 y 815 ET", casilla=137))
 
+    liq.renglones.extend(insumos.renglones_informativos)
+    liq.diagnosticos.extend(insumos.diagnosticos_adicionales)
     liq.notas.append(nota_de_numeracion(insumos.anio_gravable))
     return liq
 

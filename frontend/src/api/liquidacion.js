@@ -86,3 +86,8 @@ export const crearDeduccionDesdePlantilla = (cid, pid, codigo, valor) =>
 
 export const copiarHojaDelAnterior = (cid, pid) =>
   enviar(`${base(cid, pid)}/hoja/copiar-del-anterior`)
+
+// --- Venta de inmuebles ----------------------------------------------------
+export const listarVentasInmuebles = (cid, pid) => obtener(`${base(cid, pid)}/ventas-inmuebles`)
+export const crearVentaInmueble = (cid, pid, datos) => enviar(`${base(cid, pid)}/ventas-inmuebles`, datos)
+export const eliminarVentaInmueble = (cid, pid, id) => cliente.delete(`${base(cid, pid)}/ventas-inmuebles/${id}`)

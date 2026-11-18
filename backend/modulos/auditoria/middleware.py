@@ -11,6 +11,8 @@ from .servicios import registrar_evento
 
 ACCIONES_AUDITADAS = {
     "cambiar_contrasena": "Cambió su contraseña",
+    "crear_venta_inmueble": "Registró la venta de un inmueble",
+    "eliminar_venta_inmueble": "Eliminó la venta de un inmueble",
     "actualizar_seguimiento_declaracion": "Actualizó las etapas de la declaración",
     "registrar_presentacion_declaracion": "Registró la presentación de la declaración",
     "registrar_declaracion_anterior": "Registró una declaración anterior",

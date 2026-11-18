@@ -8,6 +8,7 @@ from sqlmodel import SQLModel
 class OrigenItemConciliacion(str, Enum):
     ACTIVO = "Activo"
     FUENTE_INGRESO = "FuenteIngreso"
+    VENTA_INMUEBLE = "VentaInmueble"
     EXOGENA = "Exógena"
 
 

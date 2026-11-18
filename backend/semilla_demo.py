@@ -1128,7 +1128,7 @@ def borrar_demo(session: Session) -> bool:
         # activos: se borran antes, o la llave foránea impide borrar lo demás.
         from modulos.liquidacion.modelos import (
             ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
-            HojaLiquidacion, PagoEfectivo, PerdidaFiscal,
+            HojaLiquidacion, PagoEfectivo, PerdidaFiscal, VentaInmueble,
         )
         periodos = list(
             session.exec(
@@ -1140,7 +1140,8 @@ def borrar_demo(session: Session) -> bool:
                 DeclaracionPresentada, DocumentoSolicitado, SeguimientoDeclaracion,
             )
             for modelo in (ClasificacionIngreso, DatosDepreciacion, DeduccionSolicitada,
-                           PagoEfectivo, HojaLiquidacion, DeclaracionPresentada,
+                           PagoEfectivo, HojaLiquidacion, VentaInmueble,
+                           DeclaracionPresentada,
                            DocumentoSolicitado, SeguimientoDeclaracion):
                 session.exec(delete(modelo).where(modelo.periodo_fiscal_id.in_(periodos)))
         session.exec(delete(PerdidaFiscal).where(PerdidaFiscal.contribuyente_id.in_(ids)))

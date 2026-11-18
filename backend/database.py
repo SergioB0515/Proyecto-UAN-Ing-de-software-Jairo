@@ -40,6 +40,7 @@ def registrar_modelos() -> None:
         HojaLiquidacion,
         PagoEfectivo,
         PerdidaFiscal,
+        VentaInmueble,
     )
     from modulos.movimientos.modelos import (
         DocumentoSoporte,

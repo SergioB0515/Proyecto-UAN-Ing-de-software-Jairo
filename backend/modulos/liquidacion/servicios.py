@@ -78,7 +78,11 @@ from .modelos import (
     LiquidacionLeer,
     ParametrosAplicadosLeer,
     RenglonLeer,
+    VentaInmueble,
+    VentaInmuebleCrear,
+    VentaInmuebleLeer,
 )
+from core.excepciones import DatosVentaInvalidosError, VentaNoEncontradaError
 
 
 def _dec(valor) -> Decimal:
@@ -332,6 +336,57 @@ def _agrupar_por_cedula(
     return totales, retenciones, sin_clasificar
 
 
+def _resultado_venta(v: VentaInmueble, anio_gravable: int):
+    from . import venta_inmuebles
+
+    parametros = obtener_parametros(anio_gravable)
+    return venta_inmuebles.calcular(venta_inmuebles.VentaInmueble(
+        descripcion=v.descripcion, tipo=v.tipo.value,
+        fecha_adquisicion=v.fecha_adquisicion, fecha_venta=v.fecha_venta,
+        valor_venta=_dec(v.valor_venta), costo_adquisicion=_dec(v.costo_adquisicion),
+        mejoras_y_valorizacion=_dec(v.mejoras_y_valorizacion),
+        avaluo_catastral_anterior=(_dec(v.avaluo_catastral_anterior)
+                                   if v.avaluo_catastral_anterior is not None else None),
+        es_casa_de_habitacion=v.es_casa_de_habitacion,
+        porcentaje_participacion=_dec(v.porcentaje_participacion),
+        retencion=_dec(v.retencion),
+        factor_manual=_dec(v.factor_manual) if v.factor_manual else None,
+    ), anio_gravable, parametros.uvt)
+
+
+def _sumar_ventas_de_inmuebles(
+    session: Session, periodo: PeriodoFiscal, insumos: "motor.InsumosLiquidacion"
+) -> None:
+    """Suma cada venta de inmueble a donde la ley la manda.
+
+    Dos años o más: ganancia ocasional. Menos: rentas no laborales. En
+    ganancia ocasional una pérdida no se resta de otras ganancias, así que el
+    costo se limita al valor de la venta.
+    """
+    ventas = session.exec(select(VentaInmueble).where(
+        VentaInmueble.periodo_fiscal_id == periodo.id).order_by(VentaInmueble.id)).all()
+    for i, v in enumerate(ventas, 1):
+        r = _resultado_venta(v, periodo.anio_gravable)
+        venta = _dec(v.valor_venta)
+        if r.es_ganancia_ocasional:
+            go = insumos.ganancias_ocasionales
+            go.ingresos += venta
+            go.costos += min(r.costo_fiscal, venta)
+            go.ganancia_exenta += r.exenta
+            go.retenciones += _dec(v.retencion)
+            prefijo = "GO-VENTA"
+        else:
+            insumos.no_laborales.ingresos_brutos += venta
+            insumos.no_laborales.costos_y_gastos += r.costo_fiscal
+            insumos.retenciones_en_la_fuente += _dec(v.retencion)
+            prefijo = "CG-VENTA"
+        insumos.renglones_informativos.append(motor.Renglon(
+            f"{prefijo}-{i}", f"Venta: {v.descripcion}", r.utilidad if r.utilidad else -r.perdida,
+            r.formula, r.fuente))
+        insumos.diagnosticos_adicionales.extend(
+            f"{v.descripcion}: {aviso}" for aviso in r.avisos)
+
+
 def construir_insumos(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
 ) -> Tuple[motor.InsumosLiquidacion, List[IngresoClasificadoLeer]]:
@@ -501,6 +556,7 @@ def construir_insumos(
         metodo_anticipo=hoja.metodo_anticipo.value,
         impuesto_neto_anio_anterior=_dec(hoja.impuesto_neto_anio_anterior),
     )
+    _sumar_ventas_de_inmuebles(session, periodo, insumos)
     return insumos, sin_clasificar
 
 
@@ -1271,3 +1327,55 @@ def copiar_hoja_del_anio_anterior(
     session.commit()
     session.refresh(hoja)
     return hoja
+
+
+
+# --- Venta de inmuebles ------------------------------------------------------
+
+
+def _leer_venta(v: VentaInmueble, anio_gravable: int) -> VentaInmuebleLeer:
+    r = _resultado_venta(v, anio_gravable)
+    return VentaInmuebleLeer(
+        **v.model_dump(), es_ganancia_ocasional=r.es_ganancia_ocasional, factor=r.factor,
+        costo_reajustado=r.costo_reajustado, costo_fiscal=r.costo_fiscal,
+        metodo_costo=r.metodo_costo, utilidad=r.utilidad, perdida=r.perdida,
+        exenta=r.exenta, formula=r.formula, avisos=r.avisos)
+
+
+def listar_ventas_inmuebles(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> List[VentaInmuebleLeer]:
+    periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    ventas = session.exec(select(VentaInmueble).where(
+        VentaInmueble.periodo_fiscal_id == periodo_fiscal_id).order_by(VentaInmueble.id)).all()
+    return [_leer_venta(v, periodo.anio_gravable) for v in ventas]
+
+
+def crear_venta_inmueble(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int,
+    datos: VentaInmuebleCrear,
+) -> VentaInmuebleLeer:
+    periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    if datos.fecha_venta < datos.fecha_adquisicion:
+        raise DatosVentaInvalidosError("La fecha de venta es anterior a la de adquisición.")
+    if datos.fecha_venta.year != periodo.anio_gravable:
+        raise DatosVentaInvalidosError(
+            f"La venta es de {datos.fecha_venta.year}: se declara en ese año gravable, "
+            f"no en {periodo.anio_gravable}.")
+    venta = VentaInmueble(**datos.model_dump(), periodo_fiscal_id=periodo_fiscal_id)
+    session.add(venta)
+    session.commit()
+    session.refresh(venta)
+    return _leer_venta(venta, periodo.anio_gravable)
+
+
+def eliminar_venta_inmueble(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int,
+    venta_id: int,
+) -> None:
+    obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    venta = session.get(VentaInmueble, venta_id)
+    if venta is None or venta.periodo_fiscal_id != periodo_fiscal_id:
+        raise VentaNoEncontradaError(f"No existe la venta {venta_id} en este periodo")
+    session.delete(venta)
+    session.commit()
