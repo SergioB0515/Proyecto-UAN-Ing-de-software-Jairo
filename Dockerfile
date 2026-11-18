@@ -44,7 +44,7 @@ ENV PREFIJO_API=/api
 
 # Los adjuntos (recibos, capturas, PDF) se guardan en disco. En compose esta
 # carpeta es un volumen; en un PaaS sin disco persistente se pierden en cada
-# despliegue (ver despliegue/README.md).
+# despliegue; al arrancar con SEMBRAR_DEMO_AL_ARRANCAR=1 se regeneran.
 ENV ALMACEN_ADJUNTOS=/datos/almacen
 RUN mkdir -p /datos/almacen \
     && useradd --create-home --uid 10001 app \

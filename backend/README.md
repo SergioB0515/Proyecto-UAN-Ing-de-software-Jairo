@@ -17,6 +17,7 @@ para las razones de cada elección técnica.
 | 7 | HU-22 a HU-24 | `contribuyentes` |
 | 8 | HU-25 a HU-27 | `parametros`, `contribuyentes`, `cartera` |
 | Extra | — | `adjuntos` (soportes: recibos, capturas, PDF) |
+| Extra | — | `liquidacion` (motor del 210, borrador casilla por casilla, venta de inmuebles), `gestion` (proceso de la declaración, documentos, presentación, firmeza, intereses), cruce con la DIAN en `conciliacion` |
 
 ## Endpoints principales
 
@@ -34,6 +35,7 @@ y filtran por el contador del token.
 | `GET /contribuyentes/{id}/reportes-exogena`, `.../{rid}/topes`, `.../{rid}/registros?concepto_code=&nit_reportante=` | HU-06 |
 | `POST/GET /parametros/umbrales`, `POST /parametros/umbrales/oficiales/{anio}`, `GET /parametros/contribuyentes/{id}/periodos-fiscales/{pid}/obligacion` | HU-07 |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/conciliacion` | HU-08, HU-09 |
+| `GET /contribuyentes/{id}/periodos-fiscales/{pid}/cruce-dian` (ver [modulos/conciliacion](modulos/conciliacion/README.md)) | — |
 | `GET /contribuyentes/{id}/periodos-fiscales/{pid}/borrador-renglones` | HU-10 |
 | `POST/GET /contribuyentes/{id}/categorias`, `DELETE .../categorias/{cid}` | HU-11 |
 | `POST/GET /contribuyentes/{id}/productos`, `GET/PATCH .../productos/{prid}` | HU-11 |
@@ -50,7 +52,8 @@ y filtran por el contador del token.
 | `GET/PUT /parametros/plazos/{anio}`, `POST /parametros/plazos/{anio}/calendario-oficial` | HU-25 |
 | `PATCH /contribuyentes/{id}/periodos-fiscales/{pid}` (`fecha_presentacion`, `fecha_vencimiento_manual`) | HU-26 |
 | `GET /cartera?orden=vencimiento`, `GET /cartera/exportar?formato=xlsx\|pdf` | HU-25, HU-27 |
-| `GET /liquidacion/cedulas`, `GET/PATCH /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}/hoja`, `POST/GET/DELETE .../deducciones`, `GET/PUT .../ingresos`, `GET /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}`, `GET .../exportar?formato=xlsx\|pdf`, `GET/PUT/DELETE .../depreciacion`, `GET/POST/DELETE .../pagos-efectivo`, `GET/POST/DELETE /liquidacion/contribuyentes/{id}/perdidas`, `GET /liquidacion/categorias-depreciacion`, `GET .../plantillas-deducciones`, `POST .../deducciones/desde-plantilla`, `POST .../hoja/copiar-del-anterior` (ver [modulos/liquidacion](modulos/liquidacion/README.md)) | — |
+| `GET /liquidacion/cedulas`, `GET/PATCH /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}/hoja`, `POST/GET/DELETE .../deducciones`, `GET/PUT .../ingresos`, `GET /liquidacion/contribuyentes/{id}/periodos-fiscales/{pid}`, `GET .../exportar?formato=xlsx\|pdf`, `GET/PUT/DELETE .../depreciacion`, `GET/POST/DELETE .../pagos-efectivo`, `GET/POST/DELETE /liquidacion/contribuyentes/{id}/perdidas`, `GET /liquidacion/categorias-depreciacion`, `GET .../plantillas-deducciones`, `POST .../deducciones/desde-plantilla`, `POST .../hoja/copiar-del-anterior`, `GET .../formulario-210`, `GET .../escenarios`, `GET/POST/DELETE .../ventas-inmuebles` (ver [modulos/liquidacion](modulos/liquidacion/README.md)) | — |
+| `GET .../periodos-fiscales/{pid}/gestion`, `PATCH .../gestion/seguimiento`, `POST .../gestion/presentaciones`, `POST .../gestion/traer-del-anio-anterior`, `POST /contribuyentes/{id}/declaraciones-anteriores`, `GET/POST/PATCH .../documentos`, `GET .../informe-cliente`, `GET/PUT /tasas-interes-moratorio` (ver [modulos/gestion](modulos/gestion/README.md)) | — |
 | `POST/GET /contribuyentes/{id}/adjuntos`, `GET .../adjuntos/resumen`, `GET/PATCH/DELETE .../adjuntos/{aid}`, `GET .../periodos-fiscales/{pid}/soportes/zip` (ver [modulos/adjuntos](modulos/adjuntos/README.md)) | — |
 
 Los activos y las fuentes de ingreso llevan `periodo_fiscal_id` en el

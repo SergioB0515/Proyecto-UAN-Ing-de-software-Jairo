@@ -1,13 +1,13 @@
-# Levanta la aplicación completa (API + SPA + PostgreSQL) con un comando:
+# Levanta la aplicación completa (API + SPA + PostgreSQL) con un comando.
+# Crea primero un archivo .env junto a este con dos claves tuyas:
 #
-#     cp despliegue/variables-de-entorno.ejemplo .env     # y ajusta las claves
+#     POSTGRES_PASSWORD=una-clave
+#     JWT_SECRET_KEY=otra-clave-larga
+#     SEMBRAR_DEMO_AL_ARRANCAR=1        # opcional: carga los datos de demostración
+#
 #     docker compose up -d --build
-#     docker compose exec api python semilla_demo.py
 #
-# Queda en http://localhost:8000
-#
-# Este mismo archivo sirve en el servidor: ahí se añade el perfil `proxy`
-# para que Caddy ponga HTTPS automático delante (ver despliegue/README.md).
+# Queda en http://localhost:8000 (usuario demo: contador@demo.co / demo1234).
 
 services:
   db:
@@ -45,25 +45,6 @@ services:
     ports:
       - "${PUERTO_PUBLICO:-8000}:8000"
 
-  # Perfil opcional: HTTPS automático con Let's Encrypt. Solo en el servidor.
-  #   DOMINIO=renta.tudominio.com docker compose --profile proxy up -d
-  caddy:
-    image: caddy:2-alpine
-    profiles: ["proxy"]
-    restart: unless-stopped
-    depends_on: [api]
-    environment:
-      DOMINIO: ${DOMINIO:?define DOMINIO para usar el perfil proxy}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./despliegue/Caddyfile:/etc/caddy/Caddyfile:ro
-      - datos_caddy:/data
-      - config_caddy:/config
-
 volumes:
   datos_postgres:
   datos_adjuntos:
-  datos_caddy:
-  config_caddy:

@@ -36,8 +36,9 @@ firma. Cada módulo documenta en su README lo que no cubre.
 Pruebas del backend, desde `backend/`: `pytest`. Corren también en GitHub
 Actions con cada cambio.
 
-Despliegue (Render, o Docker Compose con Caddy en un servidor propio): ver
-[despliegue/README.md](despliegue/README.md).
+Con Docker, la app completa con su base de datos: ver las instrucciones al
+inicio de [docker-compose.yml](docker-compose.yml). La demo pública se despliega
+en Render con [render.yaml](render.yaml).
 
 ## Estructura
 
@@ -47,7 +48,6 @@ backend/        API en FastAPI. Un módulo por área en backend/modulos/,
 frontend/       SPA en Vue 3 + Vite + Tailwind.
 documentacion/  Documentos del curso: requisitos, arquitectura, diagramas,
                 historias de usuario y evidencias.
-despliegue/     Configuración para servidor propio (Docker Compose + Caddy).
 ```
 
 Módulos del backend: `contadores`, `contribuyentes`, `exogena`, `parametros`,

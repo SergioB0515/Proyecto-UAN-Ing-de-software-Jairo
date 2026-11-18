@@ -1,7 +1,6 @@
 .git
 .github
 documentacion
-despliegue
 **/node_modules
 **/dist
 **/__pycache__

@@ -4,8 +4,9 @@
 # archivo, construye la imagen Docker, crea la base de datos y conecta las dos
 # cosas. No hay que pegar nada a mano.
 #
-# Lee despliegue/README.md antes: el plan Free tiene tres límites que afectan
-# directo a esta aplicación (suspensión, disco y caducidad de la base).
+# El plan Free tiene tres límites que afectan a esta aplicación: el servicio
+# se suspende sin tráfico, el disco no persiste (los adjuntos se regeneran al
+# arrancar) y la base de datos gratuita caduca a los 30 días.
 
 services:
   - type: web
