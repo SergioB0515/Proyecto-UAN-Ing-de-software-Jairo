@@ -123,14 +123,19 @@ def _enlace(client, token: str, contribuyente_id: int, periodo_id: int, dias: in
     return respuesta.json()
 
 
-def _aceptar(client, portal_token: str):
+def _aceptar(
+    client,
+    portal_token: str,
+    nombre: str = "Contribuyente Ejemplo",
+    documento: str = CONSULTANTE,
+):
     version = client.get(f"/carga/{portal_token}").json()["politica"]["version"]
     return client.post(
         f"/carga/{portal_token}/politica",
         json={
             "version_politica": version,
-            "nombre_quien_acepta": "Contribuyente Ejemplo",
-            "documento_quien_acepta": CONSULTANTE,
+            "nombre_quien_acepta": nombre,
+            "documento_quien_acepta": documento,
             "acepto": True,
         },
     )
@@ -381,6 +386,7 @@ def test_la_autorizacion_tiene_que_ser_expresa(client):
         json={
             "version_politica": version,
             "nombre_quien_acepta": "Contribuyente Ejemplo",
+            "documento_quien_acepta": CONSULTANTE,
             "acepto": False,
         },
     )
@@ -397,6 +403,7 @@ def test_no_se_acepta_una_version_de_politica_que_no_existe(client):
         json={
             "version_politica": "1999.9",
             "nombre_quien_acepta": "Contribuyente Ejemplo",
+            "documento_quien_acepta": CONSULTANTE,
             "acepto": True,
         },
     )
@@ -750,3 +757,185 @@ def test_la_bitacora_no_guarda_el_token_del_enlace(client):
     assert eventos
     for evento in eventos:
         assert enlace["token"] not in evento["ruta"]
+
+
+# ---------------------------------------------------------------------------
+# Que quien acepta la política sea el titular
+# ---------------------------------------------------------------------------
+
+
+def _contribuyente_con(client, token: str, nombre: str, rut: str) -> tuple:
+    contribuyente = client.post(
+        "/contribuyentes",
+        json={"nombre": nombre, "rut": rut, "tipo_contribuyente": "ASALARIADO"},
+        headers=_h(token),
+    ).json()
+    periodo = client.post(
+        f"/contribuyentes/{contribuyente['id']}/periodos-fiscales",
+        json={"anio_gravable": ANIO},
+        headers=_h(token),
+    ).json()
+    return contribuyente["id"], periodo["id"]
+
+
+def test_el_documento_tiene_que_corresponder_para_aceptar(client):
+    token = _token_contador(client, "ident-1@example.com")
+    contribuyente_id, periodo_id = _contribuyente(client, token)
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(client, enlace["token"], documento="9999999999")
+
+    assert respuesta.status_code == 422
+    # Y no queda autorización: no se firmó nada a nombre de nadie.
+    sesion = client.get(f"/carga/{enlace['token']}").json()
+    assert sesion["autorizacion"] is None
+
+
+def test_el_nombre_tiene_que_corresponder_para_aceptar(client):
+    token = _token_contador(client, "ident-2@example.com")
+    contribuyente_id, periodo_id = _contribuyente(client, token)
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(client, enlace["token"], nombre="Otra Persona Distinta")
+
+    assert respuesta.status_code == 422
+    assert client.get(f"/carga/{enlace['token']}").json()["autorizacion"] is None
+
+
+def test_un_enlace_que_llego_al_cliente_equivocado_no_deja_autorizacion(client):
+    """El caso que esto existe para atajar.
+
+    El contador le manda a Marta el enlace de Luis. Marta, de buena fe,
+    escribe su propio nombre y su propia cédula. Sin verificación quedaría
+    una autorización firmada por Marta en la carpeta de Luis.
+    """
+    token = _token_contador(client, "ident-3@example.com")
+    luis, periodo_luis = _contribuyente_con(
+        client, token, "Luis Alberto Mora Rincon", "1000000000"
+    )
+    enlace = _enlace(client, token, luis, periodo_luis)
+
+    respuesta = _aceptar(
+        client, enlace["token"], nombre="Marta Lucia Pardo Gil", documento="2000000002"
+    )
+
+    assert respuesta.status_code == 422
+    assert client.get(f"/carga/{enlace['token']}").json()["autorizacion"] is None
+
+
+def test_el_documento_se_compara_sin_puntos_ni_guiones(client):
+    token = _token_contador(client, "ident-4@example.com")
+    contribuyente_id, periodo_id = _contribuyente(client, token)
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(client, enlace["token"], documento="1.000.000.000")
+
+    assert respuesta.status_code == 201, respuesta.text
+    # Se guarda normalizado, para que dos escrituras del mismo número no
+    # queden como dos documentos distintos en el registro.
+    assert respuesta.json()["documento_quien_acepta"] == "1000000000"
+
+
+def test_el_dv_del_nit_no_impide_aceptar(client):
+    """Un NIT se registra con dígito de verificación y se escribe sin él."""
+    token = _token_contador(client, "ident-5@example.com")
+    contribuyente_id, periodo_id = _contribuyente_con(
+        client, token, "Comercial Andina Ltda", "900123456"
+    )
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(
+        client, enlace["token"], nombre="Comercial Andina Ltda", documento="9001234567"
+    )
+
+    assert respuesta.status_code == 201, respuesta.text
+
+
+def test_se_acepta_el_nombre_completo_de_la_cedula(client):
+    """El contador registró dos nombres; el titular escribe los cuatro."""
+    token = _token_contador(client, "ident-6@example.com")
+    contribuyente_id, periodo_id = _contribuyente_con(
+        client, token, "Sandra Osorio", "1000000000"
+    )
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(
+        client, enlace["token"], nombre="Sandra Milena Osorio Pena"
+    )
+
+    assert respuesta.status_code == 201, respuesta.text
+
+
+def test_las_tildes_y_las_mayusculas_no_importan(client):
+    token = _token_contador(client, "ident-7@example.com")
+    contribuyente_id, periodo_id = _contribuyente_con(
+        client, token, "Sandra Milena Osorio Peña", "1000000000"
+    )
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(client, enlace["token"], nombre="SANDRA OSORIO PENA")
+
+    assert respuesta.status_code == 201, respuesta.text
+
+
+def test_no_alcanza_con_coincidir_en_el_nombre_de_pila(client):
+    token = _token_contador(client, "ident-8@example.com")
+    contribuyente_id, periodo_id = _contribuyente_con(
+        client, token, "Sandra Milena Osorio Peña", "1000000000"
+    )
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(client, enlace["token"], nombre="Sandra Gomez")
+
+    assert respuesta.status_code == 422
+
+
+def test_el_error_no_revela_el_documento_registrado(client):
+    """El portal solo muestra los últimos cuatro dígitos del documento.
+
+    Si el mensaje de error dijera cuál se esperaba, el enlace serviría para
+    averiguar la cédula completa del titular.
+    """
+    token = _token_contador(client, "ident-9@example.com")
+    contribuyente_id, periodo_id = _contribuyente_con(
+        client, token, "Luis Mora", "1098765432"
+    )
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+
+    respuesta = _aceptar(
+        client, enlace["token"], nombre="Luis Mora", documento="1111111111"
+    )
+
+    assert respuesta.status_code == 422
+    assert "1098765432" not in respuesta.text
+    assert "109876" not in respuesta.text
+
+
+def test_sin_documento_no_se_puede_aceptar(client):
+    token = _token_contador(client, "ident-10@example.com")
+    contribuyente_id, periodo_id = _contribuyente(client, token)
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+    version = client.get(f"/carga/{enlace['token']}").json()["politica"]["version"]
+
+    respuesta = client.post(
+        f"/carga/{enlace['token']}/politica",
+        json={
+            "version_politica": version,
+            "nombre_quien_acepta": "Contribuyente Ejemplo",
+            "acepto": True,
+        },
+    )
+
+    assert respuesta.status_code == 422
+
+
+def test_sin_aceptar_la_politica_no_se_puede_cargar_nada_tras_un_rechazo(client):
+    """Un intento fallido no abre la puerta: el enlace sigue sin autorización."""
+    token = _token_contador(client, "ident-11@example.com")
+    contribuyente_id, periodo_id = _contribuyente(client, token)
+    enlace = _enlace(client, token, contribuyente_id, periodo_id)
+    _aceptar(client, enlace["token"], documento="9999999999")
+
+    respuesta = _cargar(client, enlace["token"])
+
+    assert respuesta.status_code == 409

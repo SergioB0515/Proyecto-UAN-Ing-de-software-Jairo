@@ -2,7 +2,7 @@ from typing import Iterator
 
 from datetime import date
 
-from sqlalchemy import inspect, text
+from sqlalchemy import Enum as EnumSQL, inspect, text
 from sqlmodel import Session, SQLModel, create_engine
 
 from core.config import DATABASE_URL
@@ -129,9 +129,81 @@ def _agregar_columnas_si_faltan(motor, tabla: str, columnas: dict) -> None:
                 conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN {nombre} {tipo}"))
 
 
+def tipos_enum_nativos() -> dict:
+    """Los tipos ENUM nativos del esquema, con los valores que debería tener
+    cada uno.
+
+    Se lee del metadata y no de una lista escrita a mano: una lista hay que
+    acordarse de actualizarla, y el día que alguien agregue un valor a
+    cualquier enum del proyecto nadie se va a acordar.
+    """
+    tipos: dict = {}
+    registrar_modelos()
+    for tabla in SQLModel.metadata.tables.values():
+        for columna in tabla.columns:
+            tipo = columna.type
+            if isinstance(tipo, EnumSQL) and tipo.native_enum and tipo.name:
+                tipos.setdefault(tipo.name, set()).update(tipo.enums)
+    return tipos
+
+
+def _sincronizar_enums(motor) -> None:
+    """Agrega a los tipos ENUM de Postgres los valores que les falten.
+
+    Por qué hace falta
+    ------------------
+    En Postgres, un campo tipado con un Enum de Python se crea como un tipo
+    ENUM NATIVO. `create_all` crea ese tipo la primera vez, con los valores
+    que existían ese día, y **nunca lo altera**: agregarle un valor al Enum de
+    Python no lo agrega al tipo de la base. Guardar el valor nuevo falla con
+    `InvalidTextRepresentation`, que le llega al usuario como un 500.
+
+    No se ve en las pruebas porque corren sobre una base que se crea de cero
+    en cada corrida, con el tipo ya completo. Solo aparece en una base que
+    lleva tiempo viva, que es justo donde duele.
+
+    Esto recorre el metadata y sincroniza TODOS los tipos enum, no solo los
+    que cambiaron hoy: así el próximo valor que alguien agregue a cualquier
+    enum ya queda cubierto sin que haya que acordarse de escribir su
+    migración.
+    """
+    if motor.dialect.name != "postgresql":
+        # En SQLite el enum es un VARCHAR con CHECK: no hay tipo que alterar.
+        return
+
+    tipos = tipos_enum_nativos()
+
+    # ALTER TYPE ... ADD VALUE no puede convivir con el uso del valor nuevo en
+    # la misma transacción, así que va en autocommit y aparte del create_all.
+    with motor.connect() as conexion:
+        conexion = conexion.execution_options(isolation_level="AUTOCOMMIT")
+        for nombre, valores in tipos.items():
+            existentes = {
+                fila[0]
+                for fila in conexion.execute(
+                    text(
+                        "SELECT e.enumlabel FROM pg_enum e "
+                        "JOIN pg_type t ON t.oid = e.enumtypid "
+                        "WHERE t.typname = :tipo"
+                    ),
+                    {"tipo": nombre},
+                )
+            }
+            if not existentes:
+                # El tipo no existe todavía: lo crea `create_all` completo.
+                continue
+            for valor in sorted(valores - existentes):
+                # El valor sale de nuestras propias clases Enum, no de nadie
+                # de afuera; se valida igual porque no se puede parametrizar.
+                if not valor.replace("_", "").isalnum():
+                    raise ValueError(f"Valor de enum no válido: {valor!r}")
+                conexion.execute(text(f"ALTER TYPE {nombre} ADD VALUE '{valor}'"))
+
+
 def crear_tablas() -> None:
     registrar_modelos()
     SQLModel.metadata.create_all(engine)
+    _sincronizar_enums(engine)
     _migrar_periodo_en_activos_y_fuentes(engine)
     _agregar_columnas_si_faltan(
         engine,

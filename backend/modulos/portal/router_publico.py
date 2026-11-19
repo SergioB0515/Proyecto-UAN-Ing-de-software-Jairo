@@ -29,6 +29,7 @@ from core.excepciones import (
     EnlaceCargaExpiradoError,
     EnlaceCargaNoEncontradoError,
     EnlaceCargaRevocadoError,
+    IdentidadNoCoincideError,
     PeriodoFiscalCerradoError,
     PoliticaNoAceptadaError,
     TopeAdicionalExcedidoError,
@@ -68,7 +69,14 @@ def _traducir(exc: Exception) -> HTTPException:
         codigo = status.HTTP_413_CONTENT_TOO_LARGE
     elif isinstance(exc, ArchivoNoPermitidoError):
         codigo = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-    elif isinstance(exc, (ArchivoExogenaInvalidoError, TopeAdicionalExcedidoError)):
+    elif isinstance(
+        exc,
+        (
+            ArchivoExogenaInvalidoError,
+            TopeAdicionalExcedidoError,
+            IdentidadNoCoincideError,
+        ),
+    ):
         codigo = status.HTTP_422_UNPROCESSABLE_CONTENT
     else:
         codigo = status.HTTP_409_CONFLICT
@@ -81,6 +89,7 @@ _ERRORES = (
     EnlaceCargaExpiradoError,
     PoliticaNoAceptadaError,
     VersionPoliticaDesconocidaError,
+    IdentidadNoCoincideError,
     DocumentoNoEncontradoError,
     DatoAdicionalNoEncontradoError,
     TopeAdicionalExcedidoError,

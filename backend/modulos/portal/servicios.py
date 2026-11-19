@@ -9,6 +9,7 @@ respuestas de `/carga/...` y falla si alguna arrastra un campo de liquidación.
 Es una garantía más fuerte, porque sobrevive a que alguien agregue un import.
 """
 
+import unicodedata
 import hashlib
 import secrets
 from datetime import datetime, timedelta, timezone
@@ -23,6 +24,7 @@ from core.excepciones import (
     EnlaceCargaExpiradoError,
     EnlaceCargaNoEncontradoError,
     EnlaceCargaRevocadoError,
+    IdentidadNoCoincideError,
     PeriodoFiscalCerradoError,
     PoliticaNoAceptadaError,
     TopeAdicionalExcedidoError,
@@ -293,6 +295,98 @@ def _politica_a_lectura(version: politica.VersionPolitica) -> PoliticaLeer:
     )
 
 
+_CONECTORES_NOMBRE = frozenset(
+    {"de", "del", "la", "las", "los", "y", "e", "da", "do", "dos", "van", "von", "di"}
+)
+
+
+def _digitos(texto: Optional[str]) -> str:
+    return "".join(c for c in (texto or "") if c.isdigit())
+
+
+def _palabras_nombre(texto: Optional[str]) -> frozenset:
+    """Pasa un nombre a palabras comparables: sin tildes, sin mayúsculas y sin
+    conectores.
+
+    Se comparan palabras y no la cadena completa porque el orden y la
+    cantidad varían de buena fe: el contador pudo registrar «Sandra Osorio»
+    y el titular escribe los cuatro nombres de la cédula. El apellido no
+    varía de buena fe, y eso es lo que queda comparándose.
+    """
+    descompuesto = unicodedata.normalize("NFKD", texto or "")
+    sin_tildes = "".join(c for c in descompuesto if not unicodedata.combining(c))
+    solo_letras = "".join(c if c.isalnum() else " " for c in sin_tildes)
+    return frozenset(
+        palabra
+        for palabra in solo_letras.lower().split()
+        if len(palabra) > 1 and palabra not in _CONECTORES_NOMBRE
+    )
+
+
+def _documento_corresponde(declarado: Optional[str], registrado: Optional[str]) -> bool:
+    """Compara documentos por sus dígitos, tolerando el dígito de verificación.
+
+    Se ignoran puntos, guiones y espacios porque son formato, no identidad.
+    Un NIT se registra a veces con su dígito de verificación y se escribe sin
+    él, o al revés: un dígito de más al final, y solo al final, se acepta.
+    """
+    uno, otro = _digitos(declarado), _digitos(registrado)
+    if not uno or not otro:
+        return False
+    if uno == otro:
+        return True
+    largo, corto = (uno, otro) if len(uno) > len(otro) else (otro, uno)
+    return len(largo) == len(corto) + 1 and largo.startswith(corto)
+
+
+def _nombre_corresponde(declarado: Optional[str], registrado: Optional[str]) -> bool:
+    """Un nombre corresponde si uno de los dos está contenido en el otro.
+
+    Así pasa quien escribe más nombres de los que el contador registró y
+    quien escribe menos, pero no quien cambia un apellido. Se exigen dos
+    palabras en común cuando ambos lados tienen al menos dos, para que no
+    alcance con coincidir solo en el nombre de pila.
+    """
+    dichas, registradas = _palabras_nombre(declarado), _palabras_nombre(registrado)
+    if not dichas or not registradas:
+        return False
+    if not (dichas <= registradas or registradas <= dichas):
+        return False
+    return len(dichas & registradas) >= min(2, len(dichas), len(registradas))
+
+
+def verificar_identidad(contribuyente: Contribuyente, datos: AceptarPolitica) -> None:
+    """Comprueba que quien acepta la política sea el titular del enlace.
+
+    Por qué hace falta
+    ------------------
+    La autorización de tratamiento solo vale si la dio el titular de los
+    datos. Un enlace se puede reenviar, y el contador se puede equivocar y
+    mandarle a un cliente el enlace de otro: sin esta comprobación, quien lo
+    abra deja una autorización firmada con su nombre en la carpeta de un
+    tercero, y el contador se queda con un consentimiento que no es de quien
+    dice ser.
+
+    El mensaje de error nunca devuelve el valor registrado. El portal muestra
+    el nombre completo, así que ahí no hay nada que filtrar, pero del
+    documento solo muestra los últimos cuatro dígitos: decir cuál se esperaba
+    convertiría el enlace en una forma de averiguar la cédula del titular.
+    """
+    if not _documento_corresponde(datos.documento_quien_acepta, contribuyente.rut):
+        raise IdentidadNoCoincideError(
+            "El número de documento no coincide con el que tiene registrado su "
+            "contador. Escríbalo sin puntos ni guiones, tal como aparece en su "
+            "documento de identidad. Si está seguro de que es el suyo, pídale "
+            "a su contador que revise cómo lo registró."
+        )
+    if not _nombre_corresponde(datos.nombre_quien_acepta, contribuyente.nombre):
+        raise IdentidadNoCoincideError(
+            "El nombre no coincide con el que tiene registrado su contador. "
+            "Escriba sus nombres y apellidos como aparecen en su documento de "
+            "identidad."
+        )
+
+
 def aceptar_politica(
     session: Session,
     enlace: EnlaceCarga,
@@ -311,12 +405,20 @@ def aceptar_politica(
             "Recargue la página para leer la versión vigente."
         )
 
+    # Se busca por el enlace y no por el contador autenticado, porque aquí no
+    # hay ninguno; de paso verifica que el contribuyente siga siendo de quien
+    # generó el enlace.
+    contribuyente = obtener_contribuyente(
+        session, enlace.contador_id, enlace.contribuyente_id
+    )
+    verificar_identidad(contribuyente, datos)
+
     autorizacion = AutorizacionTratamiento(
         contribuyente_id=enlace.contribuyente_id,
         enlace_carga_id=enlace.id,
         version_politica=version.version,
         nombre_quien_acepta=datos.nombre_quien_acepta.strip(),
-        documento_quien_acepta=(datos.documento_quien_acepta or "").strip() or None,
+        documento_quien_acepta=_digitos(datos.documento_quien_acepta),
         red_origen=red_origen,
         agente_usuario=(agente_usuario or "")[:300] or None,
     )

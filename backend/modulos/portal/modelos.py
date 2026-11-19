@@ -135,9 +135,17 @@ class AutorizacionTratamiento(SQLModel, table=True):
 
 
 class AceptarPolitica(SQLModel):
+    """Lo que el contribuyente escribe para autorizar el tratamiento.
+
+    El documento es obligatorio: se verifica contra el que el contador tiene
+    registrado, y es la verificación que de verdad sostiene la autorización.
+    El nombre figura en la pantalla, así que confirma pero no prueba; el
+    número no, porque el portal solo muestra sus últimos cuatro dígitos.
+    """
+
     version_politica: str = Field(max_length=20)
     nombre_quien_acepta: str = Field(min_length=3, max_length=200)
-    documento_quien_acepta: Optional[str] = Field(default=None, max_length=20)
+    documento_quien_acepta: str = Field(min_length=4, max_length=20)
     acepto: bool
 
 

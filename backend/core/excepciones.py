@@ -196,6 +196,10 @@ class VersionPoliticaDesconocidaError(ErrorAplicacion):
     pass
 
 
+class IdentidadNoCoincideError(ErrorAplicacion):
+    """Quien acepta la política no es, por sus datos, el titular del enlace."""
+
+
 class DatoAdicionalNoEncontradoError(ErrorAplicacion):
     pass
 
