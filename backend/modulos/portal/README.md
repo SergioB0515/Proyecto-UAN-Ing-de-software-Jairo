@@ -74,6 +74,37 @@ autorizaciones viejas quedarían respaldando un texto que nadie leyó.
 
 Sin autorización registrada, ninguna ruta del portal escribe nada.
 
+### Que quien acepta sea el titular
+
+Antes de guardar la autorización se comparan el nombre y el documento que
+escribió quien la acepta contra los que el contador tiene registrados
+(`verificar_identidad`). Si no corresponden, la aceptación se rechaza con 422
+y no queda nada guardado.
+
+Esto no es una barrera de acceso: quien abre el enlace ya lo tiene. Es que la
+autorización de tratamiento solo vale si la dio el titular de los datos. Un
+enlace se reenvía, y el contador se puede equivocar de cliente al mandarlo:
+sin la comprobación, quien lo abra deja una autorización firmada con su
+nombre en la carpeta de un tercero.
+
+Cómo se comparan:
+
+- **Documento**, solo por sus dígitos: los puntos y los guiones son formato.
+  Se tolera un dígito de más al final, porque un NIT se registra a veces con
+  su dígito de verificación y se escribe sin él. Esta es la comprobación que
+  de verdad sostiene la autorización: el portal solo muestra los últimos
+  cuatro dígitos, así que el número completo lo sabe el titular.
+- **Nombre**, por palabras, sin tildes ni mayúsculas y sin conectores. Uno de
+  los dos conjuntos tiene que estar contenido en el otro, con dos palabras en
+  común: así pasa quien escribe los cuatro nombres de la cédula cuando el
+  contador registró dos, y quien escribe dos cuando el contador registró
+  cuatro, pero no quien cambia un apellido. El nombre figura en la pantalla,
+  de modo que confirma pero no prueba.
+
+El mensaje de error **nunca devuelve el valor registrado**. Decir cuál era el
+documento esperado convertiría el enlace en una forma de averiguar la cédula
+del titular; `test_el_error_no_revela_el_documento_registrado` lo verifica.
+
 ## Los documentos, desde el lado del cliente
 
 Estados (`gestion.EstadoDocumento`): `PENDIENTE`, `RECIBIDO`, `NO_APLICA`,
