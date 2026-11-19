@@ -1,9 +1,13 @@
 from core.formato import pesos
 import re
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
+
+from core.excepciones import DecisionRenglonInvalidaError
 
 from ..contribuyentes.servicios import (
     listar_activos,
@@ -17,6 +21,7 @@ from decimal import Decimal
 from core.excepciones import UmbralNoConfiguradoError
 
 from ..liquidacion.formulario_210 import casilla_por_numero
+from ..portal.modelos import DatoAdicional, TipoAdicional
 from . import cruce
 from .modelos import (
     ComparacionCruce,
@@ -25,7 +30,12 @@ from .modelos import (
     RegistroPendiente,
     TopeCruzado,
     BorradorRenglones,
+    DecisionRenglon,
+    DecisionRenglonFijar,
+    DecisionRenglonLeer,
+    ETIQUETAS_ESTADO,
     EstadoConciliacion,
+    FuenteValorFinal,
     ItemConciliacion,
     OrigenItemConciliacion,
     CuadreTope,
@@ -42,11 +52,38 @@ TOLERANCIA_RELATIVA = 0.005
 
 @dataclass
 class _ItemDeclarado:
+    clave: str
     concepto: str
     valor: float
     origen: OrigenItemConciliacion
     vinculo_codigo_concepto: Optional[str]
     vinculo_palabra_clave: Optional[str]
+
+
+# Adicionales que SÍ se intentan cruzar con la exógena: un apartamento, un
+# carro o una deuda bancaria pueden estar reportados por un tercero, así que
+# vale la pena buscarlos.
+_ADICIONALES_PATRIMONIALES = {
+    TipoAdicional.ACTIVO,
+    TipoAdicional.DEUDA,
+    TipoAdicional.BIEN_EXTERIOR,
+}
+
+# Adicionales que por definición NO están en la exógena: ningún tercero le
+# reporta a la DIAN lo que alguien pagó de medicina prepagada. Entran a la
+# tabla, pero buscarles pareja sería buscar lo que no existe, y un cruce por
+# palabra clave solo produciría falsos positivos.
+_ADICIONALES_SIN_CRUCE = {
+    TipoAdicional.INTERESES_VIVIENDA,
+    TipoAdicional.MEDICINA_PREPAGADA,
+    TipoAdicional.AHORRO_AFC,
+    TipoAdicional.APORTES_VOLUNTARIOS_PENSION,
+}
+
+# Los dependientes se quedan fuera de esta tabla: son un número de personas,
+# no un valor en pesos, y meter un conteo en una columna de dinero es una
+# cifra que después alguien suma. Se ven en la pestaña de Adicionales y en la
+# lista de requerimientos, que es donde significan algo.
 
 
 def _es_retencion(registro: RegistroExogena) -> bool:
@@ -90,6 +127,7 @@ def _ventas_declaradas(session: Session, periodo_fiscal_id: int) -> List[_ItemDe
 
     return [
         _ItemDeclarado(
+            clave=f"VTA:{v.id}",
             concepto=f"Venta: {v.descripcion}",
             valor=float(v.valor_venta),
             origen=OrigenItemConciliacion.VENTA_INMUEBLE,
@@ -116,6 +154,7 @@ def conciliar_contribuyente(
 
     declarados = [
         _ItemDeclarado(
+            clave=f"ACT:{activo.id}",
             concepto=activo.descripcion,
             valor=activo.valor,
             origen=OrigenItemConciliacion.ACTIVO,
@@ -127,6 +166,7 @@ def conciliar_contribuyente(
         )
     ] + [
         _ItemDeclarado(
+            clave=f"ING:{fuente.id}",
             concepto=fuente.concepto,
             valor=fuente.valor_anual,
             origen=OrigenItemConciliacion.FUENTE_INGRESO,
@@ -136,7 +176,9 @@ def conciliar_contribuyente(
         for fuente in listar_fuentes_ingreso(
             session, contador_id, contribuyente_id, periodo_fiscal_id
         )
-    ] + _ventas_declaradas(session, periodo_fiscal_id)
+    ] + _ventas_declaradas(session, periodo_fiscal_id) + _adicionales_declarados(
+        session, periodo_fiscal_id
+    )
 
     items: List[ItemConciliacion] = []
     usados: set = set()
@@ -146,6 +188,7 @@ def conciliar_contribuyente(
         if registro is None:
             items.append(
                 ItemConciliacion(
+                    clave=declarado.clave,
                     concepto=declarado.concepto,
                     origen=declarado.origen,
                     valor_declarado=declarado.valor,
@@ -157,6 +200,7 @@ def conciliar_contribuyente(
         usados.add(registro.id)
         items.append(
             ItemConciliacion(
+                clave=declarado.clave,
                 concepto=declarado.concepto,
                 origen=declarado.origen,
                 valor_declarado=declarado.valor,
@@ -183,6 +227,7 @@ def conciliar_contribuyente(
             continue
         items.append(
             ItemConciliacion(
+                clave=f"EXO:{registro.id}",
                 concepto=registro.detalle,
                 origen=OrigenItemConciliacion.EXOGENA,
                 valor_exogena=registro.valor,
@@ -197,6 +242,9 @@ def conciliar_contribuyente(
     resumen: Dict[EstadoConciliacion, int] = {estado: 0 for estado in EstadoConciliacion}
     for item in items:
         resumen[item.estado] += 1
+        item.etiqueta_estado = ETIQUETAS_ESTADO[item.estado]
+
+    decididos = _aplicar_decisiones(session, periodo_fiscal_id, items)
 
     return ResultadoConciliacion(
         contribuyente_id=contribuyente_id,
@@ -204,7 +252,195 @@ def conciliar_contribuyente(
         reporte_exogena_id=reporte.id,
         items=items,
         resumen=resumen,
+        total_decididos=decididos,
+        total_sin_decidir=len(items) - decididos,
     )
+
+
+def _adicionales_declarados(
+    session: Session, periodo_fiscal_id: int
+) -> List[_ItemDeclarado]:
+    """Los adicionales, como una fila declarada más de la misma tabla."""
+    adicionales = session.exec(
+        select(DatoAdicional)
+        .where(DatoAdicional.periodo_fiscal_id == periodo_fiscal_id)
+        .order_by(DatoAdicional.id)
+    ).all()
+
+    salida: List[_ItemDeclarado] = []
+    for adicional in adicionales:
+        if adicional.tipo not in _ADICIONALES_PATRIMONIALES | _ADICIONALES_SIN_CRUCE:
+            continue
+        cruzable = adicional.tipo in _ADICIONALES_PATRIMONIALES
+        salida.append(
+            _ItemDeclarado(
+                clave=f"ADI:{adicional.id}",
+                concepto=f"{adicional.descripcion} ({_nombre_adicional(adicional.tipo)})",
+                valor=float(adicional.valor),
+                origen=OrigenItemConciliacion.ADICIONAL,
+                vinculo_codigo_concepto=None,
+                # La descripción hace de palabra clave, igual que en un activo
+                # registrado por el contador: si el tercero reportó «Apartamento
+                # calle 50», el cruce lo encuentra.
+                vinculo_palabra_clave=adicional.descripcion if cruzable else None,
+            )
+        )
+    return salida
+
+
+_NOMBRES_ADICIONAL = {
+    TipoAdicional.ACTIVO: "activo",
+    TipoAdicional.DEUDA: "deuda",
+    TipoAdicional.BIEN_EXTERIOR: "bien en el exterior",
+    TipoAdicional.INTERESES_VIVIENDA: "intereses de vivienda",
+    TipoAdicional.MEDICINA_PREPAGADA: "medicina prepagada",
+    TipoAdicional.AHORRO_AFC: "ahorro AFC/AVC",
+    TipoAdicional.APORTES_VOLUNTARIOS_PENSION: "aportes voluntarios a pensión",
+}
+
+
+def _nombre_adicional(tipo: TipoAdicional) -> str:
+    return _NOMBRES_ADICIONAL.get(tipo, tipo.value.lower())
+
+
+def _aplicar_decisiones(
+    session: Session, periodo_fiscal_id: int, items: List[ItemConciliacion]
+) -> int:
+    decisiones = {
+        d.clave_item: d
+        for d in session.exec(
+            select(DecisionRenglon).where(
+                DecisionRenglon.periodo_fiscal_id == periodo_fiscal_id
+            )
+        ).all()
+    }
+    aplicadas = 0
+    for item in items:
+        decision = decisiones.get(item.clave)
+        if decision is None:
+            continue
+        item.valor_final = float(decision.valor_final)
+        item.fuente_valor_final = decision.fuente_elegida
+        item.nota_decision = decision.nota
+        item.decidida_en = decision.decidida_en
+        aplicadas += 1
+    return aplicadas
+
+
+def _valor_de_la_fuente(
+    item: ItemConciliacion, datos: DecisionRenglonFijar
+) -> Decimal:
+    """El valor final según la fuente elegida, no según lo que mande el cliente.
+
+    Con EXOGENA o DECLARADO el número lo pone la fila: aceptar el que venga en
+    el cuerpo permitiría guardar «elegí el valor de la exógena» junto a una
+    cifra distinta, y el registro de la decisión dejaría de ser cierto.
+    """
+    if datos.fuente_elegida == FuenteValorFinal.EXOGENA:
+        if item.valor_exogena is None:
+            raise DecisionRenglonInvalidaError(
+                f"«{item.concepto}» no tiene valor en la exógena: no se puede "
+                "elegir esa fuente. Use DECLARADO o MANUAL."
+            )
+        return Decimal(str(item.valor_exogena)).quantize(Decimal("0.01"))
+
+    if datos.fuente_elegida == FuenteValorFinal.DECLARADO:
+        if item.valor_declarado is None:
+            raise DecisionRenglonInvalidaError(
+                f"«{item.concepto}» solo está en la exógena: no hay valor "
+                "declarado que elegir. Use EXOGENA o MANUAL."
+            )
+        return Decimal(str(item.valor_declarado)).quantize(Decimal("0.01"))
+
+    if datos.valor_final is None:
+        raise DecisionRenglonInvalidaError(
+            "Con fuente MANUAL hay que enviar el valor final"
+        )
+    return Decimal(datos.valor_final).quantize(Decimal("0.01"))
+
+
+def fijar_decision(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    datos: DecisionRenglonFijar,
+) -> DecisionRenglonLeer:
+    """Fija el valor final de un renglón. Solo lo hace el contador.
+
+    No existe una ruta equivalente en el portal del contribuyente: él informa
+    y aporta soportes, y quien decide qué se declara —y firma— es el contador.
+    """
+    conciliacion = conciliar_contribuyente(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    item = next((i for i in conciliacion.items if i.clave == datos.clave_item), None)
+    if item is None:
+        raise DecisionRenglonInvalidaError(
+            f"La conciliación de este periodo no tiene un renglón "
+            f"«{datos.clave_item}». Vuelva a cargarla: pudo cambiar con una "
+            "versión nueva de la exógena."
+        )
+
+    valor = _valor_de_la_fuente(item, datos)
+
+    decision = session.exec(
+        select(DecisionRenglon).where(
+            DecisionRenglon.periodo_fiscal_id == periodo_fiscal_id,
+            DecisionRenglon.clave_item == datos.clave_item,
+        )
+    ).first()
+    if decision is None:
+        decision = DecisionRenglon(
+            contribuyente_id=contribuyente_id,
+            periodo_fiscal_id=periodo_fiscal_id,
+            clave_item=datos.clave_item,
+            valor_final=valor,
+            fuente_elegida=datos.fuente_elegida,
+        )
+    decision.valor_final = valor
+    decision.fuente_elegida = datos.fuente_elegida
+    decision.nota = (datos.nota or "").strip() or None
+    decision.decidida_por_contador_id = contador_id
+    decision.decidida_en = datetime.now(timezone.utc)
+    session.add(decision)
+    session.commit()
+    session.refresh(decision)
+    return DecisionRenglonLeer(**decision.model_dump())
+
+
+def listar_decisiones(
+    session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
+) -> List[DecisionRenglonLeer]:
+    obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    decisiones = session.exec(
+        select(DecisionRenglon)
+        .where(DecisionRenglon.periodo_fiscal_id == periodo_fiscal_id)
+        .order_by(DecisionRenglon.clave_item)
+    ).all()
+    return [DecisionRenglonLeer(**d.model_dump()) for d in decisiones]
+
+
+def borrar_decision(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    clave_item: str,
+) -> None:
+    obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
+    decision = session.exec(
+        select(DecisionRenglon).where(
+            DecisionRenglon.periodo_fiscal_id == periodo_fiscal_id,
+            DecisionRenglon.clave_item == clave_item,
+        )
+    ).first()
+    if decision is None:
+        raise DecisionRenglonInvalidaError(
+            f"No hay una decisión guardada para «{clave_item}»"
+        )
+    session.delete(decision)
+    session.commit()
 
 
 def _numero_renglon(renglon: str) -> int:

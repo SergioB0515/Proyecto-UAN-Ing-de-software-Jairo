@@ -10,6 +10,15 @@ const routes = [
     component: () => import('../views/LoginView.vue'),
     meta: { publica: true },
   },
+  {
+    // Portal del contribuyente. Es pública a propósito: quien la abre no
+    // tiene cuenta, y el alcance lo da el token de la dirección. Va antes de
+    // las rutas del contador para que ningún guardia la toque.
+    path: '/carga/:token',
+    name: 'carga',
+    component: () => import('../views/PortalCargaView.vue'),
+    meta: { publica: true, sinMarco: true },
+  },
   { path: '/', redirect: { name: 'cartera' } },
   { path: '/cartera', name: 'cartera', component: () => import('../views/CarteraView.vue') },
   {
@@ -27,6 +36,7 @@ const routes = [
       { path: 'patrimonio', name: 'patrimonio', component: () => import('../views/PatrimonioView.vue') },
       { path: 'exogena', name: 'exogena', component: () => import('../views/ExogenaView.vue') },
       { path: 'conciliacion', name: 'conciliacion', component: () => import('../views/ConciliacionView.vue') },
+      { path: 'requerimientos', name: 'requerimientos', component: () => import('../views/RequerimientosView.vue') },
       { path: 'borrador', name: 'borrador', component: () => import('../views/BorradorView.vue') },
       { path: 'liquidacion', name: 'liquidacion', component: () => import('../views/LiquidacionView.vue') },
       { path: 'gestion', name: 'gestion', component: () => import('../views/GestionView.vue') },

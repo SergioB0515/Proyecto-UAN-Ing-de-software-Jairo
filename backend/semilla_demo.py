@@ -37,10 +37,18 @@ from modulos.contribuyentes.modelos import (
     TipoActivo,
     TipoContribuyente,
 )
+from modulos.conciliacion.modelos import DecisionRenglon
 from modulos.exogena.modelos import (
     RegistroExogena,
     ReporteExogena,
     TopeExogena,
+)
+from modulos.portal.modelos import (
+    AutorizacionTratamiento,
+    DatoAdicional,
+    EnlaceCarga,
+    EnlaceCargaCrear,
+    RequerimientoDocumento,
 )
 from modulos.inventario.modelos import (
     Categoria,
@@ -69,6 +77,7 @@ NOMBRE_DEMO = "Contador de demostración"
 # Año fijo, no date.today(): la demo debe ser reproducible.
 ANIO = 2025
 ANIO_ANTERIOR = 2024
+FECHA_CORTE_DEMO = date(ANIO + 1, 3, 14)
 
 NIT_DIAN = "800197268"
 
@@ -211,6 +220,10 @@ def _crear_exogena(
         contribuyente_id=contribuyente_id,
         periodo_fiscal_id=periodo_id,
         nombre_archivo_original=nombre_archivo,
+        # La consulta de terceros de la demo se toma como descargada en marzo
+        # del año siguiente, igual que la que trae el generador de archivos.
+        fecha_corte=FECHA_CORTE_DEMO,
+        version=1,
     )
     session.add(reporte)
     session.flush()
@@ -1068,7 +1081,12 @@ def borrar_demo(session: Session) -> bool:
                 session.exec(delete(modelo).where(modelo.periodo_fiscal_id.in_(periodos)))
         session.exec(delete(PerdidaFiscal).where(PerdidaFiscal.contribuyente_id.in_(ids)))
 
+        # El orden importa: cada modelo va antes del que referencia. Los
+        # requerimientos apuntan a los reportes de exógena y las
+        # autorizaciones a los enlaces, así que esos cuatro van primero.
         for modelo in (
+            DecisionRenglon, DatoAdicional, RequerimientoDocumento,
+            AutorizacionTratamiento, EnlaceCarga,
             ReporteExogena, Adjunto, Movimiento, CierrePeriodo, DocumentoSoporte,
             Proveedor, Producto, Categoria, Activo, FuenteIngreso, PeriodoFiscal,
         ):
@@ -1154,8 +1172,65 @@ def cargar_demo(session: Session) -> Contador:
 
     session.commit()
     gestion_demo(session, contador.id)
+    asegurar_portal_demo(session, contador.id)
     asegurar_adjuntos_demo(session, contador.id)
     return contador
+
+
+def asegurar_portal_demo(session: Session, contador_id: int) -> int:
+    """Deja la demo con el portal del contribuyente listo para mostrar.
+
+    Sin esto, la pestaña «Soportes del contribuyente» sale vacía en la demo:
+    los requerimientos los crea la carga del archivo, y los de la semilla se
+    insertan directamente en la base. Esta función hace lo que haría esa carga.
+
+    Es idempotente, como el resto de la semilla.
+    """
+    from modulos.portal.servicios import crear_enlace, sincronizar_requerimientos
+
+    creados = 0
+    contribuyentes = session.exec(
+        select(Contribuyente).where(Contribuyente.contador_id == contador_id)
+    ).all()
+    for contribuyente in contribuyentes:
+        periodos = session.exec(
+            select(PeriodoFiscal)
+            .where(PeriodoFiscal.contribuyente_id == contribuyente.id)
+            .order_by(PeriodoFiscal.anio_gravable)
+        ).all()
+        for periodo in periodos:
+            reporte = session.exec(
+                select(ReporteExogena)
+                .where(ReporteExogena.periodo_fiscal_id == periodo.id)
+                .order_by(ReporteExogena.version.desc(), ReporteExogena.id.desc())
+            ).first()
+            if reporte is not None:
+                nuevos, _, _ = sincronizar_requerimientos(session, reporte)
+                creados += nuevos
+
+            # Un enlace vigente por el año abierto más reciente, para poder
+            # abrir el portal en la demo sin generarlo a mano.
+            if periodo.estado == EstadoPeriodo.CERRADO or periodo is not periodos[-1]:
+                continue
+            ya_tiene = session.exec(
+                select(EnlaceCarga.id).where(
+                    EnlaceCarga.periodo_fiscal_id == periodo.id,
+                    EnlaceCarga.revocado_en.is_(None),
+                )
+            ).first()
+            if ya_tiene is None:
+                crear_enlace(
+                    session,
+                    contador_id,
+                    contribuyente.id,
+                    EnlaceCargaCrear(
+                        periodo_fiscal_id=periodo.id,
+                        dias_vigencia=90,
+                        nota="Enlace de la demostración",
+                    ),
+                )
+    session.commit()
+    return creados
 
 
 def informar(session: Session) -> None:

@@ -67,7 +67,38 @@ ACCIONES_AUDITADAS = {
     "eliminar_pago_efectivo": "Eliminó un pago en efectivo",
     "crear_deduccion_desde_plantilla": "Solicitó una deducción desde el catálogo",
     "copiar_hoja_del_anterior": "Copió la hoja de liquidación del año anterior",
+    # Portal de carga: acciones del contador.
+    "generar_enlace_carga": "Generó un enlace de carga para el contribuyente",
+    "revocar_enlace_carga": "Revocó un enlace de carga",
+    "sincronizar_requerimientos": "Regeneró los requerimientos desde la exógena",
+    "marcar_requerimiento_revisado": "Revisó un requerimiento de documento",
+    "crear_dato_adicional": "Registró un dato que la exógena no reporta",
+    "eliminar_dato_adicional": "Eliminó un dato adicional",
+    "fijar_decision_renglon": "Fijó el valor final de un renglón",
+    "borrar_decision_renglon": "Deshizo el valor final de un renglón",
 }
+
+# Acciones que hace el contribuyente desde el enlace de carga, sin cuenta.
+#
+# Se auditan igual que las del contador, con dos diferencias que el middleware
+# resuelve abajo:
+#
+# 1. El contador no sale de un encabezado `Authorization` —no hay— sino del
+#    enlace: se audita bajo el contador dueño del enlace, que es quien
+#    responde por esos datos y a quien le sirve el registro.
+# 2. La ruta se guarda CENSURADA. El token va en la URL, y escribirlo en la
+#    bitácora sería dejar la llave anotada en un registro que después se
+#    exporta, se respalda y se consulta desde la aplicación.
+ACCIONES_PORTAL = {
+    "aceptar_politica": "El contribuyente aceptó la política de tratamiento de datos",
+    "cargar_exogena": "El contribuyente cargó el archivo de exógena",
+    "responder_requerimiento": "El contribuyente respondió un requerimiento",
+    "subir_soporte": "El contribuyente cargó un soporte",
+    "agregar_adicional": "El contribuyente registró un dato que la exógena no trae",
+    "eliminar_adicional": "El contribuyente eliminó un dato adicional",
+}
+
+ACCIONES_AUDITADAS.update(ACCIONES_PORTAL)
 
 
 def ip_cliente(request: Request) -> Optional[str]:
@@ -86,6 +117,28 @@ def _contador_id(session, request: Request) -> Optional[int]:
     return session.exec(select(Contador.id).where(Contador.email == email)).first()
 
 
+def _desde_enlace(session, request: Request):
+    """Contador, contribuyente y ruta censurada de una petición del portal.
+
+    Devuelve (None, None, ruta) si el enlace no se puede resolver; el
+    middleware entonces no registra nada, igual que cuando no hay sesión.
+    """
+    from modulos.portal.modelos import EnlaceCarga
+    from modulos.portal.servicios import hashear_token
+
+    token = request.scope.get("path_params", {}).get("token")
+    if not token:
+        return None, None, request.url.path
+
+    ruta = request.url.path.replace(token, f"{token[:4]}…")
+    enlace = session.exec(
+        select(EnlaceCarga).where(EnlaceCarga.token_hash == hashear_token(token))
+    ).first()
+    if enlace is None:
+        return None, None, ruta
+    return enlace.contador_id, enlace.contribuyente_id, ruta
+
+
 class AuditoriaMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         respuesta = await call_next(request)
@@ -101,13 +154,17 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
         generador = fabrica()
         session = next(generador)
         try:
-            contador_id = _contador_id(session, request)
+            parametros = request.scope.get("path_params", {})
+            ruta = request.url.path
+            if nombre in ACCIONES_PORTAL:
+                contador_id, contribuyente_id, ruta = _desde_enlace(session, request)
+            else:
+                contador_id = _contador_id(session, request)
+                contribuyente_id = parametros.get("contribuyente_id") or getattr(
+                    request.state, "auditoria_contribuyente_id", None
+                )
             if contador_id is None:
                 return respuesta
-            parametros = request.scope.get("path_params", {})
-            contribuyente_id = parametros.get("contribuyente_id") or getattr(
-                request.state, "auditoria_contribuyente_id", None
-            )
             descripcion = ACCIONES_AUDITADAS[nombre]
             formato = request.query_params.get("formato", "xlsx")
             if nombre == "descargar_reporte":
@@ -122,7 +179,7 @@ class AuditoriaMiddleware(BaseHTTPMiddleware):
                     accion=nombre,
                     descripcion=descripcion,
                     metodo=request.method,
-                    ruta=request.url.path,
+                    ruta=ruta,
                     ip=ip_cliente(request),
                 ),
             )

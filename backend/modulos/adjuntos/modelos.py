@@ -14,6 +14,11 @@ class TipoEntidadAdjunto(str, Enum):
     DOCUMENTO_SOPORTE = "DOCUMENTO_SOPORTE"
     MOVIMIENTO = "MOVIMIENTO"
     PROVEEDOR = "PROVEEDOR"
+    # Un documento pedido al contribuyente por el portal de carga. Atar el
+    # archivo al requerimiento y no al periodo es lo que permite abrir el
+    # ítem y ver el papel que lo respalda, en vez de una carpeta con treinta
+    # archivos y nadie que recuerde a qué correspondía cada uno.
+    REQUERIMIENTO = "REQUERIMIENTO"
 
 
 class CategoriaAdjunto(str, Enum):

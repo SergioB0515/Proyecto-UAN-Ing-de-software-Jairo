@@ -50,7 +50,7 @@ def importar_exogena(
 ):
     try:
         contenido = servicios.leer_archivo_exogena(archivo.file, archivo.filename)
-        return servicios.importar_reporte_exogena(
+        importado = servicios.importar_reporte_exogena(
             session,
             contador.id,
             contribuyente_id,
@@ -58,6 +58,20 @@ def importar_exogena(
             contenido,
             archivo.filename or "archivo.xlsx",
         )
+        # Traducir el archivo a requerimientos en lenguaje común se hace aquí
+        # y no en el servicio para no crear una dependencia circular: el
+        # portal importa a exógena. El import es local por lo mismo.
+        #
+        # Está en el router del contador además del portal para que el camino
+        # sea uno solo: cargue el archivo quien lo cargue, los requerimientos
+        # quedan generados. Es idempotente.
+        from modulos.portal.servicios import sincronizar_requerimientos
+
+        reporte = servicios.obtener_reporte_exogena(
+            session, contador.id, contribuyente_id, importado.id
+        )
+        sincronizar_requerimientos(session, reporte)
+        return importado
     except _NO_ENCONTRADO as exc:
         raise _no_encontrado(exc) from exc
     except ArchivoDemasiadoGrandeError as exc:

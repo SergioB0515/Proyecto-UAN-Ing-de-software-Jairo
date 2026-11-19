@@ -38,6 +38,7 @@ from ..contribuyentes.servicios import (
 )
 from ..inventario.modelos import Producto
 from ..movimientos.modelos import DocumentoSoporte, Movimiento, Proveedor, TipoMovimiento
+from ..portal.modelos import RequerimientoDocumento
 from .modelos import (
     Adjunto,
     AdjuntoActualizar,
@@ -81,6 +82,7 @@ CARPETAS_ZIP = {
     TipoEntidadAdjunto.DOCUMENTO_SOPORTE: "Documentos soporte",
     TipoEntidadAdjunto.MOVIMIENTO: "Movimientos",
     TipoEntidadAdjunto.PROVEEDOR: "Proveedores",
+    TipoEntidadAdjunto.REQUERIMIENTO: "Soportes pedidos al contribuyente",
 }
 
 
@@ -208,6 +210,18 @@ def _resolver_entidad(
         producto = session.get(Producto, movimiento.producto_id)
         return EntidadResuelta(movimiento.periodo_fiscal_id, _etiqueta_movimiento(movimiento, producto))
 
+    if tipo == TipoEntidadAdjunto.REQUERIMIENTO:
+        requerimiento = session.get(RequerimientoDocumento, entidad_id)
+        if requerimiento is None or requerimiento.contribuyente_id != contribuyente_id:
+            raise no_existe("el requerimiento de documento")
+        periodo = session.get(PeriodoFiscal, requerimiento.periodo_fiscal_id)
+        if periodo is not None and periodo.estado == EstadoPeriodo.CERRADO:
+            raise PeriodoFiscalCerradoError(
+                f"El periodo fiscal {periodo.anio_gravable} está cerrado: no "
+                "admite soportes nuevos"
+            )
+        return EntidadResuelta(requerimiento.periodo_fiscal_id, requerimiento.titulo)
+
     proveedor = session.get(Proveedor, entidad_id)
     if proveedor is None or proveedor.contribuyente_id != contribuyente_id:
         raise no_existe("el proveedor")
@@ -251,6 +265,7 @@ def _etiquetas(
     anotar(TipoEntidadAdjunto.FUENTE_INGRESO, FuenteIngreso, lambda f: f.concepto)
     anotar(TipoEntidadAdjunto.DOCUMENTO_SOPORTE, DocumentoSoporte, _etiqueta_documento)
     anotar(TipoEntidadAdjunto.PROVEEDOR, Proveedor, lambda p: p.nombre)
+    anotar(TipoEntidadAdjunto.REQUERIMIENTO, RequerimientoDocumento, lambda r: r.titulo)
 
     if TipoEntidadAdjunto.MOVIMIENTO in ids:
         movimientos = session.exec(
