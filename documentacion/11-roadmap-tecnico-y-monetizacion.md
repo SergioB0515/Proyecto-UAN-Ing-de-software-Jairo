@@ -142,7 +142,7 @@ liquidando bien. Ese es el punto de haber separado parámetros de lógica.
 | Catálogo de deducciones frecuentes con su norma | — | Hecho |
 | Copiar del año anterior la situación, no las cifras | — | Hecho |
 
-Dos defectos reales que aparecieron al construir esto y vale la pena
+Tres defectos reales que aparecieron al construir esto y vale la pena
 recordar, porque son el tipo de cosa que solo sale corriendo el sistema:
 
 - **`Decimal.normalize()` convierte los múltiplos de diez a notación
@@ -152,6 +152,19 @@ recordar, porque son el tipo de cosa que solo sale corriendo el sistema:
   despliegue con datos arrancó y falló al primer `SELECT`. Se parchó con el
   helper de migración que ya tenía el proyecto, pero es exactamente la razón
   por la que Alembic es prioridad 2 y no 5.
+- **`create_all` tampoco agrega valores a un ENUM que ya existe, y esto no
+  se ve en las pruebas.** En Postgres un campo tipado con un `Enum` de Python
+  se crea como un tipo ENUM *nativo*. Al agregarle dos estados a
+  `EstadoDocumento` y uno a `TipoEntidadAdjunto`, el tipo en la base
+  desplegada se quedó con los valores viejos: marcar «no lo tengo» o subir un
+  soporte devolvía 500 con `InvalidTextRepresentation`. Las pruebas pasaban
+  porque la base de pruebas se crea de cero en cada corrida, con el tipo ya
+  completo; el defecto solo existe en una base que lleva tiempo viva, que es
+  donde duele. Se resolvió con `_sincronizar_enums`, que recorre el metadata
+  y agrega los valores que falten a *todos* los tipos enum, no solo a los que
+  cambiaron ese día: una lista escrita a mano hay que acordarse de
+  actualizarla. Mismo origen que el defecto anterior y mismo argumento para
+  Alembic.
 
 ### Lo que el motor no hace, a propósito
 
