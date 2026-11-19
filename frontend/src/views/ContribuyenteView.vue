@@ -113,7 +113,6 @@ const pestanas = computed(() => [
   { nombre: 'resumen', texto: 'Resumen' },
   { nombre: 'patrimonio', texto: 'Patrimonio e ingresos' },
   { nombre: 'exogena', texto: 'Exógena' },
-  { nombre: 'requerimientos', texto: 'Soportes del contribuyente' },
   { nombre: 'conciliacion', texto: 'Conciliación' },
   { nombre: 'borrador', texto: 'Borrador por renglón' },
   { nombre: 'liquidacion', texto: 'Liquidación 210' },

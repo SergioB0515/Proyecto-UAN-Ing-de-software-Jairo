@@ -215,23 +215,24 @@ watch(orden, cargar)
                 <td class="text-sm">
                   <!-- El estado de la recolección: lo que el panel tiene que
                        responder sin que haya que entrar a cada ficha. -->
-                  <template v-if="fila.requerimientos.total">
+                  <template v-if="fila.documentos_pendientes !== null">
                     <p>
                       <span
                         class="font-semibold"
-                        :class="fila.requerimientos.pendientes ? 'text-estado-discrepancia' : 'text-estado-coincide'"
+                        :class="fila.documentos_pendientes ? 'text-estado-discrepancia' : 'text-estado-coincide'"
                       >
-                        {{ fila.requerimientos.total - fila.requerimientos.pendientes }}/{{
-                          fila.requerimientos.total
-                        }}
+                        {{ fila.documentos_pendientes }}
                       </span>
-                      <span class="text-xs text-tinta-suave"> soportes</span>
+                      <span class="text-xs text-tinta-suave"> documentos por recibir</span>
                     </p>
-                    <p v-if="fila.requerimientos.no_entiendo" class="text-xs text-estado-nodeclarado">
-                      {{ fila.requerimientos.no_entiendo }} «no entiendo»
+                    <p v-if="fila.documentos_no_entiendo" class="text-xs text-estado-nodeclarado">
+                      {{ fila.documentos_no_entiendo }} «no entiendo»
                     </p>
-                    <p v-if="fila.requerimientos.sin_reconocer" class="text-xs text-estado-discrepancia">
-                      {{ fila.requerimientos.sin_reconocer }} sin clasificar
+                    <p v-if="fila.documentos_no_lo_tengo" class="text-xs text-estado-discrepancia">
+                      {{ fila.documentos_no_lo_tengo }} que el cliente no tiene
+                    </p>
+                    <p v-if="fila.documentos_sin_reconocer" class="text-xs text-estado-discrepancia">
+                      {{ fila.documentos_sin_reconocer }} sin clasificar
                     </p>
                   </template>
                   <span v-else-if="!fila.exogena_cargada" class="text-xs text-tinta-tenue">

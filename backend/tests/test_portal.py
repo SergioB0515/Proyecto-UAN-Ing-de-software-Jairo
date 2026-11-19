@@ -1,13 +1,15 @@
 """Pruebas del portal de carga del contribuyente.
 
-Lo que se verifica aquí, además de que las rutas respondan:
+Lo que se verifica aquí:
 
 * el alcance del enlace (un contribuyente, un periodo, revocable, reanudable);
 * que el token no se pueda recuperar después de generarlo;
 * que sin aceptar la política no se escriba nada;
-* que ninguna fila de la exógena se descarte, ni las que no se reconocen;
-* que volver a cargar el archivo no borre el trabajo del contribuyente;
-* que los topes del formulario de adicionales salgan de la tabla del año.
+* que la lista de documentos del portal sea LA MISMA que ve el contador, no
+  una paralela;
+* que los conceptos que la aplicación no reconoce queden marcados;
+* que los topes del formulario de adicionales salgan de la tabla del año;
+* que ninguna respuesta del portal arrastre la liquidación.
 """
 
 import io
@@ -17,14 +19,13 @@ import openpyxl
 import pytest
 from sqlmodel import select
 
+from modulos.parametros.tablas_oficiales import PARAMETROS_POR_ANIO
 from modulos.portal.modelos import EnlaceCarga
 
 ANIO = 2025
 
-# UVT 2025 = 49.799 (tablas_oficiales). Los topes se calculan a partir de ahí
-# y NO se escriben a mano aquí: si la tabla cambia, la prueba sigue valiendo.
-from modulos.parametros.tablas_oficiales import PARAMETROS_POR_ANIO  # noqa: E402
-
+# Los topes se calculan desde la tabla del año y NO se escriben a mano: si la
+# tabla cambia, la prueba sigue valiendo.
 UVT = PARAMETROS_POR_ANIO[ANIO].uvt
 TOPE_VIVIENDA = int(UVT * 1200)
 TOPE_PREVISIONAL = int(UVT * 3800)
@@ -153,6 +154,17 @@ def _preparar(client, email: str, cargar: bool = True) -> tuple:
     return token, contribuyente_id, periodo_id, enlace
 
 
+def _documentos(client, portal_token: str):
+    return client.get(f"/carga/{portal_token}/documentos").json()
+
+
+def _doc(documentos, contiene: str):
+    return next(
+        d for d in documentos
+        if contiene.lower() in f"{d['descripcion']} {d['tercero']}".lower()
+    )
+
+
 # ---------------------------------------------------------------------------
 # El enlace
 # ---------------------------------------------------------------------------
@@ -225,7 +237,7 @@ def test_el_enlace_es_reanudable(client):
     segunda = client.get(f"/carga/{enlace['token']}")
 
     assert primera.status_code == segunda.status_code == 200
-    assert primera.json()["requerimientos"] == segunda.json()["requerimientos"]
+    assert primera.json()["documentos"] == segunda.json()["documentos"]
 
 
 def test_un_contador_no_genera_enlaces_de_contribuyentes_de_otro(client):
@@ -250,20 +262,73 @@ def test_el_portal_enmascara_el_documento(client):
     assert CONSULTANTE not in cuerpo["documento_enmascarado"]
 
 
-def test_el_portal_no_expone_la_liquidacion(client):
-    """El alcance del enlace no alcanza a nada del motor de liquidación."""
+# ---------------------------------------------------------------------------
+# El alcance: nada de liquidación sale por el enlace
+# ---------------------------------------------------------------------------
+
+# Campos que solo existen en la liquidación, el borrador o la cartera. Si
+# alguno aparece en el esquema de una respuesta del portal, algo se filtró.
+_PROHIBIDOS = {
+    "saldo_a_pagar", "saldo_a_favor", "impuesto_neto", "total_a_cargo",
+    "renta_liquida", "renglones", "casillas", "anticipo", "retenciones",
+    "base_gravable", "ganancia_ocasional", "alertas_no_declarado", "obligado",
+    "mensaje",
+}
+
+
+def _campos_del_esquema(spec, referencia, vistos=None) -> set:
+    """Todos los nombres de campo alcanzables desde un esquema, recursivo."""
+    vistos = vistos if vistos is not None else set()
+    nombre = referencia.split("/")[-1]
+    if nombre in vistos:
+        return set()
+    vistos.add(nombre)
+    esquema = spec["components"]["schemas"].get(nombre, {})
+    campos = set(esquema.get("properties", {}))
+    for propiedad in esquema.get("properties", {}).values():
+        for rama in [propiedad] + propiedad.get("anyOf", []) + propiedad.get("allOf", []):
+            if "$ref" in rama:
+                campos |= _campos_del_esquema(spec, rama["$ref"], vistos)
+            items = rama.get("items", {})
+            if "$ref" in items:
+                campos |= _campos_del_esquema(spec, items["$ref"], vistos)
+    return campos
+
+
+def test_ninguna_respuesta_del_portal_arrastra_la_liquidacion(client):
+    """La garantía del enlace, verificada sobre el esquema de las respuestas.
+
+    Antes esto se sostenía por los imports del módulo. Ahora la lista de
+    documentos viene de `gestion`, que sí lee la liquidación para saber qué
+    pedir, así que la garantía se verifica donde importa: en lo que el portal
+    puede devolver. Esta prueba falla si alguien expone un campo de más.
+    """
+    spec = client.get("/openapi.json").json()
+    rutas = [p for p in spec["paths"] if p.startswith("/carga/")]
+    assert rutas, "el portal público no está montado"
+
+    for ruta in rutas:
+        for metodo, operacion in spec["paths"][ruta].items():
+            contenido = (
+                operacion.get("responses", {}).get("200", {}).get("content", {})
+                or operacion.get("responses", {}).get("201", {}).get("content", {})
+            )
+            esquema = contenido.get("application/json", {}).get("schema", {})
+            referencia = esquema.get("$ref") or esquema.get("items", {}).get("$ref")
+            if not referencia:
+                continue
+            filtrados = _campos_del_esquema(spec, referencia) & _PROHIBIDOS
+            assert not filtrados, (
+                f"{metodo.upper()} {ruta} expone {sorted(filtrados)}"
+            )
+
+
+def test_el_token_del_portal_no_sirve_como_sesion_de_contador(client):
     _, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-08@example.com")
-    cuerpo = client.get(f"/carga/{enlace['token']}").json()
 
-    prohibidos = {"liquidacion", "renglones", "saldo_a_pagar", "impuesto", "hoja"}
-    assert prohibidos.isdisjoint(cuerpo.keys())
-
-    # Y el token del portal no sirve como sesión de contador: 401, no 200.
-    # `/cartera` y la conciliación existen y responden exactamente 401, que es
-    # lo que prueba que el token no se acepta como credencial.
     for ruta in (
         f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/conciliacion",
-        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/borrador-renglones",
+        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/documentos",
         "/cartera",
     ):
         assert client.get(
@@ -353,6 +418,7 @@ def test_la_carga_guarda_la_fecha_de_corte_y_la_version(client):
     assert primera["version"] == 1
     assert primera["fecha_corte"] == f"{ANIO + 1}-03-14"
     assert primera["cantidad_registros"] == len(FILAS)
+    assert primera["documentos_pedidos"] > 0
 
     segunda = _cargar(client, enlace["token"], _libro(f"{ANIO + 1}-09-13 00:00:00")).json()
     assert segunda["version"] == 2
@@ -374,199 +440,148 @@ def test_el_archivo_de_otro_anio_gravable_se_avisa(client):
 
 
 # ---------------------------------------------------------------------------
-# Requerimientos en lenguaje común
+# Documentos: una sola lista
 # ---------------------------------------------------------------------------
 
 
-def test_cada_fila_se_traduce_a_un_requerimiento(client):
-    _, _, _, enlace = _preparar(client, "portal-15@example.com")
-    requerimientos = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
+def test_el_portal_y_el_contador_ven_la_misma_lista(client):
+    """No hay dos bandejas de «lo que falta»: es la misma tabla."""
+    token, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-15@example.com")
 
-    # Ninguna fila se descarta: hay exactamente un requerimiento por fila.
-    assert len(requerimientos) == len(FILAS)
+    del_portal = _documentos(client, enlace["token"])
+    del_contador = client.get(
+        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/documentos",
+        headers=_h(token),
+    ).json()
+
+    assert {d["clave"] for d in del_portal} == {d["clave"] for d in del_contador["documentos"]}
 
 
-def test_el_titulo_usa_el_nombre_del_tercero_y_no_el_concepto(client):
+def test_se_pide_un_documento_por_tercero_y_tipo(client):
+    """El nombre del tercero, no el concepto tributario."""
     _, _, _, enlace = _preparar(client, "portal-16@example.com")
-    requerimientos = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-    titulos = [r["titulo"] for r in requerimientos]
+    documentos = _documentos(client, enlace["token"])
 
-    assert any("Bancolombia" in t for t in titulos)
-    assert any("Clinica" in t or "Clínica" in t for t in titulos)
-    # Y en ningún título aparece el código del concepto tributario.
-    assert not any("1110" in t or "5001" in t or "Concepto" in t for t in titulos)
+    assert _doc(documentos, "BANCOLOMBIA")
+    assert _doc(documentos, "CLINICA DEL COUNTRY")
+    # El concepto tributario no se le muestra al contribuyente.
+    for d in documentos:
+        assert "1110" not in d["descripcion"] and "5001" not in d["descripcion"]
+    # Lo que reporta el propio contribuyente no se le pide a nadie.
+    assert not any("CONTRIBUYENTE EJEMPLO" in d["tercero"] for d in documentos)
 
 
-def test_el_concepto_que_no_se_reconoce_no_se_descarta(client):
+def test_el_concepto_que_no_se_reconoce_queda_marcado(client):
     _, _, _, enlace = _preparar(client, "portal-17@example.com")
-    requerimientos = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
+    documentos = _documentos(client, enlace["token"])
 
-    raro = next(r for r in requerimientos if "Entidad Rara" in r["titulo"])
-    assert raro["concepto_reconocido"] is False
-    assert raro["motivo_revision"]
-    # El valor y el detalle original se conservan tal como vinieron.
-    assert raro["valor_exogena"] == 1_200_000
-    assert "Zarandeo" in raro["detalle_original"]
+    raro = _doc(documentos, "ENTIDAD RARA")
+    assert raro["reconocido"] is False
+    # No se descarta: el valor que lo originó sigue a la vista del contador.
+    assert "Zarandeo" in raro["motivo"]
 
 
-def test_lo_que_la_dian_consolida_no_se_cobra_como_pendiente(client):
-    _, _, _, enlace = _preparar(client, "portal-18@example.com")
-    cuerpo = client.get(f"/carga/{enlace['token']}").json()
+@pytest.mark.parametrize("estado", ["NO_APLICA", "NO_LO_TENGO", "NO_ENTIENDO"])
+def test_el_contribuyente_marca_los_estados_nuevos(client, estado):
+    _, _, _, enlace = _preparar(client, f"portal-18-{estado.lower()}@example.com")
+    clave = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")["clave"]
 
-    informativa = next(
-        r for r in cuerpo["requerimientos"] if "patrimonio bruto" in (r["detalle_original"] or "")
+    respuesta = client.patch(
+        f"/carga/{enlace['token']}/documentos/{clave}",
+        json={"estado": estado, "nota": "una nota"},
     )
-    assert informativa["requiere_soporte"] is False
-    assert informativa["resuelto"] is True
-    # Tres filas piden soporte; la autorreportada no.
-    assert cuerpo["resumen"]["total"] == len(FILAS) - 1
+    assert respuesta.status_code == 200, respuesta.text
+    cuerpo = respuesta.json()
+    assert cuerpo["estado"] == estado
+    assert cuerpo["respondido_por_contribuyente"] is True
 
 
 def test_el_estado_es_obligatorio_y_el_valor_opcional(client):
     _, _, _, enlace = _preparar(client, "portal-19@example.com")
-    requerimiento = client.get(f"/carga/{enlace['token']}").json()["requerimientos"][0]
-    url = f"/carga/{enlace['token']}/requerimientos/{requerimiento['id']}"
+    clave = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")["clave"]
+    url = f"/carga/{enlace['token']}/documentos/{clave}"
 
-    # Sin estado no pasa.
-    assert client.patch(url, json={"valor_informado": 100}).status_code == 422
-    # Con estado y sin valor, sí.
-    respuesta = client.patch(url, json={"estado": "NO_APLICA"})
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado"] == "NO_APLICA"
-    assert respuesta.json()["valor_informado"] is None
+    # Con estado y sin valor, pasa.
+    sin_valor = client.patch(url, json={"estado": "NO_APLICA"})
+    assert sin_valor.status_code == 200
+    assert sin_valor.json()["valor_informado"] is None
 
-
-@pytest.mark.parametrize("estado", ["PENDIENTE", "NO_APLICA", "NO_LO_TENGO", "NO_ENTIENDO"])
-def test_los_cuatro_estados_se_pueden_marcar(client, estado):
-    _, _, _, enlace = _preparar(client, f"portal-20-{estado.lower()}@example.com")
-    requerimiento = client.get(f"/carga/{enlace['token']}").json()["requerimientos"][0]
-
-    respuesta = client.patch(
-        f"/carga/{enlace['token']}/requerimientos/{requerimiento['id']}",
-        json={"estado": estado, "nota_contribuyente": "una nota"},
-    )
-    assert respuesta.status_code == 200
-    assert respuesta.json()["estado"] == estado
+    # Y el valor se puede informar aparte, sin volver a tocar el estado.
+    con_valor = client.patch(url, json={"valor_informado": 14850000})
+    assert con_valor.status_code == 200
+    assert float(con_valor.json()["valor_informado"]) == 14_850_000
+    assert con_valor.json()["estado"] == "NO_APLICA"
 
 
-def test_no_entiendo_no_resuelve_el_requerimiento(client):
+def test_no_entiendo_no_resuelve_el_documento(client):
     """Es el contribuyente pidiendo ayuda, no el ítem cerrándose."""
-    _, _, _, enlace = _preparar(client, "portal-21@example.com")
-    requerimiento = next(
-        r
-        for r in client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-        if r["requiere_soporte"]
-    )
+    token, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-20@example.com")
+    clave = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")["clave"]
 
     respuesta = client.patch(
-        f"/carga/{enlace['token']}/requerimientos/{requerimiento['id']}",
-        json={"estado": "NO_ENTIENDO"},
+        f"/carga/{enlace['token']}/documentos/{clave}", json={"estado": "NO_ENTIENDO"}
     )
     assert respuesta.json()["resuelto"] is False
-    assert client.get(f"/carga/{enlace['token']}").json()["resumen"]["no_entiendo"] == 1
+
+    solicitud = client.get(
+        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/documentos",
+        headers=_h(token),
+    ).json()
+    assert solicitud["no_entiendo"] == 1
 
 
-def test_el_soporte_queda_atado_a_su_requerimiento(client):
-    token, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-22@example.com")
-    requerimiento = next(
-        r
-        for r in client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-        if r["requiere_soporte"]
-    )
+def test_subir_el_soporte_deja_el_documento_recibido(client):
+    """Subir el papel ES recibirlo: no hay que marcar nada después."""
+    token, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-21@example.com")
+    clave = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")["clave"]
 
     respuesta = client.post(
-        f"/carga/{enlace['token']}/requerimientos/{requerimiento['id']}/archivos",
+        f"/carga/{enlace['token']}/documentos/{clave}/archivos",
         files={"archivo": ("extracto.pdf", b"%PDF-1.4 soporte de prueba", "application/pdf")},
     )
     assert respuesta.status_code == 201, respuesta.text
     adjunto = respuesta.json()
-    assert adjunto["entidad_tipo"] == "REQUERIMIENTO"
-    assert adjunto["entidad_id"] == requerimiento["id"]
+    assert adjunto["entidad_tipo"] == "DOCUMENTO_SOLICITADO"
     assert adjunto["periodo_fiscal_id"] == periodo_id
 
-    vuelto = client.get(f"/carga/{enlace['token']}").json()
-    cargado = next(r for r in vuelto["requerimientos"] if r["id"] == requerimiento["id"])
-    assert len(cargado["archivos"]) == 1
-    assert cargado["resuelto"] is True
+    documento = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")
+    assert documento["estado"] == "RECIBIDO"
+    assert documento["resuelto"] is True
+    assert len(documento["archivos"]) == 1
+    assert documento["respondido_por_contribuyente"] is True
 
-    # Y el contador lo ve desde su propia lista de soportes.
+    # Y el contador lo ve entre sus soportes, atado a ese documento.
     adjuntos = client.get(
-        f"/contribuyentes/{contribuyente_id}/adjuntos?entidad_tipo=REQUERIMIENTO",
+        f"/contribuyentes/{contribuyente_id}/adjuntos?entidad_tipo=DOCUMENTO_SOLICITADO",
         headers=_h(token),
     ).json()
     assert len(adjuntos) == 1
-    assert adjuntos[0]["etiqueta_entidad"] == requerimiento["titulo"]
+    assert adjuntos[0]["etiqueta_entidad"] == documento["descripcion"]
 
 
 def test_recargar_la_exogena_no_borra_el_trabajo_del_contribuyente(client):
-    _, _, _, enlace = _preparar(client, "portal-23@example.com")
-    antes = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-    objetivo = next(r for r in antes if "Bancolombia" in r["titulo"])
+    _, _, _, enlace = _preparar(client, "portal-22@example.com")
+    clave = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")["clave"]
 
     client.patch(
-        f"/carga/{enlace['token']}/requerimientos/{objetivo['id']}",
-        json={"estado": "NO_LO_TENGO", "nota_contribuyente": "cerré esa cuenta"},
-    )
-    client.post(
-        f"/carga/{enlace['token']}/requerimientos/{objetivo['id']}/archivos",
-        files={"archivo": ("extracto.pdf", b"%PDF-1.4 soporte", "application/pdf")},
+        f"/carga/{enlace['token']}/documentos/{clave}",
+        json={"estado": "NO_LO_TENGO", "nota": "cerré esa cuenta"},
     )
 
-    segunda = _cargar(client, enlace["token"], _libro(f"{ANIO + 1}-09-13 00:00:00")).json()
-    assert segunda["requerimientos_creados"] == 0
-    assert segunda["requerimientos_actualizados"] == len(FILAS)
+    assert _cargar(client, enlace["token"], _libro(f"{ANIO + 1}-09-13 00:00:00")).status_code == 201
 
-    despues = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-    assert len(despues) == len(FILAS)
-    mismo = next(r for r in despues if r["id"] == objetivo["id"])
-    assert mismo["estado"] == "NO_LO_TENGO"
-    assert mismo["nota_contribuyente"] == "cerré esa cuenta"
-    assert len(mismo["archivos"]) == 1
+    documento = _doc(_documentos(client, enlace["token"]), "BANCOLOMBIA")
+    assert documento["estado"] == "NO_LO_TENGO"
+    assert documento["nota"] == "cerré esa cuenta"
 
 
-def test_el_contador_puede_dar_por_revisado_un_concepto_sin_clasificar(client):
-    token, contribuyente_id, periodo_id, enlace = _preparar(client, "portal-24@example.com")
-    raro = next(
-        r
-        for r in client.get(
-            f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/requerimientos",
-            headers=_h(token),
-        ).json()
-        if not r["concepto_reconocido"]
-    )
+def test_una_clave_que_no_esta_en_la_solicitud_se_rechaza(client):
+    _, _, _, enlace = _preparar(client, "portal-23@example.com")
 
     respuesta = client.patch(
-        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}"
-        f"/requerimientos/{raro['id']}/revision",
-        headers=_h(token),
+        f"/carga/{enlace['token']}/documentos/NO_EXISTE:1", json={"estado": "NO_APLICA"}
     )
-    assert respuesta.status_code == 200
-    assert respuesta.json()["revisado_por_contador"] is True
-
-    resumen = client.get(
-        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}"
-        "/requerimientos/resumen",
-        headers=_h(token),
-    ).json()
-    assert resumen["sin_reconocer"] == 0
-
-
-def test_el_contador_que_carga_el_archivo_tambien_genera_requerimientos(client):
-    """Da igual quién suba el archivo: el camino es uno solo."""
-    token = _token_contador(client, "portal-25@example.com")
-    contribuyente_id, periodo_id = _contribuyente(client, token)
-
-    client.post(
-        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/exogena",
-        files={"archivo": ("exogena.xlsx", _libro(), XLSX)},
-        headers=_h(token),
-    )
-
-    requerimientos = client.get(
-        f"/contribuyentes/{contribuyente_id}/periodos-fiscales/{periodo_id}/requerimientos",
-        headers=_h(token),
-    ).json()
-    assert len(requerimientos) == len(FILAS)
+    assert respuesta.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -579,13 +594,12 @@ def _agregar(client, portal_token, **datos):
 
 
 def test_los_topes_del_formulario_salen_de_la_tabla_del_anio(client):
-    _, _, _, enlace = _preparar(client, "portal-26@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-24@example.com", cargar=False)
     parametros = client.get(f"/carga/{enlace['token']}/adicionales/parametros").json()
 
     assert parametros["anio_gravable"] == ANIO
     assert float(parametros["uvt"]) == float(UVT)
     conceptos = {c["tipo"]: c for c in parametros["conceptos"]}
-    # Los ocho conceptos que la exógena nunca trae.
     assert set(conceptos) == {
         "DEPENDIENTE", "INTERESES_VIVIENDA", "MEDICINA_PREPAGADA", "AHORRO_AFC",
         "APORTES_VOLUNTARIOS_PENSION", "ACTIVO", "DEUDA", "BIEN_EXTERIOR",
@@ -593,35 +607,28 @@ def test_los_topes_del_formulario_salen_de_la_tabla_del_anio(client):
     assert float(conceptos["INTERESES_VIVIENDA"]["tope_anual_en_pesos"]) == float(TOPE_VIVIENDA)
     assert conceptos["MEDICINA_PREPAGADA"]["es_tope_mensual"] is True
     assert conceptos["AHORRO_AFC"]["grupo_tope_compartido"] == "AHORRO_PREVISIONAL"
-    # Cada tope dice de qué norma sale.
     assert conceptos["INTERESES_VIVIENDA"]["fuente_legal"]
     # Un activo o una deuda valen lo que valen: no tienen tope legal.
     assert conceptos["ACTIVO"]["tope_anual_en_pesos"] is None
 
 
 def test_un_adicional_dentro_del_tope_se_acepta(client):
-    _, _, _, enlace = _preparar(client, "portal-27@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-25@example.com", cargar=False)
 
     respuesta = _agregar(
-        client,
-        enlace["token"],
-        tipo="INTERESES_VIVIENDA",
-        descripcion="Crédito Banco Ejemplo",
-        valor=TOPE_VIVIENDA - 1,
+        client, enlace["token"], tipo="INTERESES_VIVIENDA",
+        descripcion="Crédito Banco Ejemplo", valor=TOPE_VIVIENDA - 1,
     )
     assert respuesta.status_code == 201, respuesta.text
     assert respuesta.json()["capturado_en_portal"] is True
 
 
 def test_un_adicional_que_pasa_el_tope_se_rechaza_con_la_norma(client):
-    _, _, _, enlace = _preparar(client, "portal-28@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-26@example.com", cargar=False)
 
     respuesta = _agregar(
-        client,
-        enlace["token"],
-        tipo="INTERESES_VIVIENDA",
-        descripcion="Crédito Banco Ejemplo",
-        valor=TOPE_VIVIENDA + 1,
+        client, enlace["token"], tipo="INTERESES_VIVIENDA",
+        descripcion="Crédito Banco Ejemplo", valor=TOPE_VIVIENDA + 1,
     )
     assert respuesta.status_code == 422
     assert "Art. 119" in respuesta.json()["detail"]
@@ -629,7 +636,7 @@ def test_un_adicional_que_pasa_el_tope_se_rechaza_con_la_norma(client):
 
 def test_afc_y_pension_voluntaria_comparten_el_tope(client):
     """3.800 UVT entre los dos, no 3.800 cada uno."""
-    _, _, _, enlace = _preparar(client, "portal-29@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-27@example.com", cargar=False)
 
     primera = _agregar(
         client, enlace["token"], tipo="AHORRO_AFC",
@@ -646,7 +653,7 @@ def test_afc_y_pension_voluntaria_comparten_el_tope(client):
 
 
 def test_los_dependientes_se_limitan_al_maximo_del_anio(client):
-    _, _, _, enlace = _preparar(client, "portal-30@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-28@example.com", cargar=False)
 
     assert _agregar(
         client, enlace["token"], tipo="DEPENDIENTE",
@@ -661,7 +668,7 @@ def test_los_dependientes_se_limitan_al_maximo_del_anio(client):
 
 
 def test_un_bien_del_exterior_pide_el_pais(client):
-    _, _, _, enlace = _preparar(client, "portal-31@example.com", cargar=False)
+    _, _, _, enlace = _preparar(client, "portal-29@example.com", cargar=False)
 
     sin_pais = _agregar(
         client, enlace["token"], tipo="BIEN_EXTERIOR",
@@ -676,43 +683,25 @@ def test_un_bien_del_exterior_pide_el_pais(client):
     assert con_pais.status_code == 201
 
 
-def test_cada_adicional_pide_su_propio_soporte(client):
-    _, _, _, enlace = _preparar(client, "portal-32@example.com", cargar=False)
+def test_un_adicional_agrega_su_documento_a_la_misma_lista(client):
+    """No crea una lista aparte: entra a la solicitud que ya existe."""
+    _, _, _, enlace = _preparar(client, "portal-30@example.com", cargar=False)
+    antes = {d["clave"] for d in _documentos(client, enlace["token"])}
+
     _agregar(
         client, enlace["token"], tipo="MEDICINA_PREPAGADA",
         descripcion="Póliza Ejemplo", valor=2_000_000,
     )
 
-    cuerpo = client.get(f"/carga/{enlace['token']}").json()
-    assert len(cuerpo["adicionales"]) == 1
-    requerimiento = next(r for r in cuerpo["requerimientos"] if r["origen"] == "ADICIONAL")
-    assert "Póliza Ejemplo" in requerimiento["titulo"]
-    assert requerimiento["requiere_soporte"] is True
-
-
-def test_un_adicional_con_soportes_no_se_borra_en_silencio(client):
-    _, _, _, enlace = _preparar(client, "portal-33@example.com", cargar=False)
-    adicional = _agregar(
-        client, enlace["token"], tipo="MEDICINA_PREPAGADA",
-        descripcion="Póliza Ejemplo", valor=2_000_000,
-    ).json()
-    requerimiento = next(
-        r
-        for r in client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-        if r["origen"] == "ADICIONAL"
-    )
-    client.post(
-        f"/carga/{enlace['token']}/requerimientos/{requerimiento['id']}/archivos",
-        files={"archivo": ("poliza.pdf", b"%PDF-1.4 poliza", "application/pdf")},
-    )
-
-    respuesta = client.delete(f"/carga/{enlace['token']}/adicionales/{adicional['id']}")
-    assert respuesta.status_code == 422
+    despues = _documentos(client, enlace["token"])
+    nuevas = {d["clave"] for d in despues} - antes
+    assert nuevas == {"DEDUCCION:MEDICINA_PREPAGADA"}
+    assert "medicina prepagada" in _doc(despues, "medicina prepagada")["descripcion"].lower()
 
 
 def test_el_anio_sin_parametros_no_valida_contra_topes_inventados(client):
     """Si la tabla del año no existe, el formulario no se abre a ciegas."""
-    token = _token_contador(client, "portal-34@example.com")
+    token = _token_contador(client, "portal-31@example.com")
     contribuyente_id = client.post(
         "/contribuyentes",
         json={"nombre": "Contribuyente Ejemplo", "rut": CONSULTANTE,
@@ -740,13 +729,12 @@ def test_el_anio_sin_parametros_no_valida_contra_topes_inventados(client):
 
 
 def test_lo_que_hace_el_contribuyente_queda_en_la_bitacora_del_contador(client):
-    token, contribuyente_id, _, enlace = _preparar(client, "portal-35@example.com")
+    token, contribuyente_id, _, enlace = _preparar(client, "portal-32@example.com")
 
     eventos = client.get("/auditoria", headers=_h(token)).json()
     acciones = {e["accion"] for e in eventos}
     assert "aceptar_politica" in acciones
     assert "cargar_exogena" in acciones
-    # Quedan atados al contribuyente, no sueltos.
     assert all(
         e["contribuyente_id"] == contribuyente_id
         for e in eventos
@@ -756,7 +744,7 @@ def test_lo_que_hace_el_contribuyente_queda_en_la_bitacora_del_contador(client):
 
 def test_la_bitacora_no_guarda_el_token_del_enlace(client):
     """Anotar la llave en un registro que se exporta y se respalda no sirve."""
-    token, _, _, enlace = _preparar(client, "portal-36@example.com")
+    token, _, _, enlace = _preparar(client, "portal-33@example.com")
 
     eventos = client.get("/auditoria", headers=_h(token)).json()
     assert eventos

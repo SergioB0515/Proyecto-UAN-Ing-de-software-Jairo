@@ -3,17 +3,41 @@
 El contador genera un enlace desde la ficha del contribuyente. El
 contribuyente lo abre en el celular, sin cuenta, acepta la política de
 tratamiento de datos, sube el Excel de exógena que descargó de la DIAN y
-responde, ítem por ítem, qué soportes tiene.
+responde, documento por documento, qué tiene y qué no.
+
+## Lo que este módulo NO tiene
+
+**La lista de documentos.** Esa es la del módulo `gestion`
+(`DocumentoSolicitado`), que ya la derivaba de la exógena, de las deducciones
+solicitadas y de la hoja de liquidación. El portal es la cara que ve el
+contribuyente de esa misma lista.
+
+Vale la pena decir por qué, porque la primera versión de este módulo sí tenía
+su propia tabla de requerimientos y estaba peor:
+
+- `gestion` **deduplica por tercero y tipo**: si Bancolombia reporta tres
+  filas del mismo tipo, se pide un certificado, no tres.
+- `gestion` **deriva la lista al vuelo** y solo guarda fila cuando alguien
+  decidió o cargó algo, así que no puede quedar con filas obsoletas de una
+  versión anterior del archivo.
+- `gestion` cubre además las deducciones solicitadas, los dependientes, las
+  deudas y la declaración del año anterior, no solo la exógena.
+
+Dos tablas de documentos pedidos significan dos cuentas de «lo que falta» que
+se separan en cuanto alguien marca algo en una sola.
+
+Lo que el portal **le agregó** a esa lista: dos estados que solo puede marcar
+el contribuyente (`NO_LO_TENGO`, `NO_ENTIENDO`), los archivos atados a cada
+documento, el valor que él informa, y la marca de quién puso el estado.
 
 ## Archivos
 
 | Archivo | Qué hace |
 |---|---|
 | `politica.py` | La política de tratamiento, versionada. Las redacciones viejas se conservan. |
-| `lenguaje_comun.py` | Traduce una fila de la exógena a una petición de documento en palabras. Sin base de datos. |
-| `modelos.py` | `EnlaceCarga`, `AutorizacionTratamiento`, `RequerimientoDocumento`, `DatoAdicional`. |
-| `servicios.py` | La lógica. No importa `liquidacion`, `conciliacion` ni `cartera`. |
-| `router.py` | Endpoints del contador, con sesión. |
+| `modelos.py` | `EnlaceCarga`, `AutorizacionTratamiento`, `DatoAdicional`. |
+| `servicios.py` | El enlace, la política, los adicionales. Los documentos los delega a `gestion`. |
+| `router.py` | Endpoints del contador: enlace y adicionales. Los documentos los atiende el router de `gestion`. |
 | `router_publico.py` | Lo único que un token permite hacer. |
 
 ## El enlace
@@ -33,9 +57,13 @@ responde, ítem por ítem, qué soportes tiene.
   abierta más.
 - **Reanudable:** abrirlo no lo consume. El contribuyente vuelve y encuentra
   sus respuestas y sus archivos donde los dejó.
-- **Solo escribe:** no existe camino desde un token hasta la liquidación. No es
-  una comprobación que haya que recordar hacer en cada endpoint: el código que
-  la expondría no está importado en este módulo.
+- **Solo escribe:** por el enlace no sale la liquidación. Antes eso se
+  sostenía por los imports de `servicios.py`; ahora la lista de documentos
+  viene de `gestion`, que sí lee la liquidación para saber qué pedir, así que
+  la garantía se verifica donde importa: `test_portal` recorre el esquema de
+  todas las respuestas de `/carga/...` y falla si alguna arrastra un campo de
+  liquidación. Es más fuerte que la anterior, porque sobrevive a que alguien
+  agregue un import.
 
 ## La política
 
@@ -46,39 +74,36 @@ autorizaciones viejas quedarían respaldando un texto que nadie leyó.
 
 Sin autorización registrada, ninguna ruta del portal escribe nada.
 
-## Los requerimientos
+## Los documentos, desde el lado del cliente
 
-Cada fila del archivo de la DIAN produce un requerimiento. **Ninguna se
-descarta**, incluidas las que la aplicación no sabe clasificar: esas entran con
-`concepto_reconocido = False` y un `motivo_revision`, y el contador las resuelve
-desde su pestaña. Lo que no aparece en la conciliación es lo que después aparece
-en un requerimiento de la DIAN.
+Estados (`gestion.EstadoDocumento`): `PENDIENTE`, `RECIBIDO`, `NO_APLICA`,
+`NO_LO_TENGO`, `NO_ENTIENDO`.
 
-El título usa el **nombre del tercero**, no el concepto tributario: el
-contribuyente reconoce «Bancolombia», no reconoce «1110». Lo que se le pide sale
-del propio `detalle` que escribe la DIAN, no de una tabla de códigos propia: los
-códigos cambian de resolución en resolución.
+- Los tres primeros los marca el contador, o los deduce la aplicación:
+  **subir un archivo deja el documento en RECIBIDO**, porque subir el papel ES
+  recibirlo y pedirle además al cliente que marque un estado sería
+  preguntarle dos veces lo mismo.
+- Los dos últimos solo los marca el contribuyente. Son las dos respuestas que
+  antes llegaban por WhatsApp y se perdían.
+- `NO_ENTIENDO` **no cierra el documento**: es el contribuyente pidiendo
+  ayuda, y la pelota queda del lado del contador. `resuelto` lo refleja.
 
-Estados: `PENDIENTE`, `NO_APLICA`, `NO_LO_TENGO`, `NO_ENTIENDO`. **Cuatro, y
-«cargado» no es uno de ellos**: tener un archivo es un hecho aparte del estado.
-Se puede haber subido un papel y seguir sin entender de qué se trata, y esas dos
-cosas le dicen al contador cosas distintas. `NO_ENTIENDO` no resuelve el ítem:
-es el contribuyente pidiendo ayuda.
+El estado es obligatorio y el valor opcional: alguien puede saber que algo no
+le aplica sin saber la cifra.
 
-El estado es obligatorio y el valor opcional, en el servidor y en el formulario:
-alguien puede saber que algo no le aplica sin saber la cifra.
+Los conceptos de la exógena que ninguna regla reconoce **no se descartan**:
+entran con un soporte genérico y `reconocido = False`, y el contador los ve
+marcados. Lo que no aparece en la lista es lo que después aparece en un
+requerimiento de la DIAN.
 
-Volver a cargar el archivo es idempotente. Los requerimientos se reconcilian por
-la huella de la fila (tercero + concepto + detalle), que sí es estable entre
-versiones, y **se conservan el estado, el valor informado, la nota y los
-archivos**: son trabajo del contribuyente, no datos del archivo. Una fila que
-desaparece de la versión nueva no se borra: se marca para revisión, porque que
-un tercero retire un reporte es justo lo que el contador necesita ver.
+Recargar el archivo conserva todo: la lista se deriva del reporte cada vez que
+se consulta y la tabla solo guarda lo que alguien decidió o cargó, así que no
+hay nada que sincronizar y no puede quedar nada obsoleto.
 
 ## Los adicionales
 
-Lo que la exógena nunca contiene: dependientes, intereses de vivienda, medicina
-prepagada, AFC/AVP, activos, deudas y bienes del exterior.
+Lo que la exógena nunca contiene: dependientes, intereses de vivienda,
+medicina prepagada, AFC/AVP, activos, deudas y bienes del exterior.
 
 Los topes se validan contra `parametros.tablas_oficiales`, versionada por año
 gravable y con la norma citada al lado. **Ningún tope está escrito en el código
@@ -91,14 +116,19 @@ Los conceptos que comparten tope se validan por la suma del grupo: los aportes
 voluntarios a pensión y el ahorro en AFC no tienen 3.800 UVT cada uno, tienen
 3.800 UVT entre los dos.
 
-Cada adicional genera su propio requerimiento, para que no haya dos bandejas
-distintas de «lo que falta».
+Registrar un adicional **no crea una petición aparte**: `gestion` deriva de él
+el soporte que hay que pedir (el certificado de medicina prepagada, los
+soportes de los dependientes), así que la lista de documentos se actualiza
+sola y sigue siendo una sola. Un activo o un bien en el exterior no generan
+petición: valen lo que valen y entran a la conciliación, no hay un certificado
+estándar que pedir por ellos.
 
 ## Los archivos
 
-Van atados al requerimiento (`TipoEntidadAdjunto.REQUERIMIENTO`), no al periodo.
-Así el contador abre el ítem y ve el papel que lo respalda, en vez de una
-carpeta con treinta archivos y nadie que recuerde a qué correspondía cada uno.
+Van atados al documento (`TipoEntidadAdjunto.DOCUMENTO_SOLICITADO`), no al
+periodo. Así el contador abre el ítem y ve el papel que lo respalda, en vez de
+una carpeta con treinta archivos y nadie que recuerde a qué correspondía cada
+uno.
 
 ## Bitácora
 
@@ -113,6 +143,8 @@ registro que se exporta, se respalda y se consulta desde la aplicación.
   propio archivo. El vigente es el de corte más reciente, no el último
   importado: si alguien sube hoy una consulta de marzo, los datos siguen siendo
   los de septiembre.
+- `gestion`: le aporta los dos estados del cliente, los archivos, el valor
+  informado y la marca `reconocido`.
 - `conciliacion`: los adicionales aterrizan en la **misma tabla** de cuatro
   estados, y `DecisionRenglon` guarda el valor final de cada renglón con la
   fuente elegida. Solo el contador la fija; el portal no tiene ruta equivalente.

@@ -36,7 +36,6 @@ const routes = [
       { path: 'patrimonio', name: 'patrimonio', component: () => import('../views/PatrimonioView.vue') },
       { path: 'exogena', name: 'exogena', component: () => import('../views/ExogenaView.vue') },
       { path: 'conciliacion', name: 'conciliacion', component: () => import('../views/ConciliacionView.vue') },
-      { path: 'requerimientos', name: 'requerimientos', component: () => import('../views/RequerimientosView.vue') },
       { path: 'borrador', name: 'borrador', component: () => import('../views/BorradorView.vue') },
       { path: 'liquidacion', name: 'liquidacion', component: () => import('../views/LiquidacionView.vue') },
       { path: 'gestion', name: 'gestion', component: () => import('../views/GestionView.vue') },

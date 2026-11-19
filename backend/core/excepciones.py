@@ -196,10 +196,6 @@ class VersionPoliticaDesconocidaError(ErrorAplicacion):
     pass
 
 
-class RequerimientoNoEncontradoError(ErrorAplicacion):
-    pass
-
-
 class DatoAdicionalNoEncontradoError(ErrorAplicacion):
     pass
 

@@ -6,7 +6,6 @@ from sqlmodel import SQLModel
 
 from ..contribuyentes.modelos import EstadoPeriodo, TipoContribuyente
 from ..parametros.modelos import VencimientoDeclaracion
-from ..portal.modelos import ResumenRequerimientos
 
 
 class OrdenCartera(str, Enum):
@@ -46,7 +45,13 @@ class FilaCartera(SQLModel):
     enlace_vigente: bool = False
     enlace_ultimo_acceso: Optional[date] = None
     politica_aceptada: bool = False
-    requerimientos: ResumenRequerimientos = ResumenRequerimientos()
+    # Lo que el cliente contestó por su enlace. `documentos_pendientes` ya
+    # viene del proceso de gestión: estos tres lo complementan con las dos
+    # respuestas que solo puede dar el contribuyente y con los conceptos de la
+    # exógena que la aplicación no supo clasificar.
+    documentos_no_entiendo: int = 0
+    documentos_no_lo_tengo: int = 0
+    documentos_sin_reconocer: int = 0
 
 
 class PanelCartera(SQLModel):

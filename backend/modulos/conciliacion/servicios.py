@@ -83,7 +83,7 @@ _ADICIONALES_SIN_CRUCE = {
 # Los dependientes se quedan fuera de esta tabla: son un número de personas,
 # no un valor en pesos, y meter un conteo en una columna de dinero es una
 # cifra que después alguien suma. Se ven en la pestaña de Adicionales y en la
-# lista de requerimientos, que es donde significan algo.
+# lista de documentos que se le piden, que es donde significan algo.
 
 
 def _es_retencion(registro: RegistroExogena) -> bool:

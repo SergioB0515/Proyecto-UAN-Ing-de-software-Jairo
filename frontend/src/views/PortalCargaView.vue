@@ -7,11 +7,12 @@
  *
  * - No usa `cliente` de axios: usa `clientePortal`, sin el encabezado de
  *   sesión del contador ni la redirección al login (ver api/portal.js).
- * - Los cuatro estados son botones grandes, no un `select`: se contestan con
- *   el pulgar.
- * - El valor es opcional y el estado no, igual que en el servidor. El
- *   formulario no deja «guardar» sin estado, pero sí sin valor.
- * - Nada de esta pantalla muestra la liquidación: no hay de dónde sacarla.
+ * - Las respuestas son botones grandes, no un `select`: se contestan con el
+ *   pulgar.
+ * - Subir el archivo ES recibir el documento, así que no se pide marcar nada
+ *   después de cargarlo.
+ * - La lista de documentos es la MISMA que ve el contador. No hay dos
+ *   bandejas de «lo que falta».
  */
 import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
@@ -24,13 +25,12 @@ import {
   eliminarAdicionalPortal,
   mensajeDeError,
   parametrosAdicionalesPortal,
-  responderRequerimiento,
+  responderDocumento,
   subirSoporte,
 } from '../api/portal'
 import {
-  AYUDA_ESTADO_REQUERIMIENTO,
-  ETIQUETAS_ESTADO_REQUERIMIENTO,
   ETIQUETAS_TIPO_ADICIONAL,
+  RESPUESTAS_CONTRIBUYENTE,
   dinero,
   fecha,
 } from '../formato'
@@ -45,7 +45,7 @@ const error = ref('')
 const enlaceInvalido = ref('')
 const seccion = ref('documentos')
 
-const ESTADOS = Object.keys(ETIQUETAS_ESTADO_REQUERIMIENTO)
+const RESPUESTAS = Object.keys(RESPUESTAS_CONTRIBUYENTE)
 
 async function cargar() {
   error.value = ''
@@ -116,7 +116,8 @@ async function alElegirExogena(evento) {
       `Listo. Leímos ${resultado.cantidad_registros} ` +
       `renglón${resultado.cantidad_registros === 1 ? '' : 'es'} del archivo` +
       (resultado.fecha_corte ? `, con corte al ${fecha(resultado.fecha_corte)}` : '') +
-      '. Abajo está la lista de documentos que necesitamos.'
+      `. Te pedimos ${resultado.documentos_pedidos} documento` +
+      `${resultado.documentos_pedidos === 1 ? '' : 's'}.`
     await cargar()
     seccion.value = 'documentos'
   } catch (e) {
@@ -127,34 +128,29 @@ async function alElegirExogena(evento) {
   }
 }
 
-// --- Requerimientos -------------------------------------------------------
+// --- Documentos -----------------------------------------------------------
 
 const guardando = ref(null)
 const valores = ref({})
 const notas = ref({})
 
-const requerimientos = computed(() =>
-  (sesion.value?.requerimientos ?? []).filter((r) => r.requiere_soporte),
-)
-const informativos = computed(() =>
-  (sesion.value?.requerimientos ?? []).filter((r) => !r.requiere_soporte),
-)
-const pendientes = computed(() => requerimientos.value.filter((r) => !r.resuelto))
-const listos = computed(() => requerimientos.value.filter((r) => r.resuelto))
+const documentos = computed(() => sesion.value?.documentos ?? [])
+const pendientes = computed(() => documentos.value.filter((d) => !d.resuelto))
+const listos = computed(() => documentos.value.filter((d) => d.resuelto))
 
 function numero(texto) {
   const limpio = String(texto ?? '').replace(/[^\d]/g, '')
   return limpio === '' ? null : Number(limpio)
 }
 
-async function marcar(requerimiento, estado) {
+async function responder(documento, estado) {
   error.value = ''
-  guardando.value = requerimiento.id
+  guardando.value = documento.clave
   try {
-    await responderRequerimiento(token, requerimiento.id, {
+    await responderDocumento(token, documento.clave, {
       estado,
-      valor_informado: numero(valores.value[requerimiento.id] ?? requerimiento.valor_informado),
-      nota_contribuyente: notas.value[requerimiento.id] ?? requerimiento.nota_contribuyente,
+      valor_informado: numero(valores.value[documento.clave] ?? documento.valor_informado),
+      nota: notas.value[documento.clave] ?? documento.nota,
     })
     await cargar()
   } catch (e) {
@@ -164,13 +160,13 @@ async function marcar(requerimiento, estado) {
   }
 }
 
-async function alElegirSoporte(requerimiento, evento) {
+async function alElegirSoporte(documento, evento) {
   const archivo = evento.target.files?.[0]
   if (!archivo) return
   error.value = ''
-  guardando.value = requerimiento.id
+  guardando.value = documento.clave
   try {
-    await subirSoporte(token, requerimiento.id, archivo)
+    await subirSoporte(token, documento.clave, archivo)
     await cargar()
   } catch (e) {
     error.value = mensajeDeError(e)
@@ -348,7 +344,7 @@ onMounted(cargar)
 
         <!-- Documentos pedidos -->
         <section v-else-if="seccion === 'documentos'" class="space-y-4">
-          <div v-if="!requerimientos.length" class="hoja p-6 text-center text-sm text-tinta-suave">
+          <div v-if="!documentos.length" class="hoja p-6 text-center text-sm text-tinta-suave">
             <p class="font-medium text-tinta">Todavía no hay documentos que pedirte</p>
             <p class="mt-1">
               Carga primero el Excel de la DIAN en la pestaña «Tu archivo DIAN» y la lista aparece
@@ -358,106 +354,93 @@ onMounted(cargar)
 
           <template v-else>
             <p class="text-sm text-tinta-suave">
-              {{ listos.length }} de {{ requerimientos.length }} resueltos.
+              {{ listos.length }} de {{ documentos.length }} resueltos.
               <span v-if="pendientes.length">Faltan {{ pendientes.length }}.</span>
             </p>
 
             <article
-              v-for="r in [...pendientes, ...listos]"
-              :key="r.id"
+              v-for="d in [...pendientes, ...listos]"
+              :key="d.clave"
               class="hoja space-y-3 p-4"
-              :class="r.resuelto ? 'opacity-70' : ''"
+              :class="d.resuelto ? 'opacity-70' : ''"
             >
-              <div class="flex items-start justify-between gap-3">
-                <h3 class="leading-snug">{{ r.titulo }}</h3>
-                <span v-if="r.valor_exogena !== null" class="cifra text-sm text-tinta-suave">
-                  {{ dinero(r.valor_exogena) }}
-                </span>
+              <div>
+                <h3 class="leading-snug">{{ d.descripcion }}</h3>
+                <p v-if="d.tercero" class="text-sm text-tinta-suave">{{ d.tercero }}</p>
               </div>
-              <p class="text-sm text-tinta-suave">{{ r.explicacion }}</p>
+              <p v-if="d.motivo" class="text-sm text-tinta-suave">{{ d.motivo }}</p>
 
-              <div v-if="r.archivos.length" class="rounded bg-libro-claro px-3 py-2 text-sm">
+              <p
+                v-if="d.estado === 'RECIBIDO'"
+                class="rounded bg-libro-claro px-3 py-2 text-sm font-medium"
+              >
+                Ya lo recibimos. Gracias.
+              </p>
+
+              <div v-if="d.archivos.length" class="rounded bg-papel-hondo/60 px-3 py-2 text-sm">
                 <p class="font-medium">Ya cargaste:</p>
                 <ul class="mt-1 space-y-0.5 text-tinta-suave">
-                  <li v-for="a in r.archivos" :key="a.id">{{ a.nombre_original }}</li>
+                  <li v-for="a in d.archivos" :key="a.id">{{ a.nombre_original }}</li>
                 </ul>
               </div>
 
               <div class="grid gap-3 sm:grid-cols-2">
                 <div>
-                  <label class="etiqueta" :for="`valor-${r.id}`">Valor (opcional)</label>
+                  <label class="etiqueta" :for="`valor-${d.clave}`">Valor (opcional)</label>
                   <input
-                    :id="`valor-${r.id}`"
-                    :value="valores[r.id] ?? r.valor_informado ?? ''"
+                    :id="`valor-${d.clave}`"
+                    :value="valores[d.clave] ?? d.valor_informado ?? ''"
                     class="campo"
                     inputmode="numeric"
                     placeholder="Si lo sabes"
-                    @input="valores[r.id] = $event.target.value"
+                    @input="valores[d.clave] = $event.target.value"
                   />
                 </div>
                 <div>
-                  <label class="etiqueta" :for="`nota-${r.id}`">Nota para tu contador</label>
+                  <label class="etiqueta" :for="`nota-${d.clave}`">Nota para tu contador</label>
                   <input
-                    :id="`nota-${r.id}`"
-                    :value="notas[r.id] ?? r.nota_contribuyente ?? ''"
+                    :id="`nota-${d.clave}`"
+                    :value="notas[d.clave] ?? d.nota ?? ''"
                     class="campo"
                     maxlength="500"
-                    @input="notas[r.id] = $event.target.value"
+                    @input="notas[d.clave] = $event.target.value"
                   />
                 </div>
               </div>
 
-              <label class="boton-secundario w-full cursor-pointer py-3">
+              <label class="boton w-full cursor-pointer py-3">
                 <input
                   type="file"
                   accept="image/*,.pdf,.png,.jpg,.jpeg"
                   class="sr-only"
-                  :disabled="guardando === r.id"
-                  @change="alElegirSoporte(r, $event)"
+                  :disabled="guardando === d.clave"
+                  @change="alElegirSoporte(d, $event)"
                 />
                 Tomar foto o elegir archivo
               </label>
 
               <fieldset>
-                <legend class="etiqueta">¿Cómo va este documento?</legend>
+                <legend class="etiqueta">O dinos qué pasa con este documento</legend>
                 <div class="grid grid-cols-2 gap-2">
                   <button
-                    v-for="estado in ESTADOS"
+                    v-for="estado in RESPUESTAS"
                     :key="estado"
                     type="button"
                     class="rounded border px-3 py-3 text-left text-sm transition-colors"
                     :class="
-                      r.estado === estado
+                      d.estado === estado
                         ? 'border-libro bg-libro-claro font-semibold'
                         : 'border-papel-linea bg-white'
                     "
-                    :aria-pressed="r.estado === estado"
-                    :disabled="guardando === r.id"
-                    @click="marcar(r, estado)"
+                    :aria-pressed="d.estado === estado"
+                    :disabled="guardando === d.clave"
+                    @click="responder(d, estado)"
                   >
-                    {{ ETIQUETAS_ESTADO_REQUERIMIENTO[estado] }}
-                    <span class="block text-xs font-normal text-tinta-suave">
-                      {{ AYUDA_ESTADO_REQUERIMIENTO[estado] }}
-                    </span>
+                    {{ RESPUESTAS_CONTRIBUYENTE[estado] }}
                   </button>
                 </div>
               </fieldset>
             </article>
-
-            <details v-if="informativos.length" class="hoja p-4">
-              <summary class="cursor-pointer text-sm font-medium">
-                {{ informativos.length }} renglón{{ informativos.length === 1 ? '' : 'es' }} que no
-                necesitan documento
-              </summary>
-              <ul class="mt-3 space-y-2 text-sm text-tinta-suave">
-                <li v-for="r in informativos" :key="r.id">
-                  <span class="text-tinta">{{ r.titulo }}</span>
-                  <span v-if="r.valor_exogena !== null" class="cifra">
-                    — {{ dinero(r.valor_exogena) }}</span
-                  >
-                </li>
-              </ul>
-            </details>
           </template>
         </section>
 
@@ -468,7 +451,8 @@ onMounted(cargar)
             <p class="text-sm text-tinta-suave">
               Hay cosas que nadie le reporta a la DIAN y que solo tú sabes: tus dependientes, lo
               que pagaste de medicina prepagada, tus deudas, lo que tengas en el exterior. Si no
-              se registran aquí, no entran a tu declaración.
+              se registran aquí, no entran a tu declaración. Al registrarlas te pedimos el
+              soporte en la pestaña de documentos.
             </p>
 
             <p

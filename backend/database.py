@@ -53,7 +53,6 @@ def registrar_modelos() -> None:
         AutorizacionTratamiento,
         DatoAdicional,
         EnlaceCarga,
-        RequerimientoDocumento,
     )
     from modulos.reportes.modelos import CierrePeriodo
 
@@ -185,6 +184,16 @@ def crear_tablas() -> None:
         engine,
         "reportes_exogena",
         {"fecha_corte": "DATE", "version": "INTEGER NOT NULL DEFAULT 1"},
+    )
+    # El documento solicitado pasó a ser también la cara que ve el cliente:
+    # guarda lo que él informó y quién puso el estado.
+    _agregar_columnas_si_faltan(
+        engine,
+        "documentos_solicitados",
+        {
+            "valor_informado": "NUMERIC(18,2)",
+            "respondido_por_contribuyente": "BOOLEAN NOT NULL DEFAULT FALSE",
+        },
     )
 
 

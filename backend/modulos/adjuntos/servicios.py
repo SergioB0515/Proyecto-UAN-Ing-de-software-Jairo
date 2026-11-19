@@ -38,7 +38,7 @@ from ..contribuyentes.servicios import (
 )
 from ..inventario.modelos import Producto
 from ..movimientos.modelos import DocumentoSoporte, Movimiento, Proveedor, TipoMovimiento
-from ..portal.modelos import RequerimientoDocumento
+from ..gestion.modelos import DocumentoSolicitado
 from .modelos import (
     Adjunto,
     AdjuntoActualizar,
@@ -82,7 +82,7 @@ CARPETAS_ZIP = {
     TipoEntidadAdjunto.DOCUMENTO_SOPORTE: "Documentos soporte",
     TipoEntidadAdjunto.MOVIMIENTO: "Movimientos",
     TipoEntidadAdjunto.PROVEEDOR: "Proveedores",
-    TipoEntidadAdjunto.REQUERIMIENTO: "Soportes pedidos al contribuyente",
+    TipoEntidadAdjunto.DOCUMENTO_SOLICITADO: "Documentos pedidos al cliente",
 }
 
 
@@ -210,17 +210,22 @@ def _resolver_entidad(
         producto = session.get(Producto, movimiento.producto_id)
         return EntidadResuelta(movimiento.periodo_fiscal_id, _etiqueta_movimiento(movimiento, producto))
 
-    if tipo == TipoEntidadAdjunto.REQUERIMIENTO:
-        requerimiento = session.get(RequerimientoDocumento, entidad_id)
-        if requerimiento is None or requerimiento.contribuyente_id != contribuyente_id:
-            raise no_existe("el requerimiento de documento")
-        periodo = session.get(PeriodoFiscal, requerimiento.periodo_fiscal_id)
-        if periodo is not None and periodo.estado == EstadoPeriodo.CERRADO:
+    if tipo == TipoEntidadAdjunto.DOCUMENTO_SOLICITADO:
+        documento = session.get(DocumentoSolicitado, entidad_id)
+        periodo = (
+            session.get(PeriodoFiscal, documento.periodo_fiscal_id)
+            if documento is not None
+            else None
+        )
+        # El documento no guarda el contribuyente: se verifica por su periodo.
+        if periodo is None or periodo.contribuyente_id != contribuyente_id:
+            raise no_existe("el documento solicitado")
+        if periodo.estado == EstadoPeriodo.CERRADO:
             raise PeriodoFiscalCerradoError(
                 f"El periodo fiscal {periodo.anio_gravable} está cerrado: no "
                 "admite soportes nuevos"
             )
-        return EntidadResuelta(requerimiento.periodo_fiscal_id, requerimiento.titulo)
+        return EntidadResuelta(documento.periodo_fiscal_id, documento.descripcion)
 
     proveedor = session.get(Proveedor, entidad_id)
     if proveedor is None or proveedor.contribuyente_id != contribuyente_id:
@@ -265,7 +270,24 @@ def _etiquetas(
     anotar(TipoEntidadAdjunto.FUENTE_INGRESO, FuenteIngreso, lambda f: f.concepto)
     anotar(TipoEntidadAdjunto.DOCUMENTO_SOPORTE, DocumentoSoporte, _etiqueta_documento)
     anotar(TipoEntidadAdjunto.PROVEEDOR, Proveedor, lambda p: p.nombre)
-    anotar(TipoEntidadAdjunto.REQUERIMIENTO, RequerimientoDocumento, lambda r: r.titulo)
+    # El documento solicitado no guarda el contribuyente, así que `anotar` no
+    # sirve: la pertenencia se verifica por su periodo fiscal.
+    if TipoEntidadAdjunto.DOCUMENTO_SOLICITADO in ids:
+        documentos = session.exec(
+            select(DocumentoSolicitado)
+            .join(
+                PeriodoFiscal,
+                PeriodoFiscal.id == DocumentoSolicitado.periodo_fiscal_id,
+            )
+            .where(
+                DocumentoSolicitado.id.in_(ids[TipoEntidadAdjunto.DOCUMENTO_SOLICITADO]),
+                PeriodoFiscal.contribuyente_id == contribuyente_id,
+            )
+        ).all()
+        for documento in documentos:
+            etiquetas[(TipoEntidadAdjunto.DOCUMENTO_SOLICITADO, documento.id)] = (
+                documento.descripcion
+            )
 
     if TipoEntidadAdjunto.MOVIMIENTO in ids:
         movimientos = session.exec(

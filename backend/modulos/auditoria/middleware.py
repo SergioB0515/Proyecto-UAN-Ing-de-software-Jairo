@@ -70,8 +70,6 @@ ACCIONES_AUDITADAS = {
     # Portal de carga: acciones del contador.
     "generar_enlace_carga": "Generó un enlace de carga para el contribuyente",
     "revocar_enlace_carga": "Revocó un enlace de carga",
-    "sincronizar_requerimientos": "Regeneró los requerimientos desde la exógena",
-    "marcar_requerimiento_revisado": "Revisó un requerimiento de documento",
     "crear_dato_adicional": "Registró un dato que la exógena no reporta",
     "eliminar_dato_adicional": "Eliminó un dato adicional",
     "fijar_decision_renglon": "Fijó el valor final de un renglón",
@@ -92,7 +90,7 @@ ACCIONES_AUDITADAS = {
 ACCIONES_PORTAL = {
     "aceptar_politica": "El contribuyente aceptó la política de tratamiento de datos",
     "cargar_exogena": "El contribuyente cargó el archivo de exógena",
-    "responder_requerimiento": "El contribuyente respondió un requerimiento",
+    "responder_documento": "El contribuyente respondió un documento pedido",
     "subir_soporte": "El contribuyente cargó un soporte",
     "agregar_adicional": "El contribuyente registró un dato que la exógena no trae",
     "eliminar_adicional": "El contribuyente eliminó un dato adicional",

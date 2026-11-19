@@ -1,20 +1,19 @@
 """Servicios del portal de carga.
 
-Lo que este módulo garantiza por construcción
----------------------------------------------
-El enlace **solo escribe**. Aquí no se importa nada de `liquidacion`, de
-`conciliacion` ni de `cartera`, así que no existe camino desde un token hasta
-la liquidación del contribuyente: no es una comprobación que haya que
-recordar hacer en cada endpoint, es que el código que la expondría no está
-disponible en este archivo. Si alguien agrega ese import, la intención del
-módulo queda a la vista en el diff.
+El enlace **solo escribe**: ni la liquidación ni la conciliación ni la cartera
+salen por él. Antes eso se sostenía por los imports de este archivo, pero la
+lista de documentos ahora viene de `gestion`, que sí lee la liquidación para
+saber qué pedir. Así que la garantía dejó de ser «qué está importado» y pasó a
+ser «qué puede devolver»: `test_portal` recorre el esquema de todas las
+respuestas de `/carga/...` y falla si alguna arrastra un campo de liquidación.
+Es una garantía más fuerte, porque sobrevive a que alguien agregue un import.
 """
 
 import hashlib
 import secrets
-from datetime import date, datetime, timedelta, timezone
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
-from typing import BinaryIO, Dict, List, Optional, Tuple
+from typing import BinaryIO, Dict, List, Optional
 
 from sqlmodel import Session, select
 
@@ -26,23 +25,21 @@ from core.excepciones import (
     EnlaceCargaRevocadoError,
     PeriodoFiscalCerradoError,
     PoliticaNoAceptadaError,
-    RequerimientoNoEncontradoError,
     TopeAdicionalExcedidoError,
     VersionPoliticaDesconocidaError,
 )
 
-from ..adjuntos.modelos import Adjunto, CategoriaAdjunto, TipoEntidadAdjunto
-from ..adjuntos.servicios import adjuntar_archivo
 from ..contadores.modelos import Contador
 from ..contribuyentes.modelos import Contribuyente, EstadoPeriodo, PeriodoFiscal
 from ..contribuyentes.servicios import obtener_contribuyente, obtener_periodo_fiscal
-from ..exogena.modelos import RegistroExogena, ReporteExogena
+from ..exogena.modelos import ReporteExogena
 from ..exogena.servicios import importar_reporte_exogena
+from ..gestion import servicios as gestion
+from ..gestion.modelos import DocumentoActualizar, DocumentoLeer
 from ..parametros.tablas_oficiales import ANIOS_SOPORTADOS, PARAMETROS_POR_ANIO
-from . import lenguaje_comun, politica
+from . import politica
 from .modelos import (
     AceptarPolitica,
-    ArchivoRequerimiento,
     AutorizacionLeer,
     AutorizacionTratamiento,
     DatoAdicional,
@@ -52,15 +49,9 @@ from .modelos import (
     EnlaceCargaCreado,
     EnlaceCargaCrear,
     EnlaceCargaLeer,
-    EstadoRequerimiento,
-    OrigenRequerimiento,
     ParametroAdicional,
     ParametrosAdicionales,
     PoliticaLeer,
-    RequerimientoActualizar,
-    RequerimientoDocumento,
-    RequerimientoLeer,
-    ResumenRequerimientos,
     ResultadoCargaExogena,
     SesionPortal,
     TipoAdicional,
@@ -260,6 +251,10 @@ def resolver_enlace(session: Session, token: str, registrar_acceso: bool = True)
     return enlace
 
 
+def periodo_del_enlace(session: Session, enlace: EnlaceCarga) -> PeriodoFiscal:
+    return session.get(PeriodoFiscal, enlace.periodo_fiscal_id)
+
+
 def _autorizacion_vigente(
     session: Session, enlace: EnlaceCarga
 ) -> Optional[AutorizacionTratamiento]:
@@ -343,21 +338,21 @@ def _enmascarar(documento: str) -> str:
     return "•" * (len(digitos) - 4) + digitos[-4:]
 
 
-def sesion_portal(session: Session, enlace: EnlaceCarga) -> SesionPortal:
-    contribuyente = session.get(Contribuyente, enlace.contribuyente_id)
-    periodo = session.get(PeriodoFiscal, enlace.periodo_fiscal_id)
-    contador = session.get(Contador, enlace.contador_id)
-    autorizacion = _autorizacion_vigente(session, enlace)
-
-    reporte = session.exec(
+def _reporte_vigente(session: Session, periodo_fiscal_id: int) -> Optional[ReporteExogena]:
+    return session.exec(
         select(ReporteExogena)
-        .where(ReporteExogena.periodo_fiscal_id == enlace.periodo_fiscal_id)
+        .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
         .order_by(ReporteExogena.version.desc(), ReporteExogena.id.desc())
     ).first()
 
-    requerimientos = listar_requerimientos(
-        session, enlace.contribuyente_id, enlace.periodo_fiscal_id
-    )
+
+def sesion_portal(session: Session, enlace: EnlaceCarga) -> SesionPortal:
+    contribuyente = session.get(Contribuyente, enlace.contribuyente_id)
+    periodo = periodo_del_enlace(session, enlace)
+    contador = session.get(Contador, enlace.contador_id)
+    autorizacion = _autorizacion_vigente(session, enlace)
+    reporte = _reporte_vigente(session, enlace.periodo_fiscal_id)
+
     return SesionPortal(
         contribuyente_nombre=contribuyente.nombre if contribuyente else "",
         documento_enmascarado=_enmascarar(contribuyente.rut if contribuyente else ""),
@@ -378,11 +373,53 @@ def sesion_portal(session: Session, enlace: EnlaceCarga) -> SesionPortal:
         exogena_cargada=reporte is not None,
         fecha_corte_exogena=reporte.fecha_corte if reporte else None,
         version_exogena=reporte.version if reporte else None,
-        requerimientos=requerimientos,
+        documentos=documentos_del_enlace(session, enlace),
         adicionales=listar_adicionales(
             session, enlace.contribuyente_id, enlace.periodo_fiscal_id
         ),
-        resumen=resumir(requerimientos),
+    )
+
+
+# ---------------------------------------------------------------------------
+# Documentos: la lista es la de `gestion`, vista desde el lado del cliente
+# ---------------------------------------------------------------------------
+
+
+def documentos_del_enlace(session: Session, enlace: EnlaceCarga) -> List[DocumentoLeer]:
+    return gestion.documentos_del_periodo(
+        session, enlace.contribuyente_id, periodo_del_enlace(session, enlace)
+    )
+
+
+def responder_documento_por_enlace(
+    session: Session, enlace: EnlaceCarga, clave: str, cambios: DocumentoActualizar
+) -> DocumentoLeer:
+    exigir_politica_aceptada(session, enlace)
+    return gestion.responder_documento(
+        session, enlace.contribuyente_id, periodo_del_enlace(session, enlace),
+        clave, cambios,
+    )
+
+
+def adjuntar_por_enlace(
+    session: Session,
+    enlace: EnlaceCarga,
+    clave: str,
+    flujo: BinaryIO,
+    nombre: Optional[str],
+    descripcion: Optional[str] = None,
+):
+    """Sube un soporte y lo deja atado a su documento.
+
+    El archivo nunca queda suelto en «documentos generales»: la entidad del
+    adjunto es el documento solicitado, así que el contador abre el ítem y ve
+    el papel que lo respalda sin tener que adivinar a qué correspondía.
+    """
+    exigir_politica_aceptada(session, enlace)
+    return gestion.adjuntar_a_documento(
+        session, enlace.contador_id, enlace.contribuyente_id,
+        periodo_del_enlace(session, enlace), clave, flujo, nombre, descripcion,
+        por_contribuyente=True,
     )
 
 
@@ -407,339 +444,22 @@ def cargar_exogena_por_enlace(
         nombre_archivo,
     )
     reporte = session.get(ReporteExogena, importado.id)
-    creados, actualizados, sin_reconocer = sincronizar_requerimientos(
-        session, reporte
-    )
+
+    # No hay nada que sincronizar: la lista de documentos se deriva del
+    # reporte cada vez que se consulta, así que cargar un archivo nuevo la
+    # actualiza sola y no puede dejar filas obsoletas. Esto solo cuenta lo que
+    # quedó pedido, para decírselo al contribuyente.
+    documentos = documentos_del_enlace(session, enlace)
+    conteo = gestion.contar_documentos(documentos)
     return ResultadoCargaExogena(
         reporte_exogena_id=reporte.id,
         version=reporte.version,
         fecha_corte=reporte.fecha_corte,
         cantidad_registros=importado.cantidad_registros,
-        requerimientos_creados=creados,
-        requerimientos_actualizados=actualizados,
-        sin_reconocer=sin_reconocer,
         errores_en_filas=len(importado.errores),
+        documentos_pedidos=len(documentos),
+        sin_reconocer=conteo["sin_reconocer"],
     )
-
-
-# ---------------------------------------------------------------------------
-# Requerimientos
-# ---------------------------------------------------------------------------
-
-
-def sincronizar_requerimientos(
-    session: Session, reporte: ReporteExogena
-) -> Tuple[int, int, int]:
-    """Traduce cada fila del reporte a un requerimiento, sin perder progreso.
-
-    Cada fila del archivo produce un requerimiento. Ninguna se descarta: las
-    que la aplicación no sabe clasificar entran con `concepto_reconocido` en
-    falso para que el contador las resuelva.
-
-    Si el requerimiento de esa fila ya existía (porque el contribuyente volvió
-    a cargar el archivo con una fecha de corte más nueva), se actualiza el
-    texto y el valor pero **se conservan el estado, el valor informado, la
-    nota y los archivos**: son trabajo del contribuyente, no datos del
-    archivo.
-    """
-    registros = session.exec(
-        select(RegistroExogena)
-        .where(RegistroExogena.reporte_exogena_id == reporte.id)
-        .order_by(RegistroExogena.id)
-    ).all()
-
-    existentes: Dict[int, RequerimientoDocumento] = {
-        r.referencia: r
-        for r in session.exec(
-            select(RequerimientoDocumento).where(
-                RequerimientoDocumento.periodo_fiscal_id == reporte.periodo_fiscal_id,
-                RequerimientoDocumento.origen == OrigenRequerimiento.EXOGENA,
-            )
-        ).all()
-    }
-
-    # Los requerimientos de una versión anterior del archivo se identifican
-    # por el registro que los originó, y los registros son nuevos en cada
-    # importación. Para no duplicarlos se reconcilia por la huella de la fila
-    # (tercero + concepto + detalle), que sí es estable entre versiones.
-    por_huella: Dict[str, RequerimientoDocumento] = {}
-    for requerimiento in existentes.values():
-        por_huella.setdefault(_huella(requerimiento), requerimiento)
-
-    creados = actualizados = sin_reconocer = 0
-
-    for registro in registros:
-        peticion = lenguaje_comun.traducir(
-            registro.detalle,
-            registro.nombre_reportante,
-            es_auto_reportado=registro.es_auto_reportado,
-            es_dian=registro.es_dian,
-        )
-        if not peticion.concepto_reconocido:
-            sin_reconocer += 1
-
-        huella = _huella_de_registro(registro)
-        requerimiento = por_huella.pop(huella, None)
-
-        if requerimiento is None:
-            requerimiento = RequerimientoDocumento(
-                contribuyente_id=reporte.contribuyente_id,
-                periodo_fiscal_id=reporte.periodo_fiscal_id,
-                origen=OrigenRequerimiento.EXOGENA,
-                referencia=registro.id,
-            )
-            creados += 1
-        else:
-            requerimiento.referencia = registro.id
-            actualizados += 1
-
-        requerimiento.reporte_exogena_id = reporte.id
-        requerimiento.titulo = peticion.titulo[:300]
-        requerimiento.explicacion = peticion.explicacion[:1000]
-        requerimiento.nit_reportante = registro.nit_reportante
-        requerimiento.nombre_reportante = registro.nombre_reportante
-        requerimiento.concepto_code = registro.concepto_code
-        requerimiento.detalle_original = (registro.detalle or "")[:500]
-        requerimiento.valor_exogena = registro.valor
-        requerimiento.categoria_sugerida = peticion.categoria_sugerida
-        requerimiento.concepto_reconocido = peticion.concepto_reconocido
-        requerimiento.motivo_revision = peticion.motivo_revision
-        requerimiento.requiere_soporte = peticion.requiere_soporte
-        requerimiento.actualizado_en = _ahora()
-        session.add(requerimiento)
-
-    # Lo que quedó sin pareja venía de una versión anterior del archivo y ya
-    # no figura en la exógena. No se borra: puede tener archivos cargados y
-    # que un tercero retire un reporte es justo lo que el contador necesita
-    # ver. Se marca apuntando al reporte nuevo con un aviso.
-    for huerfano in por_huella.values():
-        huerfano.concepto_reconocido = False
-        huerfano.motivo_revision = (
-            "Esta fila ya no aparece en la versión más reciente de la exógena. "
-            "El tercero pudo corregir o retirar el reporte: revísela antes de "
-            "usarla."
-        )
-        huerfano.actualizado_en = _ahora()
-        session.add(huerfano)
-
-    session.commit()
-    return creados, actualizados, sin_reconocer
-
-
-def _huella(requerimiento: RequerimientoDocumento) -> str:
-    return "|".join(
-        [
-            requerimiento.nit_reportante or "",
-            requerimiento.concepto_code or "",
-            (requerimiento.detalle_original or "").strip().lower(),
-        ]
-    )
-
-
-def _huella_de_registro(registro: RegistroExogena) -> str:
-    return "|".join(
-        [
-            registro.nit_reportante or "",
-            registro.concepto_code or "",
-            (registro.detalle or "").strip().lower(),
-        ]
-    )
-
-
-def _archivos_por_requerimiento(
-    session: Session, ids: List[int]
-) -> Dict[int, List[ArchivoRequerimiento]]:
-    if not ids:
-        return {}
-    adjuntos = session.exec(
-        select(Adjunto)
-        .where(
-            Adjunto.entidad_tipo == TipoEntidadAdjunto.REQUERIMIENTO,
-            Adjunto.entidad_id.in_(ids),
-        )
-        .order_by(Adjunto.id)
-    ).all()
-    salida: Dict[int, List[ArchivoRequerimiento]] = {}
-    for adjunto in adjuntos:
-        salida.setdefault(adjunto.entidad_id, []).append(
-            ArchivoRequerimiento(
-                id=adjunto.id,
-                nombre_original=adjunto.nombre_original,
-                tamano_bytes=adjunto.tamano_bytes,
-                creado_en=adjunto.creado_en,
-            )
-        )
-    return salida
-
-
-def _resuelto(requerimiento: RequerimientoDocumento, tiene_archivos: bool) -> bool:
-    """Cuándo un requerimiento deja de estar en la lista de lo que falta.
-
-    `NO_ENTIENDO` NO resuelve: es exactamente lo contrario, es el
-    contribuyente pidiendo ayuda. Queda pendiente, pero del lado del contador.
-    """
-    if not requerimiento.requiere_soporte:
-        return True
-    if requerimiento.estado in (
-        EstadoRequerimiento.NO_APLICA,
-        EstadoRequerimiento.NO_LO_TENGO,
-    ):
-        return True
-    return tiene_archivos
-
-
-def _a_lectura_requerimiento(
-    requerimiento: RequerimientoDocumento, archivos: List[ArchivoRequerimiento]
-) -> RequerimientoLeer:
-    return RequerimientoLeer(
-        **requerimiento.model_dump(
-            exclude={"referencia", "reporte_exogena_id"}
-        ),
-        archivos=archivos,
-        resuelto=_resuelto(requerimiento, bool(archivos)),
-    )
-
-
-def listar_requerimientos(
-    session: Session, contribuyente_id: int, periodo_fiscal_id: int
-) -> List[RequerimientoLeer]:
-    requerimientos = session.exec(
-        select(RequerimientoDocumento)
-        .where(
-            RequerimientoDocumento.contribuyente_id == contribuyente_id,
-            RequerimientoDocumento.periodo_fiscal_id == periodo_fiscal_id,
-        )
-        .order_by(
-            RequerimientoDocumento.requiere_soporte.desc(),
-            RequerimientoDocumento.id,
-        )
-    ).all()
-    archivos = _archivos_por_requerimiento(session, [r.id for r in requerimientos])
-    return [
-        _a_lectura_requerimiento(r, archivos.get(r.id, [])) for r in requerimientos
-    ]
-
-
-def obtener_requerimiento(
-    session: Session, contribuyente_id: int, periodo_fiscal_id: int, requerimiento_id: int
-) -> RequerimientoDocumento:
-    requerimiento = session.get(RequerimientoDocumento, requerimiento_id)
-    if (
-        requerimiento is None
-        or requerimiento.contribuyente_id != contribuyente_id
-        or requerimiento.periodo_fiscal_id != periodo_fiscal_id
-    ):
-        raise RequerimientoNoEncontradoError(
-            f"No existe el requerimiento {requerimiento_id} en este periodo"
-        )
-    return requerimiento
-
-
-def actualizar_requerimiento(
-    session: Session,
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    requerimiento_id: int,
-    cambios: RequerimientoActualizar,
-) -> RequerimientoLeer:
-    requerimiento = obtener_requerimiento(
-        session, contribuyente_id, periodo_fiscal_id, requerimiento_id
-    )
-    requerimiento.estado = cambios.estado
-    requerimiento.valor_informado = cambios.valor_informado
-    requerimiento.nota_contribuyente = (cambios.nota_contribuyente or "").strip() or None
-    requerimiento.actualizado_en = _ahora()
-    # Si el contribuyente volvió a tocar el ítem, lo que el contador había
-    # revisado ya no corresponde a este estado.
-    requerimiento.revisado_por_contador = False
-    session.add(requerimiento)
-    session.commit()
-    session.refresh(requerimiento)
-    archivos = _archivos_por_requerimiento(session, [requerimiento.id])
-    return _a_lectura_requerimiento(requerimiento, archivos.get(requerimiento.id, []))
-
-
-def marcar_revisado(
-    session: Session,
-    contador_id: int,
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    requerimiento_id: int,
-    revisado: bool = True,
-) -> RequerimientoLeer:
-    obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
-    requerimiento = obtener_requerimiento(
-        session, contribuyente_id, periodo_fiscal_id, requerimiento_id
-    )
-    requerimiento.revisado_por_contador = revisado
-    session.add(requerimiento)
-    session.commit()
-    session.refresh(requerimiento)
-    archivos = _archivos_por_requerimiento(session, [requerimiento.id])
-    return _a_lectura_requerimiento(requerimiento, archivos.get(requerimiento.id, []))
-
-
-def adjuntar_a_requerimiento(
-    session: Session,
-    enlace: EnlaceCarga,
-    requerimiento_id: int,
-    flujo: BinaryIO,
-    nombre: Optional[str],
-    descripcion: Optional[str] = None,
-):
-    """Sube un soporte y lo deja atado a su requerimiento.
-
-    El archivo nunca queda suelto en «documentos generales»: el tipo de
-    entidad es el requerimiento, así que el contador abre el ítem y ve el
-    papel que lo respalda sin tener que adivinar a qué correspondía.
-    """
-    exigir_politica_aceptada(session, enlace)
-    requerimiento = obtener_requerimiento(
-        session, enlace.contribuyente_id, enlace.periodo_fiscal_id, requerimiento_id
-    )
-    categoria = CategoriaAdjunto.OTRO
-    try:
-        categoria = CategoriaAdjunto(requerimiento.categoria_sugerida)
-    except ValueError:
-        pass
-    return adjuntar_archivo(
-        session,
-        enlace.contador_id,
-        enlace.contribuyente_id,
-        TipoEntidadAdjunto.REQUERIMIENTO,
-        requerimiento.id,
-        flujo,
-        nombre,
-        categoria,
-        descripcion,
-    )
-
-
-def resumir(requerimientos: List[RequerimientoLeer]) -> ResumenRequerimientos:
-    resumen = ResumenRequerimientos()
-    for requerimiento in requerimientos:
-        if not requerimiento.concepto_reconocido and not requerimiento.revisado_por_contador:
-            resumen.sin_reconocer += 1
-        if not requerimiento.requiere_soporte:
-            continue
-        resumen.total += 1
-        if requerimiento.archivos:
-            resumen.con_soporte += 1
-        if requerimiento.estado == EstadoRequerimiento.NO_APLICA:
-            resumen.no_aplica += 1
-        elif requerimiento.estado == EstadoRequerimiento.NO_LO_TENGO:
-            resumen.no_lo_tengo += 1
-        elif requerimiento.estado == EstadoRequerimiento.NO_ENTIENDO:
-            resumen.no_entiendo += 1
-        elif not requerimiento.archivos:
-            resumen.pendientes += 1
-    return resumen
-
-
-def resumen_del_periodo(
-    session: Session, contribuyente_id: int, periodo_fiscal_id: int
-) -> ResumenRequerimientos:
-    return resumir(listar_requerimientos(session, contribuyente_id, periodo_fiscal_id))
 
 
 # ---------------------------------------------------------------------------
@@ -756,7 +476,7 @@ _CODIGO_TOPE: Dict[TipoAdicional, str] = {
     TipoAdicional.APORTES_VOLUNTARIOS_PENSION: "APORTES_VOLUNTARIOS_PENSION",
 }
 
-_ETIQUETAS: Dict[TipoAdicional, str] = {
+ETIQUETAS_ADICIONAL: Dict[TipoAdicional, str] = {
     TipoAdicional.DEPENDIENTE: "Dependientes económicos",
     TipoAdicional.INTERESES_VIVIENDA: "Intereses del crédito de vivienda",
     TipoAdicional.MEDICINA_PREPAGADA: "Medicina prepagada o póliza de salud",
@@ -818,7 +538,7 @@ def parametros_adicionales(anio_gravable: int) -> ParametrosAdicionales:
             conceptos.append(
                 ParametroAdicional(
                     tipo=tipo,
-                    etiqueta=_ETIQUETAS[tipo],
+                    etiqueta=ETIQUETAS_ADICIONAL[tipo],
                     pide_valor=False,
                     pide_cantidad=True,
                     tope_uvt=limite.tope_uvt,
@@ -837,7 +557,7 @@ def parametros_adicionales(anio_gravable: int) -> ParametrosAdicionales:
         conceptos.append(
             ParametroAdicional(
                 tipo=tipo,
-                etiqueta=_ETIQUETAS[tipo],
+                etiqueta=ETIQUETAS_ADICIONAL[tipo],
                 pide_pais=tipo == TipoAdicional.BIEN_EXTERIOR,
                 tope_uvt=tope.tope_uvt if tope else None,
                 tope_anual_en_pesos=_tope_en_pesos(tope, uvt),
@@ -916,8 +636,8 @@ def _validar_adicional(
         tipos_del_grupo = [
             t
             for t, c in _CODIGO_TOPE.items()
-            if (parametros.topes_deducciones.get(c).grupo if parametros.topes_deducciones.get(c) else None)
-            == tope.grupo
+            if (parametros.topes_deducciones.get(c).grupo
+                if parametros.topes_deducciones.get(c) else None) == tope.grupo
         ]
 
     acumulado = sum(
@@ -937,7 +657,7 @@ def _validar_adicional(
         )
         raise TopeAdicionalExcedidoError(
             f"El tope del año gravable {periodo.anio_gravable} para "
-            f"«{_ETIQUETAS[datos.tipo]}» es ${limite:,.0f}{compartido} "
+            f"«{ETIQUETAS_ADICIONAL[datos.tipo]}» es ${limite:,.0f}{compartido} "
             f"({tope.fuente_legal}). Con este registro la suma quedaría en "
             f"${acumulado + datos.valor:,.0f}."
         )
@@ -950,6 +670,13 @@ def agregar_adicional(
     datos: DatoAdicionalCrear,
     capturado_en_portal: bool = True,
 ) -> DatoAdicionalLeer:
+    """Registra un concepto que la exógena no trae.
+
+    No crea ninguna petición de documento aparte: `gestion` ya deriva de estos
+    datos el soporte que hay que pedir (el certificado de medicina prepagada,
+    los soportes de los dependientes), así que la lista de documentos se
+    actualiza sola y sigue siendo una sola lista.
+    """
     periodo = session.get(PeriodoFiscal, periodo_fiscal_id)
     if periodo is None or periodo.contribuyente_id != contribuyente_id:
         raise DatoAdicionalNoEncontradoError(
@@ -973,33 +700,6 @@ def agregar_adicional(
         capturado_en_portal=capturado_en_portal,
     )
     session.add(adicional)
-    session.flush()
-
-    # Cada adicional pide su propio soporte, igual que una fila de la
-    # exógena: entra a la misma lista de requerimientos para que no haya dos
-    # bandejas distintas de «lo que falta».
-    requerimiento = RequerimientoDocumento(
-        contribuyente_id=contribuyente_id,
-        periodo_fiscal_id=periodo_fiscal_id,
-        origen=OrigenRequerimiento.ADICIONAL,
-        referencia=adicional.id,
-        titulo=f"{_ETIQUETAS[datos.tipo]}: {adicional.descripcion}",
-        explicacion=(
-            "Esto no lo reporta nadie a la DIAN, así que el soporte tiene que "
-            "salir de usted. Cargue el certificado, el recibo o el documento "
-            "que lo respalde."
-        ),
-        detalle_original=f"{datos.tipo.value} — {adicional.descripcion}"[:500],
-        valor_exogena=None,
-        categoria_sugerida=(
-            lenguaje_comun.CERTIFICADO
-            if datos.tipo in _CODIGO_TOPE
-            else lenguaje_comun.OTRO
-        ),
-        concepto_reconocido=True,
-        requiere_soporte=True,
-    )
-    session.add(requerimiento)
     session.commit()
     session.refresh(adicional)
     return DatoAdicionalLeer(**adicional.model_dump())
@@ -1031,28 +731,11 @@ def eliminar_adicional(
         raise DatoAdicionalNoEncontradoError(
             f"No existe el dato adicional {adicional_id} en este periodo"
         )
-    requerimiento = session.exec(
-        select(RequerimientoDocumento).where(
-            RequerimientoDocumento.periodo_fiscal_id == periodo_fiscal_id,
-            RequerimientoDocumento.origen == OrigenRequerimiento.ADICIONAL,
-            RequerimientoDocumento.referencia == adicional_id,
-        )
-    ).first()
-    if requerimiento is not None:
-        archivos = _archivos_por_requerimiento(session, [requerimiento.id])
-        if archivos:
-            raise TopeAdicionalExcedidoError(
-                "Este concepto ya tiene soportes cargados. Elimine primero los "
-                "archivos: borrarlos en silencio dejaría documentos sin dueño."
-            )
-        session.delete(requerimiento)
     session.delete(adicional)
     session.commit()
 
 
-def dependientes_reportados(
-    session: Session, periodo_fiscal_id: int
-) -> int:
+def dependientes_reportados(session: Session, periodo_fiscal_id: int) -> int:
     """Cuántos dependientes soportó el contribuyente en el portal.
 
     El motor NO lo usa: el número que se declara lo fija el contador en la

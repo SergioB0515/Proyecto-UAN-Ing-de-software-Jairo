@@ -262,12 +262,13 @@ def test_un_contador_no_decide_sobre_contribuyentes_de_otro(client):
 
 def test_la_cartera_dice_a_quien_le_falta_que(client):
     token, cid, pid, enlace = _preparar(client, "dec-13@example.com")
-    requerimientos = client.get(f"/carga/{enlace['token']}").json()["requerimientos"]
-    pendiente = next(r for r in requerimientos if r["requiere_soporte"])
+    documentos = client.get(f"/carga/{enlace['token']}").json()["documentos"]
+    pendiente = next(d for d in documentos if d["estado"] == "PENDIENTE")
     client.patch(
-        f"/carga/{enlace['token']}/requerimientos/{pendiente['id']}",
+        f"/carga/{enlace['token']}/documentos/{pendiente['clave']}",
         json={"estado": "NO_ENTIENDO"},
     )
+    total_pendientes = len(documentos) - 1
 
     panel = client.get("/cartera", headers=_h(token)).json()
     fila = next(f for f in panel["contribuyentes"] if f["contribuyente_id"] == cid)
@@ -276,10 +277,10 @@ def test_la_cartera_dice_a_quien_le_falta_que(client):
     assert fila["fecha_corte_exogena"]
     assert fila["enlace_vigente"] is True
     assert fila["politica_aceptada"] is True
-    assert fila["requerimientos"]["no_entiendo"] == 1
-    assert fila["requerimientos"]["pendientes"] == 2
+    assert fila["documentos_no_entiendo"] == 1
+    assert fila["documentos_pendientes"] == total_pendientes
     assert panel["total_no_entiendo"] == 1
-    assert panel["total_soportes_pendientes"] == 2
+    assert panel["total_soportes_pendientes"] == total_pendientes
     assert any("no entiendo" in aviso for aviso in fila["avisos"])
 
 

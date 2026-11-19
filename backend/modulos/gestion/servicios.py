@@ -12,14 +12,17 @@ from core.excepciones import ErrorAplicacion
 from core.formato import pesos
 from ..contribuyentes.modelos import EstadoPeriodo, PeriodoFiscal
 from ..contribuyentes.servicios import obtener_contribuyente, obtener_periodo_fiscal
+from ..adjuntos.modelos import Adjunto, TipoEntidadAdjunto
 from ..exogena.modelos import RegistroExogena, ReporteExogena
 from ..liquidacion import servicios as liquidacion
 from ..liquidacion.borrador_210 import construir_casillas
 from ..liquidacion.formulario_210 import CASILLAS_2024
 from ..liquidacion.modelos import DeduccionSolicitada, HojaLiquidacion
 from ..parametros.tablas_oficiales import PARAMETROS_POR_ANIO
+from ..portal.modelos import DatoAdicional, TipoAdicional
 from . import calculos
 from .modelos import (
+    ArchivoDocumento,
     BeneficioLeer,
     CoherenciaLeer,
     ComparativoLeer,
@@ -142,33 +145,88 @@ def _documentos(
     deducciones = session.exec(select(DeduccionSolicitada).where(
         DeduccionSolicitada.periodo_fiscal_id == periodo.id)).all()
 
+    # Lo que el contribuyente registró por el portal cuenta como fuente de
+    # documentos igual que una deducción que el contador haya solicitado: si
+    # dice que paga medicina prepagada, hay que pedirle el certificado. Así la
+    # lista de documentos es una sola, venga el dato de donde venga.
+    adicionales = session.exec(select(DatoAdicional).where(
+        DatoAdicional.periodo_fiscal_id == periodo.id)).all()
+    codigos = [d.codigo_plantilla for d in deducciones if d.codigo_plantilla]
+    codigos += [
+        a.tipo.value for a in adicionales
+        if a.tipo.value in calculos.codigos_con_documento()
+    ]
+    dependientes_portal = sum(
+        (a.cantidad or 0) for a in adicionales if a.tipo == TipoAdicional.DEPENDIENTE
+    )
+    deudas_portal = any(a.tipo == TipoAdicional.DEUDA for a in adicionales)
+
     sugeridos = calculos.sugerir_documentos(
         [calculos.RegistroParaDocumentos(
             r.nit_reportante, r.nombre_reportante, r.detalle, r.concepto_code,
             r.info_adicional, r.es_auto_reportado, r.es_dian) for r in registros],
-        [d.codigo_plantilla for d in deducciones if d.codigo_plantilla],
-        numero_dependientes=hoja.numero_dependientes if hoja else 0,
+        codigos,
+        numero_dependientes=max(hoja.numero_dependientes if hoja else 0,
+                                dependientes_portal),
         tiene_declaracion_anterior=declaracion_vigente(
             session, contribuyente_id, periodo.anio_gravable - 1) is not None,
-        tiene_deudas=bool(hoja and hoja.deudas and hoja.deudas > 0),
+        tiene_deudas=bool(hoja and hoja.deudas and hoja.deudas > 0) or deudas_portal,
     )
     guardados = {d.clave: d for d in session.exec(select(DocumentoSolicitado).where(
         DocumentoSolicitado.periodo_fiscal_id == periodo.id)).all()}
+    archivos = _archivos_por_documento(
+        session, [g.id for g in guardados.values() if g.id]
+    )
+
+    def leer(clave, descripcion, tercero, nit, motivo, reconocido, g) -> DocumentoLeer:
+        propios = archivos.get(g.id, []) if g else []
+        estado = g.estado if g else EstadoDocumento.PENDIENTE
+        return DocumentoLeer(
+            id=g.id if g else None, clave=clave, descripcion=descripcion,
+            tercero=tercero, nit=nit, motivo=motivo, estado=estado,
+            actualizado_en=g.actualizado_en if g else None,
+            manual=g.manual if g else False,
+            nota=g.nota if g else "",
+            valor_informado=g.valor_informado if g else None,
+            respondido_por_contribuyente=(
+                g.respondido_por_contribuyente if g else False
+            ),
+            reconocido=reconocido,
+            archivos=propios,
+            resuelto=estado not in (
+                EstadoDocumento.PENDIENTE, EstadoDocumento.NO_ENTIENDO
+            ),
+        )
 
     salida: List[DocumentoLeer] = []
     for s in sugeridos:
-        g = guardados.pop(s.clave, None)
-        salida.append(DocumentoLeer(
-            id=g.id if g else None, clave=s.clave, descripcion=s.descripcion,
-            tercero=s.tercero, nit=s.nit, motivo=s.motivo,
-            estado=g.estado if g else EstadoDocumento.PENDIENTE,
-            actualizado_en=g.actualizado_en if g else None,
-            nota=g.nota if g else "",
-        ))
+        salida.append(leer(s.clave, s.descripcion, s.tercero, s.nit, s.motivo,
+                           s.reconocido, guardados.pop(s.clave, None)))
     # Se conservan los manuales y los sugeridos ya marcados que dejaron de sugerirse.
     for g in guardados.values():
         if g.manual or g.estado != EstadoDocumento.PENDIENTE:
-            salida.append(DocumentoLeer(**g.model_dump(exclude={"periodo_fiscal_id"})))
+            salida.append(leer(g.clave, g.descripcion, g.tercero, g.nit, g.motivo,
+                               True, g))
+    return salida
+
+
+def _archivos_por_documento(
+    session: Session, ids: List[int]
+) -> Dict[int, List[ArchivoDocumento]]:
+    if not ids:
+        return {}
+    adjuntos = session.exec(
+        select(Adjunto).where(
+            Adjunto.entidad_tipo == TipoEntidadAdjunto.DOCUMENTO_SOLICITADO,
+            Adjunto.entidad_id.in_(ids),
+        ).order_by(Adjunto.id)
+    ).all()
+    salida: Dict[int, List[ArchivoDocumento]] = {}
+    for a in adjuntos:
+        salida.setdefault(a.entidad_id, []).append(ArchivoDocumento(
+            id=a.id, nombre_original=a.nombre_original,
+            tamano_bytes=a.tamano_bytes, creado_en=a.creado_en,
+        ))
     return salida
 
 
@@ -196,12 +254,63 @@ def solicitud_documentos(
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_id)
     docs = _documentos(session, contribuyente_id, periodo)
     pendientes = [d for d in docs if d.estado == EstadoDocumento.PENDIENTE]
+
+    def cuantos(estado: EstadoDocumento) -> int:
+        return sum(1 for d in docs if d.estado == estado)
+
     return SolicitudDocumentosLeer(
         documentos=docs,
         pendientes=len(pendientes),
-        recibidos=sum(1 for d in docs if d.estado == EstadoDocumento.RECIBIDO),
+        recibidos=cuantos(EstadoDocumento.RECIBIDO),
         mensaje=_mensaje_solicitud(contribuyente.nombre, periodo.anio_gravable, pendientes),
+        no_aplica=cuantos(EstadoDocumento.NO_APLICA),
+        no_lo_tengo=cuantos(EstadoDocumento.NO_LO_TENGO),
+        no_entiendo=cuantos(EstadoDocumento.NO_ENTIENDO),
+        sin_reconocer=sum(
+            1 for d in docs
+            if not d.reconocido and d.estado == EstadoDocumento.PENDIENTE
+        ),
     )
+
+
+def fila_del_documento(
+    session: Session, contribuyente_id: int, periodo: PeriodoFiscal, clave: str
+) -> DocumentoSolicitado:
+    """La fila de un documento, creándola si todavía no existe.
+
+    La lista de documentos se deriva al vuelo y la tabla es solo la capa de lo
+    que alguien decidió o cargó, así que la fila nace la primera vez que hay
+    algo que guardar sobre ese documento.
+    """
+    actual = {d.clave: d for d in _documentos(session, contribuyente_id, periodo)}
+    if clave not in actual:
+        raise DocumentoNoEncontradoError(f"No hay un documento «{clave}» en esta solicitud")
+    guardado = session.exec(select(DocumentoSolicitado).where(
+        DocumentoSolicitado.periodo_fiscal_id == periodo.id,
+        DocumentoSolicitado.clave == clave)).first()
+    if guardado is None:
+        d = actual[clave]
+        guardado = DocumentoSolicitado(
+            periodo_fiscal_id=periodo.id, clave=clave, descripcion=d.descripcion,
+            tercero=d.tercero, nit=d.nit, motivo=d.motivo)
+        session.add(guardado)
+        session.flush()
+    return guardado
+
+
+def _aplicar_cambios(
+    guardado: DocumentoSolicitado,
+    cambios: DocumentoActualizar,
+    por_contribuyente: bool,
+) -> None:
+    if cambios.estado is not None:
+        guardado.estado = cambios.estado
+        guardado.actualizado_en = _hoy()
+        guardado.respondido_por_contribuyente = por_contribuyente
+    if cambios.nota is not None:
+        guardado.nota = cambios.nota
+    if cambios.valor_informado is not None:
+        guardado.valor_informado = cambios.valor_informado
 
 
 def actualizar_documento(
@@ -209,25 +318,65 @@ def actualizar_documento(
     clave: str, cambios: DocumentoActualizar,
 ) -> SolicitudDocumentosLeer:
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_id)
-    actual = {d.clave: d for d in _documentos(session, contribuyente_id, periodo)}
-    if clave not in actual:
-        raise DocumentoNoEncontradoError(f"No hay un documento «{clave}» en esta solicitud")
-    guardado = session.exec(select(DocumentoSolicitado).where(
-        DocumentoSolicitado.periodo_fiscal_id == periodo_id,
-        DocumentoSolicitado.clave == clave)).first()
-    if guardado is None:
-        d = actual[clave]
-        guardado = DocumentoSolicitado(
-            periodo_fiscal_id=periodo_id, clave=clave, descripcion=d.descripcion,
-            tercero=d.tercero, nit=d.nit, motivo=d.motivo)
-    if cambios.estado is not None:
-        guardado.estado = cambios.estado
-        guardado.actualizado_en = _hoy()
-    if cambios.nota is not None:
-        guardado.nota = cambios.nota
+    guardado = fila_del_documento(session, contribuyente_id, periodo, clave)
+    _aplicar_cambios(guardado, cambios, por_contribuyente=False)
     session.add(guardado)
     session.commit()
     return solicitud_documentos(session, contador_id, contribuyente_id, periodo_id)
+
+
+def responder_documento(
+    session: Session, contribuyente_id: int, periodo: PeriodoFiscal,
+    clave: str, cambios: DocumentoActualizar,
+) -> DocumentoLeer:
+    """La respuesta del contribuyente desde su enlace de carga.
+
+    No recibe `contador_id`: el alcance lo da el enlace, no un parámetro que
+    el cliente pueda cambiar. Devuelve solo el documento tocado, no la
+    solicitud completa, porque el mensaje para el cliente y los totales del
+    contador no son asunto suyo.
+    """
+    guardado = fila_del_documento(session, contribuyente_id, periodo, clave)
+    _aplicar_cambios(guardado, cambios, por_contribuyente=True)
+    session.add(guardado)
+    session.commit()
+    return next(
+        d for d in _documentos(session, contribuyente_id, periodo) if d.clave == clave
+    )
+
+
+def adjuntar_a_documento(
+    session: Session, contador_id: int, contribuyente_id: int,
+    periodo: PeriodoFiscal, clave: str, flujo, nombre, descripcion=None,
+    por_contribuyente: bool = False,
+):
+    """Sube un soporte y lo deja atado a su documento.
+
+    Subir el papel ES recibir el documento, así que el estado pasa a RECIBIDO
+    solo. Pedirle además al cliente que marque un estado después de cargar el
+    archivo sería preguntarle dos veces lo mismo.
+    """
+    from ..adjuntos.modelos import CategoriaAdjunto
+    from ..adjuntos.servicios import adjuntar_archivo
+
+    guardado = fila_del_documento(session, contribuyente_id, periodo, clave)
+    adjunto = adjuntar_archivo(
+        session, contador_id, contribuyente_id,
+        TipoEntidadAdjunto.DOCUMENTO_SOLICITADO, guardado.id,
+        flujo, nombre, CategoriaAdjunto.CERTIFICADO, descripcion,
+    )
+    guardado.estado = EstadoDocumento.RECIBIDO
+    guardado.actualizado_en = _hoy()
+    guardado.respondido_por_contribuyente = por_contribuyente
+    session.add(guardado)
+    session.commit()
+    return adjunto
+
+
+def documentos_del_periodo(
+    session: Session, contribuyente_id: int, periodo: PeriodoFiscal
+) -> List[DocumentoLeer]:
+    return _documentos(session, contribuyente_id, periodo)
 
 
 def agregar_documento(
@@ -367,6 +516,9 @@ def etapas(
     seguimiento: SeguimientoDeclaracion,
     fecha_presentacion: Optional[date],
     saldo_a_pagar: Optional[Decimal],
+    documentos_no_entiendo: int = 0,
+    documentos_no_lo_tengo: int = 0,
+    documentos_sin_reconocer: int = 0,
 ) -> ProcesoLeer:
     """Etapas en orden de trabajo. Exógena, documentos y presentación se calculan;
     el resto lo marca el contador.
@@ -398,7 +550,22 @@ def etapas(
     actual = next((e.clave for e in lista if not e.hecha), None)
     return ProcesoLeer(etapas=lista, etapa_actual=actual,
                        hechas=sum(e.hecha for e in lista), total=len(lista),
-                       documentos_pendientes=documentos_pendientes)
+                       documentos_pendientes=documentos_pendientes,
+                       documentos_no_entiendo=documentos_no_entiendo,
+                       documentos_no_lo_tengo=documentos_no_lo_tengo,
+                       documentos_sin_reconocer=documentos_sin_reconocer)
+
+
+def contar_documentos(docs: List[DocumentoLeer]) -> Dict[str, int]:
+    """Los conteos que miran la cartera y el panel del proceso."""
+    return {
+        "pendientes": sum(d.estado == EstadoDocumento.PENDIENTE for d in docs),
+        "no_entiendo": sum(d.estado == EstadoDocumento.NO_ENTIENDO for d in docs),
+        "no_lo_tengo": sum(d.estado == EstadoDocumento.NO_LO_TENGO for d in docs),
+        "sin_reconocer": sum(
+            not d.reconocido and d.estado == EstadoDocumento.PENDIENTE for d in docs
+        ),
+    }
 
 
 def proceso_resumido(
@@ -410,9 +577,10 @@ def proceso_resumido(
     docs = _documentos(session, contribuyente_id, periodo)
     presentadas = _presentaciones(session, periodo.id)
     saldo = _casillas_de(presentadas[-1]).get(136) if presentadas else None
-    return etapas(tiene_exogena, len(docs),
-                  sum(d.estado == EstadoDocumento.PENDIENTE for d in docs),
-                  _seguimiento(session, periodo.id), periodo.fecha_presentacion, saldo)
+    c = contar_documentos(docs)
+    return etapas(tiene_exogena, len(docs), c["pendientes"],
+                  _seguimiento(session, periodo.id), periodo.fecha_presentacion, saldo,
+                  c["no_entiendo"], c["no_lo_tengo"], c["sin_reconocer"])
 
 
 # Vista completa
@@ -455,10 +623,11 @@ def gestion(
     docs = _documentos(session, contribuyente_id, periodo)
     tiene_exogena = session.exec(select(ReporteExogena.id).where(
         ReporteExogena.periodo_fiscal_id == periodo_id)).first() is not None
-    proceso = etapas(tiene_exogena, len(docs),
-                     sum(d.estado == EstadoDocumento.PENDIENTE for d in docs),
+    c = contar_documentos(docs)
+    proceso = etapas(tiene_exogena, len(docs), c["pendientes"],
                      seguimiento, periodo.fecha_presentacion,
-                     saldo_a_pagar if presentadas else None)
+                     saldo_a_pagar if presentadas else None,
+                     c["no_entiendo"], c["no_lo_tengo"], c["sin_reconocer"])
 
     # Declaración anterior y comparativo
     anterior_decl = declaracion_vigente(session, contribuyente_id, periodo.anio_gravable - 1)

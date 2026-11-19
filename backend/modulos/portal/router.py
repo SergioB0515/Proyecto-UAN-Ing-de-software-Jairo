@@ -1,8 +1,12 @@
 """Endpoints del portal del lado del contador (con sesión).
 
+Solo el enlace y los adicionales. La lista de documentos del cliente la
+atiende el router de `gestion` (`/documentos`), que ya existía: el portal no
+agrega rutas paralelas para lo mismo.
+
 Lo que un contribuyente puede hacer con su token está en `router_publico.py`.
 Están separados a propósito: así se puede leer de un tirón todo lo que el
-enlace permite, sin tener que revisar qué dependencia protege cada ruta.
+enlace permite, sin revisar qué dependencia protege cada ruta.
 """
 
 from typing import List
@@ -18,15 +22,12 @@ from core.excepciones import (
     EnlaceCargaNoEncontradoError,
     PeriodoFiscalCerradoError,
     PeriodoFiscalNoEncontradoError,
-    RequerimientoNoEncontradoError,
-    ReporteExogenaNoEncontradoError,
     TopeAdicionalExcedidoError,
 )
 from database import obtener_sesion
 from modulos.contadores.modelos import Contador
 
 from ..contribuyentes.servicios import obtener_periodo_fiscal
-from ..exogena.servicios import obtener_reporte_mas_reciente
 from . import servicios
 from .modelos import (
     DatoAdicionalCrear,
@@ -35,8 +36,6 @@ from .modelos import (
     EnlaceCargaCrear,
     EnlaceCargaLeer,
     ParametrosAdicionales,
-    RequerimientoLeer,
-    ResumenRequerimientos,
 )
 
 router = APIRouter(prefix="/contribuyentes", tags=["portal"])
@@ -45,9 +44,7 @@ _NO_ENCONTRADO = (
     ContribuyenteNoEncontradoError,
     PeriodoFiscalNoEncontradoError,
     EnlaceCargaNoEncontradoError,
-    RequerimientoNoEncontradoError,
     DatoAdicionalNoEncontradoError,
-    ReporteExogenaNoEncontradoError,
 )
 _CONFLICTO = (PeriodoFiscalCerradoError, AnioGravableNoSoportadoError)
 _ERRORES = _NO_ENCONTRADO + _CONFLICTO + (TopeAdicionalExcedidoError,)
@@ -119,111 +116,6 @@ def revocar_enlace_carga(
 
 
 # ---------------------------------------------------------------------------
-# Requerimientos
-# ---------------------------------------------------------------------------
-
-
-@router.get(
-    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}/requerimientos",
-    response_model=List[RequerimientoLeer],
-)
-def listar_requerimientos(
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    contador: Contador = Depends(obtener_contador_actual),
-    session: Session = Depends(obtener_sesion),
-):
-    try:
-        obtener_periodo_fiscal(
-            session, contador.id, contribuyente_id, periodo_fiscal_id
-        )
-        return servicios.listar_requerimientos(
-            session, contribuyente_id, periodo_fiscal_id
-        )
-    except _ERRORES as exc:
-        raise _traducir(exc) from exc
-
-
-@router.get(
-    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}/requerimientos/resumen",
-    response_model=ResumenRequerimientos,
-)
-def resumen_requerimientos(
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    contador: Contador = Depends(obtener_contador_actual),
-    session: Session = Depends(obtener_sesion),
-):
-    try:
-        obtener_periodo_fiscal(
-            session, contador.id, contribuyente_id, periodo_fiscal_id
-        )
-        return servicios.resumen_del_periodo(
-            session, contribuyente_id, periodo_fiscal_id
-        )
-    except _ERRORES as exc:
-        raise _traducir(exc) from exc
-
-
-@router.post(
-    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}/requerimientos/sincronizar",
-    response_model=List[RequerimientoLeer],
-    name="sincronizar_requerimientos",
-)
-def sincronizar_requerimientos(
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    contador: Contador = Depends(obtener_contador_actual),
-    session: Session = Depends(obtener_sesion),
-):
-    """Vuelve a traducir la exógena vigente a requerimientos.
-
-    Existe para el caso en que el contador cargó el archivo él mismo antes de
-    que existiera el enlace. Es idempotente: no borra el estado ni los
-    archivos que el contribuyente ya hubiera puesto.
-    """
-    try:
-        obtener_periodo_fiscal(
-            session, contador.id, contribuyente_id, periodo_fiscal_id
-        )
-        reporte = obtener_reporte_mas_reciente(session, periodo_fiscal_id)
-        servicios.sincronizar_requerimientos(session, reporte)
-        return servicios.listar_requerimientos(
-            session, contribuyente_id, periodo_fiscal_id
-        )
-    except _ERRORES as exc:
-        raise _traducir(exc) from exc
-
-
-@router.patch(
-    "/{contribuyente_id}/periodos-fiscales/{periodo_fiscal_id}"
-    "/requerimientos/{requerimiento_id}/revision",
-    response_model=RequerimientoLeer,
-    name="marcar_requerimiento_revisado",
-)
-def marcar_requerimiento_revisado(
-    contribuyente_id: int,
-    periodo_fiscal_id: int,
-    requerimiento_id: int,
-    revisado: bool = True,
-    contador: Contador = Depends(obtener_contador_actual),
-    session: Session = Depends(obtener_sesion),
-):
-    """Da por resuelto un concepto que la aplicación no supo clasificar."""
-    try:
-        return servicios.marcar_revisado(
-            session,
-            contador.id,
-            contribuyente_id,
-            periodo_fiscal_id,
-            requerimiento_id,
-            revisado,
-        )
-    except _ERRORES as exc:
-        raise _traducir(exc) from exc
-
-
-# ---------------------------------------------------------------------------
 # Adicionales
 # ---------------------------------------------------------------------------
 
@@ -286,10 +178,7 @@ def crear_dato_adicional(
             session, contador.id, contribuyente_id, periodo_fiscal_id
         )
         return servicios.agregar_adicional(
-            session,
-            contribuyente_id,
-            periodo_fiscal_id,
-            datos,
+            session, contribuyente_id, periodo_fiscal_id, datos,
             capturado_en_portal=False,
         )
     except _ERRORES as exc:

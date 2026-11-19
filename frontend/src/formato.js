@@ -54,19 +54,23 @@ export const ETIQUETAS_TIPO_ENTIDAD = {
   DOCUMENTO_SOPORTE: 'Documento soporte',
   MOVIMIENTO: 'Movimiento',
   PROVEEDOR: 'Proveedor',
-  REQUERIMIENTO: 'Soporte pedido',
+  DOCUMENTO_SOLICITADO: 'Documento pedido al cliente',
 }
 
-// Los cuatro estados que el contribuyente puede marcar. En su idioma, no en
-// el del formulario: quien contesta esto no es contador.
-export const ETIQUETAS_ESTADO_REQUERIMIENTO = {
+// Los cinco estados de un documento pedido al cliente. Los tres primeros los
+// marca el contador (o los deduce la aplicación al recibir un archivo); los
+// dos últimos solo los puede marcar el contribuyente desde su enlace.
+export const ETIQUETAS_ESTADO_DOCUMENTO = {
   PENDIENTE: 'Pendiente',
+  RECIBIDO: 'Recibido',
   NO_APLICA: 'No aplica',
   NO_LO_TENGO: 'No lo tengo',
   NO_ENTIENDO: 'No entiendo',
 }
 
-export const AYUDA_ESTADO_REQUERIMIENTO = {
+// Lo que el contribuyente puede contestar, en su idioma: quien responde esto
+// no es contador.
+export const RESPUESTAS_CONTRIBUYENTE = {
   PENDIENTE: 'Todavía lo estoy buscando.',
   NO_APLICA: 'Esto no es mío o no me corresponde.',
   NO_LO_TENGO: 'Es mío pero no tengo el papel.',

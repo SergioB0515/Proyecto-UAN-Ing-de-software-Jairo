@@ -10,7 +10,7 @@ from ..exogena.modelos import ReporteExogena
 from ..parametros.modelos import EstadoVencimiento
 from ..parametros.servicios import calcular_vencimiento
 from ..portal.modelos import AutorizacionTratamiento, EnlaceCarga
-from ..portal.servicios import esta_vigente, resumen_del_periodo
+from ..portal.servicios import esta_vigente
 from ..reportes.servicios import evaluar_declaracion
 from .modelos import FilaCartera, OrdenCartera, PanelCartera
 
@@ -71,10 +71,10 @@ def panel_cartera(
         )
         fila.etapas_hechas, fila.etapas_total = proceso.hechas, proceso.total
         fila.documentos_pendientes = proceso.documentos_pendientes
-        # Los avisos del proceso, más los de la recolección de soportes. Son
-        # cuentas distintas: `documentos_pendientes` son las etapas del proceso
-        # de la temporada, y `requerimientos` son los papeles que el
-        # contribuyente todavía no ha cargado por el enlace.
+        fila.documentos_no_entiendo = proceso.documentos_no_entiendo
+        fila.documentos_no_lo_tengo = proceso.documentos_no_lo_tengo
+        fila.documentos_sin_reconocer = proceso.documentos_sin_reconocer
+        # Los avisos del proceso, más los del estado del enlace de carga.
         fila.avisos = list(avisos) + _completar_recoleccion(
             session, fila, contribuyente.id, periodo.id
         )
@@ -83,9 +83,9 @@ def panel_cartera(
     if orden == OrdenCartera.PENDIENTES:
         filas.sort(
             key=lambda f: (
-                -(f.requerimientos.no_entiendo),
-                -(f.requerimientos.pendientes),
-                -(f.requerimientos.sin_reconocer),
+                -(f.documentos_no_entiendo),
+                -(f.documentos_pendientes or 0),
+                -(f.documentos_sin_reconocer),
                 f.nombre.lower(),
             )
         )
@@ -122,9 +122,9 @@ def panel_cartera(
         total_proximas=sum(
             1 for f in filas if f.vencimiento and f.vencimiento.estado == EstadoVencimiento.PROXIMA
         ),
-        total_soportes_pendientes=sum(f.requerimientos.pendientes for f in filas),
-        total_no_entiendo=sum(f.requerimientos.no_entiendo for f in filas),
-        total_conceptos_sin_reconocer=sum(f.requerimientos.sin_reconocer for f in filas),
+        total_soportes_pendientes=sum(f.documentos_pendientes or 0 for f in filas),
+        total_no_entiendo=sum(f.documentos_no_entiendo for f in filas),
+        total_conceptos_sin_reconocer=sum(f.documentos_sin_reconocer for f in filas),
         total_sin_enlace=sum(
             1 for f in filas if f.periodo_fiscal_id is not None and not f.enlace_vigente
         ),
@@ -174,29 +174,23 @@ def _completar_recoleccion(
         is not None
     )
 
-    fila.requerimientos = resumen_del_periodo(
-        session, contribuyente_id, periodo_fiscal_id
-    )
-
     avisos = []
-    resumen = fila.requerimientos
-    if resumen.no_entiendo:
+    if fila.documentos_no_entiendo:
         avisos.append(
-            f"{resumen.no_entiendo} ítem(s) marcados «no entiendo»: esperan "
-            "explicación suya."
+            f"{fila.documentos_no_entiendo} documento(s) marcados «no entiendo»: "
+            "esperan explicación suya."
         )
-    if resumen.pendientes:
-        avisos.append(f"Faltan {resumen.pendientes} soporte(s) por cargar.")
-    if resumen.no_lo_tengo:
+    if fila.documentos_no_lo_tengo:
         avisos.append(
-            f"{resumen.no_lo_tengo} soporte(s) que el contribuyente dice no tener."
+            f"{fila.documentos_no_lo_tengo} documento(s) que el contribuyente "
+            "dice no tener."
         )
-    if resumen.sin_reconocer:
+    if fila.documentos_sin_reconocer:
         avisos.append(
-            f"{resumen.sin_reconocer} concepto(s) de la exógena sin clasificar."
+            f"{fila.documentos_sin_reconocer} concepto(s) de la exógena sin clasificar."
         )
-    if resumen.total and not fila.enlace_vigente:
-        avisos.append("No tiene un enlace de carga vigente.")
+    if fila.documentos_pendientes and not fila.enlace_vigente:
+        avisos.append("No tiene un enlace de carga vigente para pedirle los soportes.")
     return avisos
 
 
@@ -226,9 +220,9 @@ def exportar_panel(panel: PanelCartera, formato: str, contador_nombre: str):
             f.obligado,
             f.alertas_no_declarado,
             f.fecha_corte_exogena,
-            f.requerimientos.pendientes,
-            f.requerimientos.no_entiendo,
-            f.requerimientos.sin_reconocer,
+            f.documentos_pendientes,
+            f.documentos_no_entiendo,
+            f.documentos_sin_reconocer,
             "Sí" if f.enlace_vigente else "No",
             v.fecha if v else None,
             _ESTADOS_VENCIMIENTO[v.estado] if v else None,

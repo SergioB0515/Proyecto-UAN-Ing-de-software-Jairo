@@ -42,20 +42,20 @@ export async function cargarExogena(token, archivo) {
   return data
 }
 
-export async function responderRequerimiento(token, requerimientoId, cambios) {
+export async function responderDocumento(token, clave, cambios) {
   const { data } = await clientePortal.patch(
-    `${raiz(token)}/requerimientos/${requerimientoId}`,
+    `${raiz(token)}/documentos/${encodeURIComponent(clave)}`,
     cambios,
   )
   return data
 }
 
-export async function subirSoporte(token, requerimientoId, archivo, descripcion) {
+export async function subirSoporte(token, clave, archivo, descripcion) {
   const cuerpo = new FormData()
   cuerpo.append('archivo', archivo)
   if (descripcion) cuerpo.append('descripcion', descripcion)
   const { data } = await clientePortal.post(
-    `${raiz(token)}/requerimientos/${requerimientoId}/archivos`,
+    `${raiz(token)}/documentos/${encodeURIComponent(clave)}/archivos`,
     cuerpo,
   )
   return data
@@ -88,23 +88,6 @@ export const generarEnlace = (cid, datos) =>
 
 export const revocarEnlace = (cid, enlaceId) =>
   enviar(`/contribuyentes/${cid}/enlaces-carga/${enlaceId}/revocar`)
-
-export const listarRequerimientos = (cid, pid) => obtener(`${periodo(cid, pid)}/requerimientos`)
-
-export const resumenRequerimientos = (cid, pid) =>
-  obtener(`${periodo(cid, pid)}/requerimientos/resumen`)
-
-export const sincronizarRequerimientos = (cid, pid) =>
-  enviar(`${periodo(cid, pid)}/requerimientos/sincronizar`)
-
-export async function marcarRevisado(cid, pid, requerimientoId, revisado = true) {
-  const { data } = await cliente.patch(
-    `${periodo(cid, pid)}/requerimientos/${requerimientoId}/revision`,
-    null,
-    { params: { revisado } },
-  )
-  return data
-}
 
 export const listarAdicionales = (cid, pid) => obtener(`${periodo(cid, pid)}/adicionales`)
 

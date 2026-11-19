@@ -5,11 +5,13 @@ leyendo un solo archivo corto. Tres propiedades que se sostienen a la vista:
 
 1. **Ninguna ruta depende de `obtener_contador_actual`.** Quien abre el enlace
    no tiene cuenta y no necesita una.
-2. **Ninguna ruta devuelve la liquidación.** Los servicios que podrían
-   hacerlo no están importados aquí ni en `servicios.py`.
-3. **El alcance lo fija el token, no el cliente.** Ninguna ruta recibe un
+2. **El alcance lo fija el token, no el cliente.** Ninguna ruta recibe un
    `contribuyente_id` ni un `periodo_fiscal_id`: salen del enlace resuelto.
    Por eso no existe el parámetro que habría que validar.
+3. **Ninguna respuesta lleva la liquidación.** Eso ya no se puede afirmar por
+   los imports —la lista de documentos viene de `gestion`, que sí lee la
+   liquidación para saber qué pedir—, así que lo verifica una prueba que
+   recorre el esquema de todas las respuestas de este router.
 """
 
 from typing import List, Optional
@@ -29,15 +31,15 @@ from core.excepciones import (
     EnlaceCargaRevocadoError,
     PeriodoFiscalCerradoError,
     PoliticaNoAceptadaError,
-    RequerimientoNoEncontradoError,
     TopeAdicionalExcedidoError,
     VersionPoliticaDesconocidaError,
 )
 from database import obtener_sesion
 
 from ..adjuntos.modelos import AdjuntoLeer
-from ..contribuyentes.modelos import PeriodoFiscal
 from ..exogena.servicios import leer_archivo_exogena
+from ..gestion.modelos import DocumentoActualizar, DocumentoLeer
+from ..gestion.servicios import DocumentoNoEncontradoError
 from . import servicios
 from .modelos import (
     AceptarPolitica,
@@ -46,8 +48,6 @@ from .modelos import (
     DatoAdicionalLeer,
     EnlaceCarga,
     ParametrosAdicionales,
-    RequerimientoActualizar,
-    RequerimientoLeer,
     ResultadoCargaExogena,
     SesionPortal,
 )
@@ -62,15 +62,13 @@ def _traducir(exc: Exception) -> HTTPException:
         # 410: el enlace existió y ya no sirve. Es distinto de «no existe» y
         # le permite al portal mostrar «pida uno nuevo» en vez de «no encontrado».
         codigo = status.HTTP_410_GONE
-    elif isinstance(exc, (RequerimientoNoEncontradoError, DatoAdicionalNoEncontradoError)):
+    elif isinstance(exc, (DocumentoNoEncontradoError, DatoAdicionalNoEncontradoError)):
         codigo = status.HTTP_404_NOT_FOUND
     elif isinstance(exc, ArchivoDemasiadoGrandeError):
         codigo = status.HTTP_413_CONTENT_TOO_LARGE
     elif isinstance(exc, ArchivoNoPermitidoError):
         codigo = status.HTTP_415_UNSUPPORTED_MEDIA_TYPE
-    elif isinstance(
-        exc, (ArchivoExogenaInvalidoError, TopeAdicionalExcedidoError)
-    ):
+    elif isinstance(exc, (ArchivoExogenaInvalidoError, TopeAdicionalExcedidoError)):
         codigo = status.HTTP_422_UNPROCESSABLE_CONTENT
     else:
         codigo = status.HTTP_409_CONFLICT
@@ -83,7 +81,7 @@ _ERRORES = (
     EnlaceCargaExpiradoError,
     PoliticaNoAceptadaError,
     VersionPoliticaDesconocidaError,
-    RequerimientoNoEncontradoError,
+    DocumentoNoEncontradoError,
     DatoAdicionalNoEncontradoError,
     TopeAdicionalExcedidoError,
     AnioGravableNoSoportadoError,
@@ -125,8 +123,7 @@ def _red_de_origen(request: Request) -> Optional[str]:
     if not host:
         return None
     if ":" in host:
-        grupos = host.split(":")[:4]
-        return ":".join(grupos) + "::/64"
+        return ":".join(host.split(":")[:4]) + "::/64"
     partes = host.split(".")
     if len(partes) == 4:
         return ".".join(partes[:3]) + ".0/24"
@@ -189,43 +186,51 @@ def cargar_exogena(
         raise _traducir(exc) from exc
 
 
-@router.patch("/{token}/requerimientos/{requerimiento_id}", response_model=RequerimientoLeer)
-def responder_requerimiento(
-    requerimiento_id: int,
-    cambios: RequerimientoActualizar,
+@router.get("/{token}/documentos", response_model=List[DocumentoLeer])
+def listar_documentos(
     enlace: EnlaceCarga = Depends(enlace_del_token),
     session: Session = Depends(obtener_sesion),
 ):
-    """Marca el estado del ítem. El estado es obligatorio; el valor, no."""
+    """Los documentos que se le piden. Es la misma lista que ve el contador."""
+    return servicios.documentos_del_enlace(session, enlace)
+
+
+@router.patch("/{token}/documentos/{clave}", response_model=DocumentoLeer)
+def responder_documento(
+    clave: str,
+    cambios: DocumentoActualizar,
+    enlace: EnlaceCarga = Depends(enlace_del_token),
+    session: Session = Depends(obtener_sesion),
+):
+    """Marca el estado del documento. El estado es obligatorio; el valor, no."""
     try:
-        servicios.exigir_politica_aceptada(session, enlace)
-        return servicios.actualizar_requerimiento(
-            session,
-            enlace.contribuyente_id,
-            enlace.periodo_fiscal_id,
-            requerimiento_id,
-            cambios,
+        return servicios.responder_documento_por_enlace(
+            session, enlace, clave, cambios
         )
     except _ERRORES as exc:
         raise _traducir(exc) from exc
 
 
 @router.post(
-    "/{token}/requerimientos/{requerimiento_id}/archivos",
+    "/{token}/documentos/{clave}/archivos",
     response_model=AdjuntoLeer,
     status_code=status.HTTP_201_CREATED,
 )
 def subir_soporte(
-    requerimiento_id: int,
+    clave: str,
     archivo: UploadFile = File(...),
     descripcion: Optional[str] = Form(None, max_length=300),
     enlace: EnlaceCarga = Depends(enlace_del_token),
     session: Session = Depends(obtener_sesion),
 ):
-    """Sube una foto o un PDF desde el celular, sin cuenta de usuario."""
+    """Sube una foto o un PDF desde el celular, sin cuenta de usuario.
+
+    Subir el papel deja el documento en RECIBIDO: no hace falta marcar nada
+    más después.
+    """
     try:
-        return servicios.adjuntar_a_requerimiento(
-            session, enlace, requerimiento_id, archivo.file, archivo.filename, descripcion
+        return servicios.adjuntar_por_enlace(
+            session, enlace, clave, archivo.file, archivo.filename, descripcion
         )
     except _ERRORES as exc:
         raise _traducir(exc) from exc
@@ -242,7 +247,7 @@ def parametros_adicionales(
     que el contribuyente ve en pantalla y lo que el servidor acepta no pueden
     separarse, porque son el mismo dato.
     """
-    periodo = session.get(PeriodoFiscal, enlace.periodo_fiscal_id)
+    periodo = servicios.periodo_del_enlace(session, enlace)
     try:
         return servicios.parametros_adicionales(periodo.anio_gravable)
     except _ERRORES as exc:
@@ -273,10 +278,7 @@ def agregar_adicional(
     try:
         servicios.exigir_politica_aceptada(session, enlace)
         return servicios.agregar_adicional(
-            session,
-            enlace.contribuyente_id,
-            enlace.periodo_fiscal_id,
-            datos,
+            session, enlace.contribuyente_id, enlace.periodo_fiscal_id, datos,
             capturado_en_portal=True,
         )
     except _ERRORES as exc:
