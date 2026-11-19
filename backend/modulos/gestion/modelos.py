@@ -30,9 +30,22 @@ class SeguimientoDeclaracion(SQLModel, table=True):
 
 
 class EstadoDocumento(str, Enum):
+    """Estado de un documento pedido al cliente.
+
+    Los tres primeros los marca el contador o los deduce la aplicación (subir
+    un archivo deja el documento en RECIBIDO). Los dos últimos solo los marca
+    el contribuyente desde su enlace de carga: son las dos respuestas que
+    antes llegaban por WhatsApp y se perdían.
+
+    NO_ENTIENDO no cierra el documento: es el contribuyente pidiendo ayuda, y
+    la pelota queda del lado del contador.
+    """
+
     PENDIENTE = "PENDIENTE"
     RECIBIDO = "RECIBIDO"
     NO_APLICA = "NO_APLICA"
+    NO_LO_TENGO = "NO_LO_TENGO"
+    NO_ENTIENDO = "NO_ENTIENDO"
 
 
 class DocumentoSolicitado(SQLModel, table=True):
@@ -52,6 +65,14 @@ class DocumentoSolicitado(SQLModel, table=True):
     actualizado_en: Optional[date] = None
     manual: bool = Field(default=False)
     nota: str = Field(default="", max_length=500)
+    # Lo que el contribuyente dice que vale, cuando lo sabe. Opcional a
+    # propósito: el estado sí es obligatorio, el valor no. Alguien puede saber
+    # que un documento no le aplica sin saber la cifra.
+    valor_informado: Optional[Decimal] = Field(default=None, sa_type=Numeric(18, 2))
+    # True cuando el estado lo puso el contribuyente desde el enlace, no el
+    # contador. Cambia cómo se lee: «no lo tengo» del cliente es un hecho;
+    # «no aplica» del contador es una decisión profesional.
+    respondido_por_contribuyente: bool = Field(default=False)
 
 
 class DeclaracionPresentada(SQLModel, table=True):
@@ -98,6 +119,7 @@ class SeguimientoActualizar(SQLModel):
 class DocumentoActualizar(SQLModel):
     estado: Optional[EstadoDocumento] = None
     nota: Optional[str] = Field(default=None, max_length=500)
+    valor_informado: Optional[Decimal] = Field(default=None, ge=0)
 
 
 class DocumentoCrear(SQLModel):
@@ -145,6 +167,18 @@ class ProcesoLeer(SQLModel):
     hechas: int
     total: int
     documentos_pendientes: int = 0
+    # Lo que el cliente contestó por su enlace y necesita al contador. Van
+    # aquí para que la cartera los tenga sin volver a derivar la lista.
+    documentos_no_entiendo: int = 0
+    documentos_no_lo_tengo: int = 0
+    documentos_sin_reconocer: int = 0
+
+
+class ArchivoDocumento(SQLModel):
+    id: int
+    nombre_original: str
+    tamano_bytes: int
+    creado_en: datetime
 
 
 class DocumentoLeer(SQLModel):
@@ -158,6 +192,13 @@ class DocumentoLeer(SQLModel):
     actualizado_en: Optional[date] = None
     manual: bool = False
     nota: str = ""
+    valor_informado: Optional[Decimal] = None
+    respondido_por_contribuyente: bool = False
+    reconocido: bool = True
+    archivos: List[ArchivoDocumento] = []
+    # Resuelto = ya no hay nada que esperar del cliente. NO_ENTIENDO no
+    # resuelve: espera al contador.
+    resuelto: bool = False
 
 
 class SolicitudDocumentosLeer(SQLModel):
@@ -165,6 +206,10 @@ class SolicitudDocumentosLeer(SQLModel):
     pendientes: int
     recibidos: int
     mensaje: str
+    no_aplica: int = 0
+    no_lo_tengo: int = 0
+    no_entiendo: int = 0
+    sin_reconocer: int = 0
 
 
 class DeclaracionPresentadaLeer(SQLModel):

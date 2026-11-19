@@ -6,6 +6,7 @@ import { mensajeDeError } from '../api/cliente'
 import { actualizarSeguimiento, descargarInforme, obtenerGestion } from '../api/gestion'
 import Cargando from '../components/Cargando.vue'
 import MensajeError from '../components/MensajeError.vue'
+import PanelEnlaceCarga from '../components/PanelEnlaceCarga.vue'
 import AnioAnterior from '../components/gestion/AnioAnterior.vue'
 import FirmezaBeneficio from '../components/gestion/FirmezaBeneficio.vue'
 import PagoIntereses from '../components/gestion/PagoIntereses.vue'
@@ -80,6 +81,14 @@ watch(() => periodo.value?.id, () => cargar())
       <ul v-if="gestion.avisos.length" class="space-y-1">
         <li v-for="a in gestion.avisos" :key="a" class="rounded bg-estado-discrepancia-claro px-4 py-2 text-sm">{{ a }}</li>
       </ul>
+      <!-- El enlace va justo encima de la lista: es la forma de pedirle al
+           cliente los documentos que la lista enumera. -->
+      <PanelEnlaceCarga
+        :contribuyente-id="cid"
+        :periodo-id="periodo.id"
+        :anio-gravable="periodo.anio_gravable"
+        :cerrado="periodo.estado === 'CERRADO'"
+      />
       <SolicitudDocumentos :contribuyente-id="cid" :periodo-id="periodo.id" @cambio="cargar()" />
       <AnioAnterior :gestion="gestion" :contribuyente-id="cid" :periodo-id="periodo.id" @cambio="cargar()" />
       <PresentacionCorreccion :gestion="gestion" :contribuyente-id="cid" :periodo-id="periodo.id" @cambio="trasPresentar" />

@@ -51,7 +51,10 @@ watch(orden, cargar)
     <header class="flex flex-wrap items-end justify-between gap-4">
       <div>
         <h1>Cartera</h1>
-        <p class="text-tinta-suave">Quién debe declarar, cuándo vence y quién tiene ingresos o bienes sin declarar.</p>
+        <p class="text-tinta-suave">
+          Quién debe declarar, cuándo vence, qué tiene sin declarar y a quién le falta mandar
+          soportes.
+        </p>
       </div>
       <form class="flex flex-wrap items-end gap-3" @submit.prevent="cargar">
         <div>
@@ -62,6 +65,7 @@ watch(orden, cargar)
           <label class="etiqueta" for="orden">Ordenar por</label>
           <select id="orden" v-model="orden" class="campo w-44">
             <option value="alertas">Alertas</option>
+            <option value="pendientes">Soportes que faltan</option>
             <option value="vencimiento">Fecha límite</option>
             <option value="nombre">Nombre</option>
           </select>
@@ -74,7 +78,7 @@ watch(orden, cargar)
     <Cargando v-if="cargando && !panel" />
 
     <template v-else-if="panel">
-      <dl class="grid divide-y divide-papel-linea rounded-md border border-papel-linea bg-white sm:grid-cols-5 sm:divide-x sm:divide-y-0">
+      <dl class="grid divide-y divide-papel-linea rounded-md border border-papel-linea bg-white sm:grid-cols-4 sm:divide-x sm:divide-y-0 lg:grid-cols-7">
         <div class="px-5 py-4">
           <dt class="text-sm text-tinta-suave">Contribuyentes</dt>
           <dd class="cifra text-left text-2xl font-semibold">{{ panel.total_contribuyentes }}</dd>
@@ -99,6 +103,24 @@ watch(orden, cargar)
           <dt class="text-sm text-tinta-suave">Vencidas sin presentar</dt>
           <dd class="cifra text-left text-2xl font-semibold" :class="panel.total_vencidas ? 'text-estado-nodeclarado' : ''">
             {{ panel.total_vencidas }}
+          </dd>
+        </div>
+        <div class="px-5 py-4">
+          <dt class="text-sm text-tinta-suave">Soportes que faltan</dt>
+          <dd
+            class="cifra text-left text-2xl font-semibold"
+            :class="panel.total_soportes_pendientes ? 'text-estado-discrepancia' : ''"
+          >
+            {{ panel.total_soportes_pendientes }}
+          </dd>
+        </div>
+        <div class="px-5 py-4">
+          <dt class="text-sm text-tinta-suave">Esperan tu explicación</dt>
+          <dd
+            class="cifra text-left text-2xl font-semibold"
+            :class="panel.total_no_entiendo ? 'text-estado-nodeclarado' : ''"
+          >
+            {{ panel.total_no_entiendo }}
           </dd>
         </div>
       </dl>
@@ -127,6 +149,7 @@ watch(orden, cargar)
                 <th>Etapa</th>
                 <th>¿Obligado?</th>
                 <th class="cifra">Sin declarar</th>
+                <th>Le falta</th>
                 <th>Pendiente</th>
               </tr>
             </thead>
@@ -188,6 +211,37 @@ watch(orden, cargar)
                     {{ fila.alertas_no_declarado }}
                   </span>
                   <span v-else class="text-tinta-tenue">—</span>
+                </td>
+                <td class="text-sm">
+                  <!-- El estado de la recolección: lo que el panel tiene que
+                       responder sin que haya que entrar a cada ficha. -->
+                  <template v-if="fila.documentos_pendientes !== null">
+                    <p>
+                      <span
+                        class="font-semibold"
+                        :class="fila.documentos_pendientes ? 'text-estado-discrepancia' : 'text-estado-coincide'"
+                      >
+                        {{ fila.documentos_pendientes }}
+                      </span>
+                      <span class="text-xs text-tinta-suave"> documentos por recibir</span>
+                    </p>
+                    <p v-if="fila.documentos_no_entiendo" class="text-xs text-estado-nodeclarado">
+                      {{ fila.documentos_no_entiendo }} «no entiendo»
+                    </p>
+                    <p v-if="fila.documentos_no_lo_tengo" class="text-xs text-estado-discrepancia">
+                      {{ fila.documentos_no_lo_tengo }} que el cliente no tiene
+                    </p>
+                    <p v-if="fila.documentos_sin_reconocer" class="text-xs text-estado-discrepancia">
+                      {{ fila.documentos_sin_reconocer }} sin clasificar
+                    </p>
+                  </template>
+                  <span v-else-if="!fila.exogena_cargada" class="text-xs text-tinta-tenue">
+                    Sin exógena
+                  </span>
+                  <span v-else class="text-xs text-tinta-tenue">—</span>
+                  <p v-if="fila.periodo_fiscal_id && !fila.enlace_vigente" class="text-xs text-tinta-tenue">
+                    Sin enlace activo
+                  </p>
                 </td>
                 <td class="text-tinta-suave">
                   <p v-for="aviso in fila.avisos" :key="aviso" class="text-xs">{{ aviso }}</p>

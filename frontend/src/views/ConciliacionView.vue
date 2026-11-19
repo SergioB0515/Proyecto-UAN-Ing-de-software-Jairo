@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from 'vue'
 
 import { mensajeDeError } from '../api/cliente'
 import { conciliar } from '../api/conciliacion'
+import { borrarDecision, fijarDecision } from '../api/portal'
 import Cargando from '../components/Cargando.vue'
 import CruceDian from '../components/CruceDian.vue'
 import DeclararDesdeExogena from '../components/DeclararDesdeExogena.vue'
@@ -10,7 +11,7 @@ import EstadoConciliacion from '../components/EstadoConciliacion.vue'
 import EstadoVacio from '../components/EstadoVacio.vue'
 import MensajeError from '../components/MensajeError.vue'
 import { useContribuyente } from '../contexto'
-import { dinero } from '../formato'
+import { ETIQUETAS_FUENTE_VALOR_FINAL, dinero } from '../formato'
 
 const { contribuyente, periodo } = useContribuyente()
 const resultado = ref(null)
@@ -37,8 +38,15 @@ const items = computed(() => {
     .sort((a, b) => ORDEN.indexOf(a.estado) - ORDEN.indexOf(b.estado))
 })
 
+const ORIGENES = {
+  FuenteIngreso: 'Ingreso',
+  Activo: 'Activo',
+  VentaInmueble: 'Venta de inmueble',
+  Adicional: 'Adicional',
+}
+
 function origenTexto(item) {
-  const origen = { FuenteIngreso: 'Ingreso', Activo: 'Activo', VentaInmueble: 'Venta de inmueble' }[item.origen] ?? 'Solo en la exógena'
+  const origen = ORIGENES[item.origen] ?? 'Solo en la exógena'
   return item.concepto_code ? `${origen}, concepto ${item.concepto_code}` : origen
 }
 
@@ -53,6 +61,53 @@ async function cargar() {
   } catch (e) {
     if (e.response?.status === 404) sinExogena.value = true
     else error.value = mensajeDeError(e)
+  }
+}
+
+// --- Valor final de cada renglón -----------------------------------------
+//
+// Es la decisión del contador: qué cifra se declara y de dónde se tomó. El
+// servidor NO acepta el valor cuando la fuente es la exógena o lo declarado
+// (lo toma de la fila), así que solo se manda en MANUAL. Si se aceptara, el
+// registro podría decir «elegí el valor de la exógena» junto a otra cifra.
+
+const decidiendo = ref(null)
+const valorManual = ref('')
+const errorDecision = ref('')
+
+function abrirDecision(item) {
+  decidiendo.value = item.clave
+  valorManual.value = item.valor_final ?? item.valor_declarado ?? item.valor_exogena ?? ''
+  errorDecision.value = ''
+}
+
+function soloDigitos(texto) {
+  return Number(String(texto ?? '').replace(/[^\d]/g, ''))
+}
+
+async function decidir(item, fuente) {
+  errorDecision.value = ''
+  try {
+    await fijarDecision(contribuyente.value.id, periodo.value.id, {
+      clave_item: item.clave,
+      fuente_elegida: fuente,
+      valor_final: fuente === 'MANUAL' ? soloDigitos(valorManual.value) : null,
+    })
+    decidiendo.value = null
+    await cargar()
+  } catch (e) {
+    errorDecision.value = mensajeDeError(e)
+  }
+}
+
+async function deshacerDecision(item) {
+  errorDecision.value = ''
+  try {
+    await borrarDecision(contribuyente.value.id, periodo.value.id, item.clave)
+    decidiendo.value = null
+    await cargar()
+  } catch (e) {
+    errorDecision.value = mensajeDeError(e)
   }
 }
 
@@ -102,6 +157,12 @@ onMounted(cargar)
     </div>
     <p v-if="filtro" class="text-sm text-tinta-suave">{{ EXPLICACION[filtro] }}</p>
     <p v-if="avisoDeclarado" class="rounded bg-libro-claro px-4 py-3 text-sm" role="status">{{ avisoDeclarado }}</p>
+    <p class="max-w-prose text-sm text-tinta-suave">
+      Valor final fijado en {{ resultado.total_decididos }} de {{ resultado.items.length }}
+      renglones. Esta es la única tabla: aquí aterriza lo del archivo de la DIAN, lo registrado y
+      lo que entró por adicionales. El valor final lo fijas tú; el contribuyente informa y aporta
+      soportes, no decide cifras.
+    </p>
 
     <div class="hoja overflow-x-auto">
       <table>
@@ -113,14 +174,15 @@ onMounted(cargar)
             <th class="cifra">Exógena</th>
             <th class="cifra">Diferencia</th>
             <th>Estado</th>
+            <th class="cifra border-l border-papel-linea">Valor final</th>
             <th v-if="puedeDeclarar"><span class="sr-only">Acciones</span></th>
           </tr>
         </thead>
         <tbody>
           <tr v-if="!items.length">
-            <td :colspan="puedeDeclarar ? 7 : 6" class="py-6 text-center text-tinta-suave">Nada en este estado.</td>
+            <td :colspan="puedeDeclarar ? 8 : 7" class="py-6 text-center text-tinta-suave">Nada en este estado.</td>
           </tr>
-          <template v-for="(item, i) in items" :key="i">
+          <template v-for="item in items" :key="item.clave">
           <tr :class="FONDO_FILA[item.estado]">
             <td>
               {{ item.concepto }}
@@ -142,6 +204,31 @@ onMounted(cargar)
               <template v-else>—</template>
             </td>
             <td><EstadoConciliacion :estado="item.estado" /></td>
+            <td class="cifra border-l border-papel-linea">
+              <template v-if="item.valor_final !== null">
+                <span class="font-semibold">{{ dinero(item.valor_final) }}</span>
+                <p class="text-xs font-normal text-tinta-tenue">
+                  {{ ETIQUETAS_FUENTE_VALOR_FINAL[item.fuente_valor_final] }}
+                </p>
+                <button
+                  v-if="puedeDeclarar"
+                  type="button"
+                  class="text-xs font-normal text-libro underline"
+                  @click="abrirDecision(item)"
+                >
+                  Cambiar
+                </button>
+              </template>
+              <button
+                v-else-if="puedeDeclarar"
+                type="button"
+                class="text-sm font-medium text-libro underline"
+                @click="abrirDecision(item)"
+              >
+                Fijar
+              </button>
+              <span v-else class="text-tinta-tenue">—</span>
+            </td>
             <td v-if="puedeDeclarar" class="text-right">
               <button
                 v-if="item.estado === 'NO_DECLARADO' && declarando !== item.registro_exogena_id"
@@ -153,8 +240,70 @@ onMounted(cargar)
               </button>
             </td>
           </tr>
+
+          <!-- Elegir el valor final y dejar registrada la fuente. -->
+          <tr v-if="decidiendo === item.clave">
+            <td :colspan="puedeDeclarar ? 8 : 7" class="bg-papel-hondo/60">
+              <div class="space-y-3 p-3">
+                <p class="text-sm font-medium">¿Qué valor se declara en «{{ item.concepto }}»?</p>
+                <div class="flex flex-wrap items-end gap-3">
+                  <button
+                    type="button"
+                    class="boton-secundario"
+                    :disabled="item.valor_exogena === null"
+                    @click="decidir(item, 'EXOGENA')"
+                  >
+                    El de la exógena
+                    <span class="cifra">{{ dinero(item.valor_exogena) }}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="boton-secundario"
+                    :disabled="item.valor_declarado === null"
+                    @click="decidir(item, 'DECLARADO')"
+                  >
+                    El declarado
+                    <span class="cifra">{{ dinero(item.valor_declarado) }}</span>
+                  </button>
+                  <div>
+                    <label class="etiqueta" :for="`manual-${item.clave}`">Otro valor</label>
+                    <div class="flex gap-2">
+                      <input
+                        :id="`manual-${item.clave}`"
+                        v-model="valorManual"
+                        class="campo w-40"
+                        inputmode="numeric"
+                      />
+                      <button type="button" class="boton" @click="decidir(item, 'MANUAL')">
+                        Fijar a mano
+                      </button>
+                    </div>
+                  </div>
+                </div>
+                <MensajeError :mensaje="errorDecision" />
+                <div class="flex flex-wrap gap-4 text-sm">
+                  <button type="button" class="text-tinta-suave underline" @click="decidiendo = null">
+                    Cancelar
+                  </button>
+                  <button
+                    v-if="item.valor_final !== null"
+                    type="button"
+                    class="text-estado-nodeclarado underline"
+                    @click="deshacerDecision(item)"
+                  >
+                    Quitar el valor final
+                  </button>
+                </div>
+                <p class="max-w-prose text-xs text-tinta-suave">
+                  Queda registrado de qué fuente se tomó. Es lo que permite explicar después por
+                  qué se declaró esta cifra y no la que reportó el tercero.
+                </p>
+              </div>
+            </td>
+          </tr>
+
           <tr v-if="declarando === item.registro_exogena_id">
-            <td colspan="7" class="bg-papel-hondo/60">
+            <td :colspan="puedeDeclarar ? 8 : 7" class="bg-papel-hondo/60">
               <DeclararDesdeExogena
                 :item="item"
                 :contribuyente-id="contribuyente.id"

@@ -1,8 +1,10 @@
 import io
 import re
+from datetime import date, datetime
 from typing import List, Optional
 
 import pandas as pd
+from sqlalchemy import func, nulls_last
 from sqlmodel import Session, select
 
 from core.config import TAMANO_MAXIMO_EXOGENA_MB
@@ -45,6 +47,32 @@ def _es_sugerencia_condicional(uso: Optional[str]) -> bool:
 
 NIT_DIAN = "800197268"
 
+# Etiquetas del bloque de encabezado del reporte «Consulta de Información
+# reportada por terceros». La fecha de corte la escribe la DIAN en el propio
+# archivo; leerla es preferible a usar la fecha de importación, que solo dice
+# cuándo alguien subió el archivo y no de cuándo son los datos.
+ETIQUETA_FECHA_CORTE = "fecha corte"
+ETIQUETA_ANIO_CONSULTA = "año al que se refiere"
+
+_FORMATOS_FECHA = ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d/%m/%Y %H:%M:%S", "%d/%m/%Y")
+
+
+def _fecha(valor) -> Optional[date]:
+    """La fecha de corte, venga como texto o como fecha de Excel."""
+    if valor is None:
+        return None
+    if isinstance(valor, datetime):
+        return valor.date()
+    if isinstance(valor, date):
+        return valor
+    texto = str(valor).strip()
+    for formato in _FORMATOS_FECHA:
+        try:
+            return datetime.strptime(texto, formato).date()
+        except ValueError:
+            continue
+    return None
+
 FIRMAS_EXCEL = (b"PK\x03\x04", b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1")
 EXTENSIONES_EXCEL = (".xlsx", ".xls")
 
@@ -86,17 +114,29 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
         )
 
     consultante = ConsultanteInfo()
+    fecha_corte: Optional[date] = None
+    anio_consulta: Optional[int] = None
     for fila in filas[:indice_encabezado]:
         etiqueta = _texto(_col(fila, 0)) or ""
         valor = _texto(_col(fila, 2))
+        etiqueta_normalizada = etiqueta.strip().lower()
         if etiqueta.startswith("Tipo de documento"):
             consultante.tipo_documento = valor
         elif etiqueta.startswith("Identificación:"):
             consultante.identificacion = valor
         elif etiqueta.startswith("Nombres / Razón social"):
             consultante.nombre = valor
+        elif etiqueta_normalizada.startswith(ETIQUETA_FECHA_CORTE):
+            fecha_corte = _fecha(_col(fila, 2))
+        elif etiqueta_normalizada.startswith(ETIQUETA_ANIO_CONSULTA):
+            try:
+                anio_consulta = int(str(valor).strip())
+            except (TypeError, ValueError):
+                anio_consulta = None
 
-    resultado = ResultadoParseo(consultante=consultante)
+    resultado = ResultadoParseo(
+        consultante=consultante, fecha_corte=fecha_corte, anio_consulta=anio_consulta
+    )
 
     for i in range(indice_encabezado + 1, len(filas)):
         fila = filas[i]
@@ -195,11 +235,19 @@ def importar_reporte_exogena(
         )
 
     resultado = parsear_archivo_exogena(contenido)
+    advertencias = _revisar_contexto(session, periodo, resultado)
 
+    version_anterior = session.exec(
+        select(func.max(ReporteExogena.version)).where(
+            ReporteExogena.periodo_fiscal_id == periodo_fiscal_id
+        )
+    ).one()
     reporte = ReporteExogena(
         contribuyente_id=contribuyente_id,
         periodo_fiscal_id=periodo_fiscal_id,
         nombre_archivo_original=nombre_archivo,
+        fecha_corte=resultado.fecha_corte,
+        version=(version_anterior or 0) + 1,
     )
     session.add(reporte)
     session.flush()
@@ -218,10 +266,46 @@ def importar_reporte_exogena(
     return ReporteExogenaImportado(
         **reporte.model_dump(),
         consultante=resultado.consultante,
+        anio_consulta=resultado.anio_consulta,
         cantidad_topes=len(resultado.topes),
         cantidad_registros=len(resultado.registros),
         errores=resultado.errores,
+        advertencias=advertencias,
     )
+
+
+def _revisar_contexto(session: Session, periodo, resultado: ResultadoParseo) -> List[str]:
+    """Avisos sobre el archivo que se está cargando, sin rechazarlo.
+
+    Son dos equivocaciones frecuentes y silenciosas: cargar el archivo de otro
+    año gravable, y cargar una consulta más vieja encima de una más nueva. El
+    archivo dice las dos cosas, así que se pueden detectar.
+
+    Son advertencias y no errores a propósito: el archivo es válido y el
+    contador puede tener una razón para cargarlo. Lo que no puede pasar es que
+    nadie se dé cuenta, así que el aviso viaja hasta el panel de cartera.
+    """
+    avisos: List[str] = []
+    if resultado.anio_consulta and resultado.anio_consulta != periodo.anio_gravable:
+        avisos.append(
+            f"El archivo dice ser del año gravable {resultado.anio_consulta} y se "
+            f"cargó en el periodo {periodo.anio_gravable}. Verifique que es el "
+            "archivo correcto."
+        )
+
+    if resultado.fecha_corte is not None:
+        corte_anterior = session.exec(
+            select(func.max(ReporteExogena.fecha_corte)).where(
+                ReporteExogena.periodo_fiscal_id == periodo.id
+            )
+        ).one()
+        if corte_anterior is not None and resultado.fecha_corte < corte_anterior:
+            avisos.append(
+                f"Este archivo tiene fecha de corte {resultado.fecha_corte} y ya "
+                f"había una consulta con corte {corte_anterior}, que es más "
+                "reciente. La conciliación seguirá usando la más reciente."
+            )
+    return avisos
 
 
 def listar_reportes_exogena(
@@ -253,10 +337,18 @@ def obtener_reporte_exogena(
 def obtener_reporte_mas_reciente(
     session: Session, periodo_fiscal_id: int
 ) -> ReporteExogena:
+    # Manda la fecha de CORTE, no la de importación: si alguien sube hoy una
+    # consulta de marzo, los datos siguen siendo los de septiembre. Los
+    # reportes sin fecha de corte (importados antes de que se leyera el dato)
+    # quedan al final y solo se usan si no hay ninguno con corte.
     reporte = session.exec(
         select(ReporteExogena)
         .where(ReporteExogena.periodo_fiscal_id == periodo_fiscal_id)
-        .order_by(ReporteExogena.fecha_importacion.desc(), ReporteExogena.id.desc())
+        .order_by(
+            nulls_last(ReporteExogena.fecha_corte.desc()),
+            ReporteExogena.version.desc(),
+            ReporteExogena.id.desc(),
+        )
     ).first()
     if reporte is None:
         raise ReporteExogenaNoEncontradoError(

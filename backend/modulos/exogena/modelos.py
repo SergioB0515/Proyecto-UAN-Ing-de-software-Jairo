@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
@@ -14,6 +14,16 @@ class ConceptoDian(SQLModel, table=True):
 
 class ReporteExogenaBase(SQLModel):
     nombre_archivo_original: str = Field(max_length=255)
+    # Fecha de corte del proceso de la DIAN, tal como la declara el propio
+    # archivo. Es el dato que dice QUÉ TAN VIEJA es la información: dos
+    # archivos del mismo año gravable con cortes distintos no son el mismo
+    # archivo, y el que vale es el de corte más reciente. Sin esto, cargar
+    # una consulta de marzo encima de una de septiembre pasa inadvertido.
+    fecha_corte: Optional[date] = None
+    # Consecutivo de importaciones del mismo periodo fiscal. El archivo
+    # anterior no se borra: la versión permite volver a él y explicar por qué
+    # una cifra cambió entre una conciliación y la siguiente.
+    version: int = Field(default=1)
 
 
 class ReporteExogena(ReporteExogenaBase, table=True):
@@ -95,6 +105,8 @@ class FilaConError(SQLModel):
 
 class ResultadoParseo(SQLModel):
     consultante: ConsultanteInfo
+    fecha_corte: Optional[date] = None
+    anio_consulta: Optional[int] = None
     topes: List[TopeExogenaBase] = []
     registros: List[RegistroExogenaBase] = []
     errores: List[FilaConError] = []
@@ -102,6 +114,10 @@ class ResultadoParseo(SQLModel):
 
 class ReporteExogenaImportado(ReporteExogenaLeer):
     consultante: ConsultanteInfo
+    anio_consulta: Optional[int] = None
     cantidad_topes: int
     cantidad_registros: int
     errores: List[FilaConError] = []
+    # Avisos que no impiden importar pero que el contador tiene que ver, como
+    # un archivo cuyo año no es el del periodo al que se cargó.
+    advertencias: List[str] = []

@@ -176,6 +176,38 @@ class PlantillaNoEncontradaError(ErrorAplicacion):
     pass
 
 
+class EnlaceCargaNoEncontradoError(ErrorAplicacion):
+    pass
+
+
+class EnlaceCargaRevocadoError(ErrorAplicacion):
+    pass
+
+
+class EnlaceCargaExpiradoError(ErrorAplicacion):
+    pass
+
+
+class PoliticaNoAceptadaError(ErrorAplicacion):
+    """Se intentó cargar algo por el enlace sin aceptar antes la política."""
+
+
+class VersionPoliticaDesconocidaError(ErrorAplicacion):
+    pass
+
+
+class DatoAdicionalNoEncontradoError(ErrorAplicacion):
+    pass
+
+
+class TopeAdicionalExcedidoError(ErrorAplicacion):
+    """El valor capturado supera el tope del año gravable."""
+
+
+class DecisionRenglonInvalidaError(ErrorAplicacion):
+    pass
+
+
 class VentaNoEncontradaError(ErrorAplicacion):
     pass
 

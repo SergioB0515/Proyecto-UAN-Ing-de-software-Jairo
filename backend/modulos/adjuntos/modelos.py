@@ -14,6 +14,11 @@ class TipoEntidadAdjunto(str, Enum):
     DOCUMENTO_SOPORTE = "DOCUMENTO_SOPORTE"
     MOVIMIENTO = "MOVIMIENTO"
     PROVEEDOR = "PROVEEDOR"
+    # Un documento de la solicitud al cliente (módulo gestión). Atar el
+    # archivo al documento y no al periodo es lo que permite abrir el ítem y
+    # ver el papel que lo respalda, en vez de una carpeta con treinta archivos
+    # y nadie que recuerde a qué correspondía cada uno.
+    DOCUMENTO_SOLICITADO = "DOCUMENTO_SOLICITADO"
 
 
 class CategoriaAdjunto(str, Enum):

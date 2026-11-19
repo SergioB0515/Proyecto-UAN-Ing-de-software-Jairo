@@ -22,6 +22,8 @@ from modulos.inventario.router import router as router_inventario
 from modulos.liquidacion.router import router as router_liquidacion
 from modulos.movimientos.router import router as router_movimientos
 from modulos.parametros.router import router as router_parametros
+from modulos.portal.router import router as router_portal
+from modulos.portal.router_publico import router as router_portal_publico
 from modulos.reportes.router import router as router_reportes
 
 
@@ -98,6 +100,10 @@ for _router in (
     router_cartera,
     router_adjuntos,
     router_auditoria,
+    router_portal,
+    # El portal del contribuyente. Va de último para que quede a la vista que
+    # es el único router sin dependencia de sesión de contador.
+    router_portal_publico,
 ):
     app.include_router(_router, prefix=PREFIJO_API)
 

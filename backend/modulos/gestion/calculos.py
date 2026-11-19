@@ -480,6 +480,10 @@ class DocumentoSugerido:
     tercero: str = ""
     nit: str = ""
     motivo: str = ""
+    # False cuando ninguna regla reconoció el concepto y se pide un soporte
+    # genérico. La fila NO se descarta —eso es lo que después aparece en un
+    # requerimiento de la DIAN— pero el contador tiene que clasificarla.
+    reconocido: bool = True
 
 
 @dataclass
@@ -537,6 +541,16 @@ _POR_DEDUCCION = {
 }
 
 
+def codigos_con_documento() -> frozenset:
+    """Códigos para los que existe un documento que pedir.
+
+    Lo usa el portal: no todo lo que el contribuyente registra genera una
+    petición. Un activo o un bien en el exterior valen lo que valen y entran a
+    la conciliación; no hay un certificado estándar que pedirle por ellos.
+    """
+    return frozenset(_POR_DEDUCCION)
+
+
 def sugerir_documentos(
     registros: Iterable[RegistroParaDocumentos],
     codigos_deducciones: Iterable[str] = (),
@@ -562,8 +576,10 @@ def sugerir_documentos(
         for patron, tipo, descripcion in _REGLAS:
             if re.search(patron, texto):
                 break
+            reconocido = True
         else:
             tipo, descripcion = "OTRO", "Soporte de lo reportado por el tercero"
+            reconocido = False
         if not tipo:
             continue
         motivo = re.sub(r"\s*\(Concepto:\s*\d+\)", "", r.detalle).strip()
@@ -574,7 +590,7 @@ def sugerir_documentos(
                 clave = f"PREDIAL:{matricula.group(1)}"
                 descripcion += f" (matrícula {matricula.group(1)})"
         agregar(DocumentoSugerido(clave, descripcion, r.nombre, r.nit,
-                                  f"La exógena reporta: {motivo}"))
+                                  f"La exógena reporta: {motivo}", reconocido))
 
     for codigo in codigos_deducciones:
         if codigo in _POR_DEDUCCION:

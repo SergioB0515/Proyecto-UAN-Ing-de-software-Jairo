@@ -13,6 +13,7 @@ engine = create_engine(DATABASE_URL, echo=False)
 def registrar_modelos() -> None:
     from modulos.adjuntos.modelos import Adjunto
     from modulos.auditoria.modelos import EventoAuditoria, IntentoAcceso
+    from modulos.conciliacion.modelos import DecisionRenglon
     from modulos.contadores.modelos import Contador
     from modulos.contribuyentes.modelos import (
         Activo,
@@ -48,6 +49,11 @@ def registrar_modelos() -> None:
         Proveedor,
     )
     from modulos.parametros.modelos import PlazoDeclaracion, UmbralDeclaracion
+    from modulos.portal.modelos import (
+        AutorizacionTratamiento,
+        DatoAdicional,
+        EnlaceCarga,
+    )
     from modulos.reportes.modelos import CierrePeriodo
 
 
@@ -169,6 +175,25 @@ def crear_tablas() -> None:
         engine,
         "registros_exogena",
         {"renglones_son_condicionales": "BOOLEAN NOT NULL DEFAULT FALSE"},
+    )
+    # Versionado de la exógena por fecha de corte. Los reportes importados
+    # antes de esta versión quedan con fecha_corte NULL (no se puede inventar
+    # una) y version 1; `obtener_reporte_mas_reciente` los ordena al final
+    # justamente por eso.
+    _agregar_columnas_si_faltan(
+        engine,
+        "reportes_exogena",
+        {"fecha_corte": "DATE", "version": "INTEGER NOT NULL DEFAULT 1"},
+    )
+    # El documento solicitado pasó a ser también la cara que ve el cliente:
+    # guarda lo que él informó y quién puso el estado.
+    _agregar_columnas_si_faltan(
+        engine,
+        "documentos_solicitados",
+        {
+            "valor_informado": "NUMERIC(18,2)",
+            "respondido_por_contribuyente": "BOOLEAN NOT NULL DEFAULT FALSE",
+        },
     )
 
 

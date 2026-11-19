@@ -50,6 +50,9 @@ def importar_exogena(
 ):
     try:
         contenido = servicios.leer_archivo_exogena(archivo.file, archivo.filename)
+        # No hay nada que sincronizar después de importar: la lista de
+        # documentos que se le piden al cliente se deriva del reporte cada vez
+        # que se consulta, así que cargar el archivo la actualiza sola.
         return servicios.importar_reporte_exogena(
             session,
             contador.id,

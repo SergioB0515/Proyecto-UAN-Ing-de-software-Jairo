@@ -10,6 +10,15 @@ const routes = [
     component: () => import('../views/LoginView.vue'),
     meta: { publica: true },
   },
+  {
+    // Portal del contribuyente. Es pública a propósito: quien la abre no
+    // tiene cuenta, y el alcance lo da el token de la dirección. Va antes de
+    // las rutas del contador para que ningún guardia la toque.
+    path: '/carga/:token',
+    name: 'carga',
+    component: () => import('../views/PortalCargaView.vue'),
+    meta: { publica: true, sinMarco: true },
+  },
   { path: '/', redirect: { name: 'cartera' } },
   { path: '/cartera', name: 'cartera', component: () => import('../views/CarteraView.vue') },
   {
