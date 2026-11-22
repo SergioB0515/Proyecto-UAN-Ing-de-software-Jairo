@@ -14,6 +14,7 @@ import {
   descargarBorrador210,
   imputarDeduccion,
   obtenerEscenarios,
+  simularAporte,
   exportarLiquidacion,
   liquidar,
   listarCedulas,
@@ -87,6 +88,31 @@ const seccionesPlegadas = computed(
 // pliegan: son lo que el motor dice que no evalúa, y esconderlos sería
 // quedarse con las cifras y tirar las salvedades.
 const verTablasDelBorrador = ref(false)
+
+// Simulador de aporte voluntario. Responde «¿cuánto baja el impuesto si
+// aporto X a un AFC o a pensión voluntaria?» con la cifra del motor.
+const aporte = ref('')
+const simulacion = ref(null)
+const simulando = ref(false)
+const errorSimulacion = ref('')
+
+async function simular() {
+  errorSimulacion.value = ''
+  const valor = Number(String(aporte.value).replace(/[^\d]/g, ''))
+  if (!valor) {
+    errorSimulacion.value = 'Escriba un valor mayor que cero.'
+    return
+  }
+  simulando.value = true
+  try {
+    simulacion.value = await simularAporte(cid.value, pid.value, valor)
+  } catch (e) {
+    errorSimulacion.value = mensajeDeError(e)
+    simulacion.value = null
+  } finally {
+    simulando.value = false
+  }
+}
 const deducciones = ref([])
 const resultado = ref(null)
 const escenarios = ref([])
@@ -890,6 +916,94 @@ onMounted(cargar)
       :anio-gravable="periodo.anio_gravable"
       @cambio="recalcular"
     />
+
+    <!-- Simulador de aporte voluntario -->
+    <section class="hoja p-5">
+      <h2>¿Y si aporta a un AFC o a pensión voluntaria?</h2>
+      <p class="mt-1 max-w-prose text-sm text-tinta-suave">
+        Vuelve a liquidar con el aporte puesto. No guarda nada. El aporte se recorta a lo que la
+        ley deja deducir: manda el menor entre el cupo del art. 336 y el tope propio de estos
+        conceptos.
+      </p>
+
+      <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="simular">
+        <div>
+          <label class="etiqueta" for="sim-aporte">Aporte a simular</label>
+          <input
+            id="sim-aporte"
+            v-model="aporte"
+            class="campo w-56"
+            inputmode="numeric"
+            placeholder="20000000"
+          />
+        </div>
+        <button type="submit" class="boton" :disabled="simulando">
+          {{ simulando ? 'Calculando…' : 'Simular' }}
+        </button>
+      </form>
+
+      <p v-if="errorSimulacion" role="alert" class="mt-3 text-sm text-estado-nodeclarado">
+        {{ errorSimulacion }}
+      </p>
+
+      <div v-if="simulacion" class="mt-5 space-y-4">
+        <p
+          v-if="simulacion.recortado"
+          class="rounded border-l-4 border-estado-discrepancia bg-estado-discrepancia-claro px-4 py-3 text-sm"
+        >
+          De {{ dinero(simulacion.valor_propuesto) }} solo son deducibles
+          <span class="font-semibold">{{ dinero(simulacion.valor_deducible) }}</span>.
+          <template v-if="simulacion.motivo_recorte === 'LIMITE_GENERAL'">
+            Lo recorta el cupo del {{ simulacion.limite_general.fuente_legal }}.
+          </template>
+          <template v-else>
+            Lo recorta el tope propio: {{ simulacion.tope_propio.fuente_legal }}.
+          </template>
+        </p>
+
+        <div class="grid gap-4 sm:grid-cols-3">
+          <div class="rounded border border-papel-linea p-4">
+            <p class="text-xs text-tinta-suave">Impuesto hoy</p>
+            <p class="cifra mt-1 text-xl">{{ dinero(simulacion.actual.impuesto) }}</p>
+          </div>
+          <div class="rounded border border-papel-linea p-4">
+            <p class="text-xs text-tinta-suave">Con el aporte</p>
+            <p class="cifra mt-1 text-xl">{{ dinero(simulacion.con_aporte.impuesto) }}</p>
+          </div>
+          <div class="rounded border border-libro bg-libro-claro p-4">
+            <p class="text-xs text-tinta-suave">Baja el impuesto en</p>
+            <p class="cifra mt-1 text-xl font-semibold">
+              {{ dinero(simulacion.ahorro_en_impuesto) }}
+            </p>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Límite</th>
+              <th class="text-right">Techo</th>
+              <th class="text-right">Usado</th>
+              <th class="text-right">Disponible</th>
+              <th>Norma</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="c in [simulacion.limite_general, simulacion.tope_propio]" :key="c.fuente_legal">
+              <td>{{ c === simulacion.limite_general ? 'Límite general' : 'Tope propio del aporte' }}</td>
+              <td class="cifra">{{ dinero(c.techo) }}</td>
+              <td class="cifra">{{ dinero(c.usado) }}</td>
+              <td class="cifra">{{ dinero(c.disponible) }}</td>
+              <td class="text-xs text-tinta-suave">{{ c.fuente_legal }}</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <ul class="list-disc space-y-1 pl-5 text-xs text-tinta-suave">
+          <li v-for="(a, i) in simulacion.advertencias" :key="i">{{ a }}</li>
+        </ul>
+      </div>
+    </section>
 
     <!-- Escenarios -->
     <section v-if="escenarios.length" class="hoja p-5">

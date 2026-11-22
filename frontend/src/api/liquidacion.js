@@ -24,6 +24,11 @@ export async function imputarDeduccion(cid, pid, id, datos) {
 // Escenarios: una decisión cambiada a la vez.
 export const obtenerEscenarios = (cid, pid) => obtener(`${base(cid, pid)}/escenarios`)
 
+// Simulación de un aporte voluntario a AFC o pensión voluntaria. No guarda
+// nada: reliquida en memoria y responde.
+export const simularAporte = (cid, pid, valor) =>
+  obtener(`${base(cid, pid)}/simulacion-aporte?valor=${encodeURIComponent(valor)}`)
+
 export const eliminarDeduccion = (cid, pid, id) =>
   cliente.delete(`${base(cid, pid)}/deducciones/${id}`)
 

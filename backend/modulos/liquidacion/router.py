@@ -33,6 +33,7 @@ from .modelos import (
     VentaInmuebleLeer,
     DeduccionImputacion,
     EscenariosLeer,
+    SimulacionAporteLeer,
     ClasificacionIngresoDatos,
     DatosDepreciacionGuardar,
     DatosDepreciacionLeer,
@@ -292,6 +293,26 @@ def escenarios(
     try:
         return servicios.simular_escenarios(
             session, contador.id, contribuyente_id, periodo_fiscal_id
+        )
+    except Exception as exc:
+        raise _traducir(exc)
+
+
+@router.get(f"{_BASE}/simulacion-aporte", response_model=SimulacionAporteLeer)
+def simulacion_aporte(
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    valor: Decimal = Query(gt=0, description="Aporte a simular, en pesos"),
+    contador: Contador = Depends(obtener_contador_actual),
+    session: Session = Depends(obtener_sesion),
+):
+    """Qué pasa con el impuesto si se aporta a un AFC o a pensión voluntaria.
+
+    Es GET y no POST porque no guarda nada: reliquida en memoria y responde.
+    """
+    try:
+        return servicios.simular_aporte_voluntario(
+            session, contador.id, contribuyente_id, periodo_fiscal_id, valor
         )
     except Exception as exc:
         raise _traducir(exc)

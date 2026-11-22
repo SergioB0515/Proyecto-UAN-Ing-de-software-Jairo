@@ -274,14 +274,47 @@ solo se deja de perder más.
 
 ---
 
-## 5. Bloque 4 — La primera función nueva: simulador de planeación
+## 5. Bloque 4 — La primera función nueva: simulador de planeación — **hecho**
 
-**Esfuerzo: 5–7 días. Riesgo: bajo.**
+**Resultó mucho más pequeño que los 5–7 días estimados, porque la mitad ya
+estaba construida.**
 
 > «¿Cuánto me baja el impuesto si aporto 20 millones a un AFC?»
 
-De los tres módulos que el 11 pone como siguientes, este es el que hay que
-construir ahora, y no por tamaño:
+Al ir a construirlo apareció que `simular_escenarios` ya existía: reliquida
+cambiando una decisión a la vez y presenta tres escenarios automáticos
+—honorarios con costos o con renta exenta, método del anticipo, y cupo sin
+usar del art. 336—. Lo que faltaba no era el simulador sino **que el contador
+pudiera elegir el monto**: el escenario del cupo mostraba el máximo teórico,
+no el efecto de aportar una cifra concreta.
+
+Lo construido es `GET …/simulacion-aporte?valor=X`: reliquida con el aporte
+puesto y devuelve el impuesto antes y después. No guarda nada.
+
+Lo que lo hace útil y no un cálculo de apariencia: **el aporte se recorta a
+lo que la ley deja deducir**. Hay dos techos y manda el menor, el general del
+art. 336 num. 3 (40 % de los ingresos depurados, tope 1.340 UVT) y el propio
+de estos conceptos (30 % del ingreso, tope 3.800 UVT, compartido entre AFC y
+pensión voluntaria, arts. 126-1 y 126-4). Se devuelven por separado el aporte
+propuesto y el deducible, y cuál de los dos límites recortó. Mostrar el
+ahorro de un aporte que la ley no deja deducir completo sería un consejo
+equivocado con apariencia de cálculo.
+
+Ninguna cifra de tope está escrita en el código: salen de la tabla de
+parámetros versionada por año, la misma que usa el portal para validar los
+adicionales.
+
+Un defecto que apareció al probarlo con datos reales: `Liquidacion.valor()`
+devuelve cero cuando el código de renglón no existe, así que escribir mal ese
+código no falla, **apaga el cálculo en silencio**. Pasó con el techo del 30 %,
+que quedó inactivo hasta que los números de la demostración lo delataron
+—daba 3.800 UVT para un contribuyente con 54 millones de ingresos—. Hay una
+prueba que lo vigila.
+
+### Por qué este y no retención en la fuente
+
+De los tres módulos que el 11 pone como siguientes, este era el que había que
+construir primero, y no por tamaño:
 
 - **No hay ley nueva que codificar.** Es recalcular la liquidación con
   insumos alterados. Todo el motor ya está hecho, parametrizado por año y
@@ -352,10 +385,11 @@ Para que se entienda que es una omisión decidida y no un olvido:
 | ~~3~~ | ~~56 campos de dinero a `Decimal`~~ **hecho** | — | — |
 | ~~4~~ | ~~Historias de usuario del portal (HU-28 a HU-36)~~ **hecho** | — | — |
 | ~~5~~ | ~~Consolidar las tablas laterales~~ **descartado, mal planteado** | — | — |
-| 6 | Simulador de planeación tributaria | 5–7 d | Bajo |
+| ~~6~~ | ~~Simulador de planeación tributaria~~ **hecho** | — | — |
 
-Queda alrededor de una semana: los bloques 1 y 2 están hechos, que eran el
-riesgo y la mitad del esfuerzo. En paralelo y desde el primer día: pedir las dos declaraciones
+Los seis puntos están cerrados: cuatro ejecutados, uno descartado por estar
+mal planteado y el último mucho más pequeño de lo estimado porque la mitad ya
+existía. En paralelo y desde el primer día: pedir las dos declaraciones
 reales.
 
 El criterio detrás del orden es uno solo: **primero lo que hace verificable
