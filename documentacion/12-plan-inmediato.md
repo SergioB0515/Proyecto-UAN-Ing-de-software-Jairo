@@ -57,23 +57,50 @@ va a tener este proyecto, y hoy no hay nada con qué verificarla.
 
 ## 2. Bloque 1 — Que una actualización se pueda probar
 
-**Esfuerzo: 1,5–2,5 días. Riesgo: bajo. Va primero.**
+**Esfuerzo: 1–2 días. Riesgo: bajo. Va primero.**
 
-### 1.1 Prueba de actualización en el CI (medio día)
+### 1.1 Prueba de actualización en el CI — **hecho**
 
-Un segundo job que, en vez de partir de una base vacía:
+`herramientas/prueba-actualizacion.sh`, y el trabajo `actualizacion` del CI
+que lo corre en cada push y cada pull request. En vez de partir de una base
+vacía:
 
-1. Hace *checkout* del último tag publicado y crea el esquema con **ese**
-   código.
-2. Siembra unas filas, para que la base tenga datos que no se puedan perder.
-3. Vuelve al commit actual y corre `crear_tablas()` encima.
-4. Corre la suite completa contra esa base.
+1. Crea el esquema con el código de la **rama base** y le siembra los datos
+   demo, para que la actualización ocurra sobre tablas con filas: sobre una
+   tabla vacía casi cualquier migración pasa, y una columna NOT NULL sin
+   valor por omisión solo falla si hay datos.
+2. Corre `crear_tablas()` del commit actual encima. Esa es la migración que
+   se está probando.
+3. Lee y borra los datos del código anterior con el código nuevo, que
+   comprueba que el actual entiende lo que escribió el anterior.
+4. Vacía las tablas y corre la suite completa sobre el esquema migrado.
 
-Eso atrapa los dos defectos de arriba, y de paso cualquier migración futura
-que se olvide. Es la prueba que faltaba, no una más.
+No hacen falta tags de versión, como decía la primera versión de este
+documento: la base de comparación es la rama base del pull request, o el
+commit anterior en un push. Es mejor referencia que un tag, porque es
+literalmente el código que está desplegado.
 
-Requiere empezar a poner tags de versión, que hoy no hay. Es parte del
-trabajo.
+No hubo que escribir una aserción por cada defecto posible. `conftest` crea
+el esquema con `create_all`, que no toca una tabla que ya existe, así que si
+después de migrar falta una columna o un valor de enum **las pruebas fallan
+igual que falló producción**. La suite ya era la verificación; lo que faltaba
+era darle una base con historia.
+
+Validada en los dos sentidos, que es lo que hace que sirva:
+
+| Código bajo prueba | Resultado |
+|---|---|
+| `7436f97`, el commit que tenía el defecto del enum | 10 pruebas fallan, entre ellas los estados `NO_LO_TENGO` y `NO_ENTIENDO` |
+| `main` actual | 579 en verde |
+
+Es decir: con este trabajo en el CI, el 500 no habría llegado a Render.
+
+Un detalle que salió al construirla, y que vale anotar: `borrar_demo` no
+borra las tablas de parámetros fiscales, porque son datos de referencia
+globales y en producción está bien que se queden. En la suite estorban —hay
+pruebas que siembran sus propios parámetros y asumen que no hay otros—, de
+ahí el paso de vaciar las tablas antes de correrla. El esquema viene de la
+actualización; los datos, no.
 
 ### 1.2 Alembic (1–2 días)
 
@@ -209,15 +236,16 @@ Para que se entienda que es una omisión decidida y no un olvido:
 
 | Orden | Trabajo | Esfuerzo | Riesgo |
 |---|---|---|---|
-| 1 | Prueba de actualización en el CI, con tags de versión | 0,5 d | Bajo |
+| ~~1~~ | ~~Prueba de actualización en el CI~~ **hecho** | — | — |
 | 2 | Alembic, convirtiendo los helpers actuales en revisiones | 1–2 d | Bajo |
 | 3 | 56 campos de dinero a `Decimal`/`NUMERIC(18,2)` | 3–5 d | **Alto** |
 | 4 | Historias de usuario del portal (HU-28+) y actualizar el 11 | 1 d | Bajo |
 | 5 | Consolidar las tablas laterales de liquidación | 1 d | Bajo |
 | 6 | Simulador de planeación tributaria | 5–7 d | Bajo |
 
-Entre dos y tres semanas de trabajo de una persona. En paralelo y desde el
-primer día: pedir las dos declaraciones reales.
+Entre dos y tres semanas de trabajo de una persona, menos el primer punto,
+que ya está. En paralelo y desde el primer día: pedir las dos declaraciones
+reales.
 
 El criterio detrás del orden es uno solo: **primero lo que hace verificable
 lo que viene después.** Los bloques 1 y 2 no agregan una sola pantalla y son
