@@ -257,8 +257,22 @@ class DeduccionSolicitadaLeer(DeduccionSolicitadaBase):
 
 
 class ClasificacionIngreso(SQLModel, table=True):
-    """Cédula asignada a una fuente de ingreso. Pendiente: pasarla a columna de
-    fuentes_ingreso.
+    """Cédula asignada a mano a una fuente de ingreso.
+
+    Por qué sigue siendo una tabla aparte y no una columna de
+    `fuentes_ingreso`, que es lo que decía una nota anterior:
+
+    La cédula es un concepto de este módulo. `fuentes_ingreso` pertenece a
+    `contribuyentes`, que hoy no depende de `liquidacion`: la dependencia va
+    en el otro sentido. Ponerle ahí una columna tipada con `Cedula` haría que
+    el módulo de abajo hable el vocabulario del de arriba, y la única forma
+    de evitarlo sería mover el enum a un sitio compartido, donde tampoco
+    corresponde: es vocabulario tributario, no infraestructura.
+
+    Lo que se ganaría a cambio es ahorrarse un join. No alcanza.
+
+    La ausencia de fila significa «sin clasificar a mano»: la cédula la
+    sugiere el motor. Por eso solo hay filas para lo que el contador decidió.
     """
 
     __tablename__ = "clasificaciones_ingreso"
@@ -374,7 +388,15 @@ class DatosDepreciacionBase(SQLModel):
 
 
 class DatosDepreciacion(DatosDepreciacionBase, table=True):
-    """Depreciación de un activo registrado. Pendiente: pasarla a columnas de activos."""
+    """Depreciación de un activo registrado.
+
+    Tampoco pasa a columnas de `activos`, contra lo que decía una nota
+    anterior. Solo se deprecian los activos fijos de un negocio: los de un
+    asalariado —una cuenta, un carro, un apartamento— no. Serían cinco
+    columnas en todas las filas de activos, nulas casi siempre, a cambio de
+    ahorrarse un join. Un grupo de atributos opcional y disperso es
+    justamente el caso en que una tabla aparte está bien.
+    """
 
     __tablename__ = "datos_depreciacion"
 

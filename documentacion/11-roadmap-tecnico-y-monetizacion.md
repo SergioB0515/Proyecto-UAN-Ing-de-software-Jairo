@@ -31,7 +31,7 @@ estimaciones de software se quedan cortas; tómelas como orden de magnitud.
 | Líneas de código (backend + frontend) | ~37.800 |
 | Módulos del backend | 16 |
 | Pruebas automatizadas | 579, todas en verde |
-| Historias de usuario con evidencia | 27 (HU-01 a HU-27) |
+| Historias de usuario | 36 (HU-01 a HU-36) |
 | Despliegue | Docker + Render, un solo contenedor |
 | CI | GitHub Actions |
 
@@ -189,7 +189,7 @@ recordar, porque son el tipo de cosa que solo sale corriendo el sistema:
 |---|---|---|---|---|
 | 1 | Migrar los 56 campos de dinero de `float` a `Decimal`/`NUMERIC(18,2)` | 3–5 días | **Alto** | Toca todos los módulos y las 579 pruebas. Es el defecto más serio para software contable. |
 | 2 | Alembic para migraciones versionadas | 1–2 días | Bajo | Sin esto no se puede evolucionar el esquema con datos reales en producción. |
-| 3 | Consolidar las tablas laterales (`clasificaciones_ingreso`, `datos_depreciacion`) como columnas de `fuentes_ingreso` y `activos` | 2 días | Bajo | Fueron decisiones de no romper nada cerca de la entrega; el diseño correcto son las columnas. |
+| ~~3~~ | ~~Consolidar las tablas laterales como columnas~~ **descartado** | — | — | Al revisarlo resultó estar mal planteado: ver el documento [12](12-plan-inmediato.md). La cédula es vocabulario de `liquidacion` y `fuentes_ingreso` es de `contribuyentes`, que no depende de ese módulo; y la depreciación es un grupo opcional que solo aplica a activos de negocio. |
 | 4 | Capa de organización: firma → contadores → roles | 4–6 días | Medio | Las 4.665 firmas del país no son un contador solo. Es el techo comercial actual. |
 | 5 | Cargar el catálogo de conceptos de la DIAN por resolución anual | 2–3 días | Bajo | Clasificar por código es más fiable que por palabras del concepto. |
 | 6 | Mapeo renglón → formulario 210 oficial, versionado por resolución | 2 días | Bajo | Hoy los códigos son propios y el contador tiene que mapear a mano. |
