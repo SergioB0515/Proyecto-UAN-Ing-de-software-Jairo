@@ -363,6 +363,46 @@ class EscenarioLeer(SQLModel):
     explicacion: str
 
 
+class CupoAporte(SQLModel):
+    """Lo que todavía cabe bajo un límite legal, y de dónde sale el límite."""
+
+    disponible: Decimal
+    techo: Decimal
+    usado: Decimal
+    fuente_legal: str
+
+
+class SimulacionAporteLeer(SQLModel):
+    """Qué pasaría con el impuesto si se hiciera un aporte voluntario.
+
+    Responde la pregunta de planeación más común —«¿cuánto me baja el
+    impuesto si aporto X a un AFC o a pensión voluntaria?»— con la cifra del
+    motor y no con una regla de tres.
+
+    `valor_deducible` puede ser menor que `valor_propuesto`: hay dos límites
+    y manda el menor de los dos. Devolver el ahorro de un aporte que la ley no
+    deja deducir completo sería dar un consejo equivocado con cara de cálculo.
+    """
+
+    contribuyente_id: int
+    periodo_fiscal_id: int
+    anio_gravable: int
+
+    valor_propuesto: Decimal
+    valor_deducible: Decimal
+    recortado: bool
+    motivo_recorte: Optional[str] = None
+
+    limite_general: CupoAporte
+    tope_propio: CupoAporte
+
+    actual: CifrasEscenario
+    con_aporte: CifrasEscenario
+    ahorro_en_impuesto: Decimal
+    ahorro_en_saldo: Decimal
+    advertencias: List[str]
+
+
 class EscenariosLeer(SQLModel):
     contribuyente_id: int
     periodo_fiscal_id: int

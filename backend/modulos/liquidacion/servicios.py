@@ -3,6 +3,7 @@
 La base guarda float; aquí se convierte a Decimal con _dec(), vía str.
 """
 
+from core.dinero import redondear_pesos
 from core.formato import pesos
 from dataclasses import replace
 from datetime import date, datetime, timezone
@@ -64,6 +65,7 @@ from .modelos import (
     PerdidaFiscalLeer,
     TipoRentaPerdida,
     ClasificacionIngreso,
+    CupoAporte,
     ClasificacionIngresoDatos,
     DeduccionSolicitada,
     DeduccionSolicitadaCrear,
@@ -73,6 +75,7 @@ from .modelos import (
     LiquidacionLeer,
     ParametrosAplicadosLeer,
     RenglonLeer,
+    SimulacionAporteLeer,
     VentaInmueble,
     VentaInmuebleCrear,
     VentaInmuebleLeer,
@@ -724,6 +727,163 @@ def _cifras(liq: motor.Liquidacion) -> CifrasEscenario:
     )
 
 
+def _cupo_limite_general(base, parametros) -> Tuple[Decimal, Decimal, Decimal]:
+    """Techo, usado y cupo restante del límite del art. 336 num. 3.
+
+    El techo es el menor entre el porcentaje de los ingresos depurados y el
+    tope en UVT. Lo que no está sujeto al límite (dependientes y el 1 % de
+    compras, art. 336 num. 5) se descuenta de lo usado: ocupa renglón pero no
+    ocupa cupo.
+    """
+    limite = parametros.limite_general
+    techo = min(
+        base.valor("CG-BASE-LIMITE") * (limite.porcentaje or CERO),
+        (limite.tope_uvt or CERO) * parametros.uvt,
+    )
+    sin_limite = sum(
+        (r.valor for r in base.renglones if r.codigo.startswith("CG-NOLIM-")), CERO
+    )
+    usado = base.valor("CG-EXENTAS-LIMITADAS") - sin_limite
+    return techo, usado, (techo - usado).quantize(Decimal("1"))
+
+
+def _cupo_ahorro_previsional(base, parametros) -> Tuple[Decimal, Decimal, str]:
+    """Techo y fuente legal del tope propio de AFC y pensión voluntaria.
+
+    Son el 30 % del ingreso del año y 3.800 UVT, compartidos entre los dos
+    conceptos (arts. 126-1 y 126-4 ET). Manda el menor.
+
+    El tope sale de la tabla de parámetros versionada por año, la misma que
+    usa el portal para validar los adicionales; acá se aplica además el
+    porcentaje sobre el ingreso, que el portal no puede aplicar porque en ese
+    momento no conoce el ingreso del periodo.
+    """
+    tope = parametros.topes_deducciones.get("AHORRO_AFC")
+    if tope is None or tope.tope_uvt is None:
+        return CERO, CERO, "Sin tope registrado para el año"
+    por_uvt = tope.tope_uvt * parametros.uvt
+    # Ojo con el nombre del renglón: `Liquidacion.valor()` devuelve cero
+    # cuando el código no existe, así que un error de tipeo acá no falla,
+    # apaga el techo del porcentaje sin decir nada.
+    # `test_el_tope_del_30_por_ciento_del_ingreso_si_aplica` lo vigila.
+    ingresos = base.valor("CG-INGRESOS")
+    if tope.porcentaje_de_ingresos is not None and ingresos > CERO:
+        techo = min(por_uvt, ingresos * tope.porcentaje_de_ingresos)
+    else:
+        techo = por_uvt
+    return redondear_pesos(techo), ingresos, tope.fuente_legal
+
+
+def simular_aporte_voluntario(
+    session: Session,
+    contador_id: int,
+    contribuyente_id: int,
+    periodo_fiscal_id: int,
+    valor: Decimal,
+) -> SimulacionAporteLeer:
+    """Reliquida agregando un aporte a AFC o pensión voluntaria. No guarda nada.
+
+    Dos límites recortan el aporte y manda el menor: el general del art. 336
+    num. 3 (40 % de los ingresos depurados, tope 1.340 UVT) y el propio de
+    estos conceptos (30 % del ingreso, tope 3.800 UVT, compartido entre AFC y
+    pensión voluntaria).
+
+    Se devuelve el aporte propuesto y el deducible por separado, y se dice
+    cuál de los dos límites recortó. Mostrar el ahorro de un aporte que la ley
+    no deja deducir completo sería un consejo equivocado con apariencia de
+    cálculo.
+    """
+    periodo = obtener_periodo_fiscal(
+        session, contador_id, contribuyente_id, periodo_fiscal_id
+    )
+    parametros = obtener_parametros(periodo.anio_gravable)
+    insumos, _ = construir_insumos(session, contador_id, contribuyente_id, periodo.id)
+    base = motor.liquidar(insumos, parametros)
+
+    techo_general, usado_general, cupo_general = _cupo_limite_general(base, parametros)
+    techo_propio, _ingresos, fuente_propio = _cupo_ahorro_previsional(base, parametros)
+
+    # Lo que ya se aportó a estos conceptos ocupa su propio tope.
+    usado_propio = sum(
+        (
+            c.valor
+            for c in insumos.conceptos_depuracion
+            if c.tipo == motor.EXENTA_AFC
+        ),
+        CERO,
+    )
+    cupo_propio = max(techo_propio - usado_propio, CERO)
+
+    deducible = min(valor, max(cupo_general, CERO), cupo_propio)
+    motivo = None
+    if deducible < valor:
+        motivo = (
+            "LIMITE_GENERAL"
+            if max(cupo_general, CERO) <= cupo_propio
+            else "TOPE_PROPIO"
+        )
+
+    con_aporte = base
+    if deducible > CERO:
+        adicional = motor.ConceptoDepuracion(
+            nombre="Simulación: aporte voluntario",
+            valor=deducible,
+            sujeto_a_limite_general=True,
+            fuente_legal="Arts. 126-1 y 126-4 ET",
+            tipo=motor.EXENTA_AFC,
+        )
+        con_aporte = motor.liquidar(
+            replace(
+                insumos,
+                conceptos_depuracion=[*insumos.conceptos_depuracion, adicional],
+            ),
+            parametros,
+        )
+
+    a, b = _cifras(base), _cifras(con_aporte)
+    advertencias = [
+        "Es una simulación: no modifica nada de lo guardado.",
+        "El aporte tiene que haberse hecho dentro del año gravable para que "
+        "cuente en esta declaración.",
+        "Los retiros de un AFC o de pensión voluntaria sin cumplir las "
+        "condiciones de permanencia de los arts. 126-1 y 126-4 ET obligan a "
+        "devolver el beneficio.",
+    ]
+    if base.valor("CG-RENTA-LIQUIDA") <= CERO:
+        advertencias.append(
+            "La renta líquida de la cédula general ya es cero: un aporte no "
+            "baja más el impuesto de esta cédula."
+        )
+
+    return SimulacionAporteLeer(
+        contribuyente_id=contribuyente_id,
+        periodo_fiscal_id=periodo.id,
+        anio_gravable=periodo.anio_gravable,
+        valor_propuesto=redondear_pesos(valor),
+        valor_deducible=redondear_pesos(deducible),
+        recortado=deducible < valor,
+        motivo_recorte=motivo,
+        limite_general=CupoAporte(
+            disponible=redondear_pesos(max(cupo_general, CERO)),
+            techo=redondear_pesos(techo_general),
+            usado=redondear_pesos(usado_general),
+            fuente_legal="Art. 336 num. 3 ET",
+        ),
+        tope_propio=CupoAporte(
+            disponible=redondear_pesos(cupo_propio),
+            techo=redondear_pesos(techo_propio),
+            usado=redondear_pesos(usado_propio),
+            fuente_legal=fuente_propio,
+        ),
+        actual=a,
+        con_aporte=b,
+        ahorro_en_impuesto=a.impuesto - b.impuesto,
+        ahorro_en_saldo=(a.saldo_a_pagar - a.saldo_a_favor)
+        - (b.saldo_a_pagar - b.saldo_a_favor),
+        advertencias=advertencias,
+    )
+
+
 def _escenario(clave, titulo, actual_txt, alterna_txt, base, alterna, explicacion):
     a, b = _cifras(base), _cifras(alterna)
     return EscenarioLeer(
@@ -797,16 +957,7 @@ def simular_escenarios(
 
     # Cupo sin usar del límite del num. 3
     limite = parametros.limite_general
-    base_limite = base.valor("CG-BASE-LIMITE")
-    techo = min(
-        base_limite * (limite.porcentaje or CERO),
-        (limite.tope_uvt or CERO) * parametros.uvt,
-    )
-    sin_limite = sum(
-        (r.valor for r in base.renglones if r.codigo.startswith("CG-NOLIM-")), CERO
-    )
-    usado = base.valor("CG-EXENTAS-LIMITADAS") - sin_limite
-    cupo = (techo - usado).quantize(Decimal("1"))
+    techo, usado, cupo = _cupo_limite_general(base, parametros)
     if cupo > CERO and base.valor("CG-RENTA-LIQUIDA") > CERO:
         adicional = motor.ConceptoDepuracion(
             nombre="Simulación: cupo restante del art. 336",
