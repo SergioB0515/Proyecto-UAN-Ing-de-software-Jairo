@@ -1,17 +1,21 @@
 from datetime import date
+from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
 
+from core.dinero import campo_dinero, campo_uvt
+
 
 class UmbralDeclaracionBase(SQLModel):
-    valor_uvt: float = Field(gt=0)
-    tope_ingresos_uvt: float = Field(gt=0)
-    tope_patrimonio_uvt: float = Field(gt=0)
-    tope_consumo_tc_uvt: float = Field(gt=0)
-    tope_compras_uvt: float = Field(gt=0)
-    tope_movimiento_uvt: float = Field(gt=0)
+    # El valor de la UVT es dinero; los topes están en UVT, que no es dinero.
+    valor_uvt: Decimal = campo_dinero(gt=0)
+    tope_ingresos_uvt: Decimal = campo_uvt(gt=0)
+    tope_patrimonio_uvt: Decimal = campo_uvt(gt=0)
+    tope_consumo_tc_uvt: Decimal = campo_uvt(gt=0)
+    tope_compras_uvt: Decimal = campo_uvt(gt=0)
+    tope_movimiento_uvt: Decimal = campo_uvt(gt=0)
 
 
 class UmbralDeclaracion(UmbralDeclaracionBase, table=True):
@@ -66,8 +70,8 @@ class VencimientoDeclaracion(SQLModel):
 
 class DetalleCriterio(SQLModel):
     criterio: str
-    valor_reportado: float
-    umbral: float
+    valor_reportado: Decimal
+    umbral: Decimal
     supera_umbral: bool
 
 

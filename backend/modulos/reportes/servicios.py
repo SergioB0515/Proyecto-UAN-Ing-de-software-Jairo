@@ -1,9 +1,11 @@
 from collections import defaultdict
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, List, Optional, Tuple
 
 from sqlmodel import Session, select
 
+from core.dinero import CERO, redondear_pesos
 from core.excepciones import (
     EstadoPeriodoInvalidoError,
     ReporteExogenaNoEncontradoError,
@@ -165,7 +167,9 @@ def construir_resumen(
     periodo = obtener_periodo_fiscal(session, contador_id, contribuyente_id, periodo_fiscal_id)
 
     activos = listar_activos(session, contador_id, contribuyente_id, periodo.id)
-    por_tipo: Dict[str, float] = defaultdict(float)
+    # defaultdict(Decimal) y no defaultdict(float): el valor que se le suma es
+    # Decimal, y `float += Decimal` es un TypeError.
+    por_tipo: Dict[str, Decimal] = defaultdict(Decimal)
     for activo in activos:
         por_tipo[activo.tipo.value] += activo.valor
 
@@ -198,13 +202,15 @@ def construir_resumen(
         estado_periodo=periodo.estado,
         cierre=_a_leer(cierre, periodo) if cierre is not None else None,
         patrimonio=ResumenPatrimonio(
-            patrimonio_liquido=round(sum(a.valor for a in activos), 2),
+            patrimonio_liquido=redondear_pesos(sum((a.valor for a in activos), CERO)),
             por_tipo=dict(por_tipo),
         ),
         ingresos=ResumenIngresos(
             cantidad_fuentes=len(fuentes),
-            total_ingresos=round(sum(f.valor_anual for f in fuentes), 2),
-            total_retenciones=round(sum(f.retencion_fuente for f in fuentes), 2),
+            total_ingresos=redondear_pesos(sum((f.valor_anual for f in fuentes), CERO)),
+            total_retenciones=redondear_pesos(
+                sum((f.retencion_fuente for f in fuentes), CERO)
+            ),
         ),
         inventario=inventario,
         obligacion=obligacion,

@@ -137,13 +137,13 @@ def test_entrada_y_salida_actualizan_el_stock(client):
 
     entrada = e.movimiento(pid, "ENTRADA", 10, 1500, "2025-01-15", proveedor_id=e.proveedor_id)
     assert entrada.status_code == 201
-    assert entrada.json()["valor_total"] == 15000
+    assert float(entrada.json()["valor_total"]) == 15000
 
     salida = e.movimiento(pid, "SALIDA", 4, 2500, "2025-01-20")
     assert salida.status_code == 201
 
     producto = client.get(f"/contribuyentes/{e.cid}/productos/{pid}", headers=e.h)
-    assert producto.json()["stock_actual"] == 6
+    assert float(producto.json()["stock_actual"]) == 6
 
     listado = client.get(f"/contribuyentes/{e.cid}/movimientos?producto_id={pid}", headers=e.h)
     assert [m["tipo"] for m in listado.json()] == ["ENTRADA", "SALIDA"]
@@ -158,7 +158,7 @@ def test_salida_sin_stock_suficiente_falla(client):
     assert respuesta.status_code == 409
 
     producto = client.get(f"/contribuyentes/{e.cid}/productos/{pid}", headers=e.h)
-    assert producto.json()["stock_actual"] == 3
+    assert float(producto.json()["stock_actual"]) == 3
 
 
 def test_salida_con_fecha_anterior_a_la_entrada_falla(client):
@@ -269,9 +269,9 @@ def test_kardex_peps(client):
     assert kardex.status_code == 200
     cuerpo = kardex.json()
     assert len(cuerpo["lineas"]) == 3
-    assert cuerpo["lineas"][-1]["costo_total"] == 1600
-    assert cuerpo["saldo_cantidad"] == 5
-    assert cuerpo["saldo_valor"] == 600
+    assert float(cuerpo["lineas"][-1]["costo_total"]) == 1600
+    assert float(cuerpo["saldo_cantidad"]) == 5
+    assert float(cuerpo["saldo_valor"]) == 600
 
 
 def test_kardex_promedio_ponderado(client):
@@ -280,9 +280,9 @@ def test_kardex_promedio_ponderado(client):
     e.compras_y_venta(pid)
 
     cuerpo = client.get(f"/contribuyentes/{e.cid}/productos/{pid}/kardex", headers=e.h).json()
-    assert cuerpo["lineas"][-1]["costo_unitario"] == 110
-    assert cuerpo["lineas"][-1]["costo_total"] == 1650
-    assert cuerpo["saldo_valor"] == 550
+    assert float(cuerpo["lineas"][-1]["costo_unitario"]) == 110
+    assert float(cuerpo["lineas"][-1]["costo_total"]) == 1650
+    assert float(cuerpo["saldo_valor"]) == 550
 
 
 def test_costo_de_ventas_del_periodo(client):
@@ -300,13 +300,13 @@ def test_costo_de_ventas_del_periodo(client):
     cuerpo = respuesta.json()
     assert cuerpo["anio_gravable"] == 2025
     por_codigo = {p["codigo"]: p for p in cuerpo["productos"]}
-    assert por_codigo["P-PEPS"]["costo_ventas"] == 1600
-    assert por_codigo["P-PROM"]["costo_ventas"] == 1650
-    assert por_codigo["P-PEPS"]["ingresos_ventas"] == 3000
-    assert cuerpo["total_costo_ventas"] == 3250
-    assert cuerpo["total_ingresos_ventas"] == 6000
-    assert cuerpo["total_utilidad_bruta"] == 2750
-    assert cuerpo["total_inventario_final"] == 1150
+    assert float(por_codigo["P-PEPS"]["costo_ventas"]) == 1600
+    assert float(por_codigo["P-PROM"]["costo_ventas"]) == 1650
+    assert float(por_codigo["P-PEPS"]["ingresos_ventas"]) == 3000
+    assert float(cuerpo["total_costo_ventas"]) == 3250
+    assert float(cuerpo["total_ingresos_ventas"]) == 6000
+    assert float(cuerpo["total_utilidad_bruta"]) == 2750
+    assert float(cuerpo["total_inventario_final"]) == 1150
 
 
 def test_costo_de_ventas_arrastra_el_saldo_del_anio_anterior(client):
@@ -318,9 +318,9 @@ def test_costo_de_ventas_arrastra_el_saldo_del_anio_anterior(client):
 
     url = f"/contribuyentes/{e.cid}/periodos-fiscales/{{}}/costo-ventas"
     cierre_2025 = client.get(url.format(e.periodos[2025]), headers=e.h).json()
-    assert cierre_2025["total_costo_ventas"] == 0
-    assert cierre_2025["total_inventario_final"] == 1000
+    assert float(cierre_2025["total_costo_ventas"]) == 0
+    assert float(cierre_2025["total_inventario_final"]) == 1000
 
     cierre_2026 = client.get(url.format(e.periodos[2026]), headers=e.h).json()
-    assert cierre_2026["total_costo_ventas"] == 400
-    assert cierre_2026["total_inventario_final"] == 600
+    assert float(cierre_2026["total_costo_ventas"]) == 400
+    assert float(cierre_2026["total_inventario_final"]) == 600

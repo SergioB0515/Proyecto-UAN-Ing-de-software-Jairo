@@ -36,9 +36,19 @@ const cargando = ref(true)
 const error = ref('')
 const errorLista = ref('')
 
-const totalActivos = computed(() => activos.value.reduce((s, a) => s + a.valor, 0))
-const totalIngresos = computed(() => fuentes.value.reduce((s, f) => s + f.valor_anual, 0))
-const totalRetenciones = computed(() => fuentes.value.reduce((s, f) => s + f.retencion_fuente, 0))
+// Number() es obligatorio, no decorativo: el backend manda el dinero como
+// cadena («4000000.00») porque son NUMERIC/Decimal, y `+` con una cadena
+// concatena en vez de sumar. Daría «04000000.001500000.00». El resto de los
+// operadores sí convierten solos; la suma es la que muerde.
+const totalActivos = computed(() =>
+  activos.value.reduce((s, a) => s + Number(a.valor), 0),
+)
+const totalIngresos = computed(() =>
+  fuentes.value.reduce((s, f) => s + Number(f.valor_anual), 0),
+)
+const totalRetenciones = computed(() =>
+  fuentes.value.reduce((s, f) => s + Number(f.retencion_fuente), 0),
+)
 
 const TIPOS_REGISTRABLES = ['CUENTA', 'VEHICULO', 'INMUEBLE', 'INVERSION']
 

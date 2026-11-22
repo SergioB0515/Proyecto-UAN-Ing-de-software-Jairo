@@ -1,9 +1,12 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
 from pydantic import field_validator
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.dinero import campo_dinero
 
 
 class TipoContribuyente(str, Enum):
@@ -60,7 +63,7 @@ class ContribuyenteLeer(ContribuyenteBase):
 
 
 class ContribuyenteConPatrimonio(ContribuyenteLeer):
-    patrimonio_liquido: float
+    patrimonio_liquido: Decimal
     periodo_fiscal_id: Optional[int] = None
     anio_gravable: Optional[int] = None
 
@@ -69,7 +72,7 @@ class ActivoBase(SQLModel):
     periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     descripcion: str = Field(min_length=1, max_length=200)
     tipo: TipoActivo
-    valor: float = Field(gt=0)
+    valor: Decimal = campo_dinero(gt=0)
     vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
     vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 
@@ -99,7 +102,7 @@ class ActivoCrear(ActivoBase):
 class ActivoActualizar(SQLModel):
     descripcion: Optional[str] = Field(default=None, min_length=1, max_length=200)
     tipo: Optional[TipoActivo] = None
-    valor: Optional[float] = Field(default=None, gt=0)
+    valor: Optional[Decimal] = campo_dinero(default=None, gt=0)
     vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
     vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 
@@ -116,14 +119,14 @@ class ActivoActualizar(SQLModel):
 class ActivoLeer(ActivoBase):
     id: int
     contribuyente_id: int
-    valor: float
+    valor: Decimal
 
 
 class FuenteIngresoBase(SQLModel):
     periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", index=True)
     concepto: str = Field(min_length=1, max_length=200)
-    valor_anual: float = Field(gt=0)
-    retencion_fuente: float = Field(default=0, ge=0)
+    valor_anual: Decimal = campo_dinero(gt=0)
+    retencion_fuente: Decimal = campo_dinero(default=0, ge=0)
     vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
     vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 
@@ -145,8 +148,8 @@ class FuenteIngresoCrear(FuenteIngresoBase):
 
 class FuenteIngresoActualizar(SQLModel):
     concepto: Optional[str] = Field(default=None, min_length=1, max_length=200)
-    valor_anual: Optional[float] = Field(default=None, gt=0)
-    retencion_fuente: Optional[float] = Field(default=None, ge=0)
+    valor_anual: Optional[Decimal] = campo_dinero(default=None, gt=0)
+    retencion_fuente: Optional[Decimal] = campo_dinero(default=None, ge=0)
     vinculo_codigo_concepto: Optional[str] = Field(default=None, max_length=10)
     vinculo_palabra_clave: Optional[str] = Field(default=None, max_length=200)
 

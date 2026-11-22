@@ -51,7 +51,7 @@ def test_crear_categoria_y_producto(client):
         headers=_headers(token),
     )
     assert producto.status_code == 201
-    assert producto.json()["stock_actual"] == 0
+    assert float(producto.json()["stock_actual"]) == 0
     assert producto.json()["activo"] is True
 
     listado = client.get(f"/contribuyentes/{cid}/productos", headers=_headers(token))

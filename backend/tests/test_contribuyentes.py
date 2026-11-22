@@ -135,7 +135,7 @@ def test_patrimonio_liquido_suma_los_activos(client):
     )
 
     assert respuesta.status_code == 200
-    assert respuesta.json()["patrimonio_liquido"] == 123000000
+    assert float(respuesta.json()["patrimonio_liquido"]) == 123000000
     assert respuesta.json()["anio_gravable"] == 2025
 
 
@@ -294,22 +294,23 @@ def test_fuentes_y_patrimonio_se_separan_por_periodo(client):
     fuentes_2024 = client.get(
         f"/contribuyentes/{cid}/fuentes-ingreso?periodo_fiscal_id={p2024}", headers=h
     ).json()
-    assert [f["valor_anual"] for f in fuentes_2024] == [40000000]
+    assert [float(f["valor_anual"]) for f in fuentes_2024] == [40000000]
     assert len(client.get(f"/contribuyentes/{cid}/fuentes-ingreso", headers=h).json()) == 2
 
     patrimonio_2024 = client.get(
         f"/contribuyentes/{cid}/patrimonio?periodo_fiscal_id={p2024}", headers=h
     ).json()
-    assert patrimonio_2024["patrimonio_liquido"] == 4000000
-    assert client.get(f"/contribuyentes/{cid}/patrimonio", headers=h).json()[
-        "patrimonio_liquido"
-    ] == 5000000
+    assert float(patrimonio_2024["patrimonio_liquido"]) == 4000000
+    patrimonio_total = client.get(
+        f"/contribuyentes/{cid}/patrimonio", headers=h
+    ).json()["patrimonio_liquido"]
+    assert float(patrimonio_total) == 5000000
 
     resumen_2024 = client.get(
         f"/contribuyentes/{cid}/periodos-fiscales/{p2024}/resumen", headers=h
     ).json()
-    assert resumen_2024["ingresos"]["total_ingresos"] == 40000000
-    assert resumen_2024["patrimonio"]["patrimonio_liquido"] == 4000000
+    assert float(resumen_2024["ingresos"]["total_ingresos"]) == 40000000
+    assert float(resumen_2024["patrimonio"]["patrimonio_liquido"]) == 4000000
 
 
 def test_no_se_registra_en_un_periodo_de_otro_contribuyente(client):
@@ -349,7 +350,7 @@ def test_patrimonio_sin_periodos_es_cero(client):
     ).json()["id"]
 
     cuerpo = client.get(f"/contribuyentes/{cid}/patrimonio", headers=_headers(token)).json()
-    assert cuerpo["patrimonio_liquido"] == 0
+    assert float(cuerpo["patrimonio_liquido"]) == 0
     assert cuerpo["periodo_fiscal_id"] is None
 
 

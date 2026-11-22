@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
 from sqlmodel import Field, Relationship, SQLModel
+
+from core.dinero import campo_cantidad
 
 
 class MetodoCosteo(str, Enum):
@@ -53,7 +56,7 @@ class Producto(ProductoBase, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     contribuyente_id: int = Field(foreign_key="contribuyentes.id", index=True)
     activo: bool = Field(default=True)
-    stock_actual: float = Field(default=0, ge=0)
+    stock_actual: Decimal = campo_cantidad(default=0, ge=0)
     creado_en: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc)
     )
@@ -77,5 +80,5 @@ class ProductoLeer(ProductoBase):
     id: int
     contribuyente_id: int
     activo: bool
-    stock_actual: float
+    stock_actual: Decimal
     creado_en: datetime

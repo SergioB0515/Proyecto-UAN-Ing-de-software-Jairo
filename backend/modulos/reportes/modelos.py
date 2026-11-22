@@ -1,8 +1,11 @@
 from datetime import datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import Dict, List, Optional
 
 from sqlmodel import Field, SQLModel
+
+from core.dinero import CERO, campo_dinero
 
 from ..conciliacion.modelos import EstadoConciliacion
 from ..contribuyentes.modelos import EstadoPeriodo, TipoContribuyente
@@ -28,8 +31,8 @@ class CierrePeriodo(SQLModel, table=True):
     periodo_fiscal_id: int = Field(foreign_key="periodos_fiscales.id", primary_key=True)
     contribuyente_id: int = Field(foreign_key="contribuyentes.id", index=True)
     fecha_cierre: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    valor_inventario: float = 0.0
-    costo_ventas: float = 0.0
+    valor_inventario: Decimal = campo_dinero(default=CERO)
+    costo_ventas: Decimal = campo_dinero(default=CERO)
     activo_inventario_id: Optional[int] = Field(default=None, foreign_key="activos.id")
 
 
@@ -39,28 +42,28 @@ class CierrePeriodoLeer(SQLModel):
     anio_gravable: int
     estado: EstadoPeriodo
     fecha_cierre: datetime
-    valor_inventario: float
-    costo_ventas: float
+    valor_inventario: Decimal
+    costo_ventas: Decimal
     activo_inventario_id: Optional[int]
 
 
 class ResumenPatrimonio(SQLModel):
-    patrimonio_liquido: float
-    por_tipo: Dict[str, float]
+    patrimonio_liquido: Decimal
+    por_tipo: Dict[str, Decimal]
 
 
 class ResumenIngresos(SQLModel):
     cantidad_fuentes: int
-    total_ingresos: float
-    total_retenciones: float
+    total_ingresos: Decimal
+    total_retenciones: Decimal
 
 
 class ResumenInventario(SQLModel):
     cantidad_productos: int
-    total_ingresos_ventas: float
-    total_costo_ventas: float
-    total_utilidad_bruta: float
-    inventario_final: float
+    total_ingresos_ventas: Decimal
+    total_costo_ventas: Decimal
+    total_utilidad_bruta: Decimal
+    inventario_final: Decimal
 
 
 class ResumenContribuyente(SQLModel):

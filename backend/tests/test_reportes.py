@@ -93,9 +93,9 @@ def test_cerrar_periodo_lleva_el_inventario_al_patrimonio(client):
     assert respuesta.status_code == 200
     cierre = respuesta.json()
     assert cierre["estado"] == "CERRADO"
-    assert cierre["valor_inventario"] == 1000
+    assert float(cierre["valor_inventario"]) == 1000
     assert cierre["activo_inventario_id"] is not None
-    assert e.patrimonio() == 1000
+    assert float(e.patrimonio()) == 1000
 
     activos = client.get(f"/contribuyentes/{e.cid}/activos", headers=e.h).json()
     assert activos[0]["tipo"] == "INVENTARIO"
@@ -131,7 +131,7 @@ def test_reabrir_deshace_el_cierre(client):
 
     assert respuesta.status_code == 200
     assert respuesta.json()["estado"] == "ABIERTO"
-    assert e.patrimonio() == 0
+    assert float(e.patrimonio()) == 0
     assert client.get(f"/contribuyentes/{e.cid}/activos", headers=e.h).json() == []
     assert e.movimiento("ENTRADA", 1, 100, "2025-05-01").status_code == 201
 
@@ -158,9 +158,9 @@ def test_el_patrimonio_cuenta_solo_el_inventario_del_ultimo_cierre(client):
 
     cierre_2026 = client.post(e.url(2026, "cerrar"), headers=e.h).json()
 
-    assert cierre_2026["valor_inventario"] == 600
-    assert cierre_2026["costo_ventas"] == 400
-    assert e.patrimonio() == 600
+    assert float(cierre_2026["valor_inventario"]) == 600
+    assert float(cierre_2026["costo_ventas"]) == 400
+    assert float(e.patrimonio()) == 600
 
 
 def test_cerrar_periodo_de_asalariado_no_crea_inventario(client):
@@ -202,8 +202,8 @@ def test_resumen_de_asalariado_sin_exogena(client):
     cuerpo = respuesta.json()
     assert cuerpo["anio_gravable"] == 2025
     assert cuerpo["inventario"] is None
-    assert cuerpo["ingresos"]["total_ingresos"] == 60000000
-    assert cuerpo["ingresos"]["total_retenciones"] == 2000000
+    assert float(cuerpo["ingresos"]["total_ingresos"]) == 60000000
+    assert float(cuerpo["ingresos"]["total_retenciones"]) == 2000000
     assert cuerpo["obligacion"] is None
     assert any("exógena" in aviso for aviso in cuerpo["avisos"])
 
@@ -224,7 +224,7 @@ def test_resumen_completo_con_exogena_y_umbral(client):
 
     cuerpo = client.get(e.url(2025, "resumen"), headers=e.h).json()
 
-    assert cuerpo["inventario"]["inventario_final"] == 1000
+    assert float(cuerpo["inventario"]["inventario_final"]) == 1000
     assert cuerpo["obligacion"]["obligado"] is False
     # El total de movimientos en cuentas ya no cuenta como alerta: es un flujo.
     assert cuerpo["conciliacion"]["NO_DECLARADO"] == 4

@@ -81,7 +81,7 @@ def test_conciliacion_clasifica_cada_item(client):
     assert estados["Apartamento"]["estado"] == "COINCIDE"
     assert estados["Venta apartamento"]["estado"] == "COINCIDE"
     assert estados["Cuenta de ahorros"]["estado"] == "DISCREPANCIA"
-    assert estados["Cuenta de ahorros"]["diferencia"] == -500000
+    assert float(estados["Cuenta de ahorros"]["diferencia"]) == -500000
     assert estados["Moto"]["estado"] == "NO_REPORTADO_POR_TERCERO"
 
     no_declarados = [i for i in cuerpo["items"] if i["estado"] == "NO_DECLARADO"]
@@ -140,10 +140,10 @@ def test_borrador_suma_por_renglon(client):
     assert respuesta.status_code == 200
     cuerpo = respuesta.json()
     renglones = {r["renglon"]: r for r in cuerpo["renglones"]}
-    assert renglones["R29"]["valor_total"] == 120050000
+    assert float(renglones["R29"]["valor_total"]) == 120050000
     assert renglones["R29"]["cantidad_registros"] == 2
-    assert renglones["R112"]["valor_total"] == 50000000
-    assert renglones["R132"]["valor_total"] == 450000
+    assert float(renglones["R112"]["valor_total"]) == 50000000
+    assert float(renglones["R132"]["valor_total"]) == 450000
     assert [r["renglon"] for r in cuerpo["renglones"]] == ["R29", "R112", "R131", "R132"]
     assert "sugerencia" in cuerpo["advertencia"] or "editable" in cuerpo["advertencia"]
 

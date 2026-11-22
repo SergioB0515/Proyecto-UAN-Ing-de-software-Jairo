@@ -159,30 +159,68 @@ suponerse.
 
 ---
 
-## 3. Bloque 2 — El dinero en `Decimal`
+## 3. Bloque 2 — El dinero en `Decimal` — **hecho**
 
-**Esfuerzo: 3–5 días. Riesgo: alto. Es el defecto más serio que queda.**
+Eran 56 campos monetarios en `float`. Ya no queda ninguno: el dinero está en
+`NUMERIC(18,2)` y las cantidades de inventario en `NUMERIC(18,3)`, en los
+siete módulos que faltaban.
 
-Quedan 56 campos monetarios en `float`. Los módulos nuevos ya usan
-`Decimal`/`NUMERIC(18,2)`: 162 usos. Eso significa que hoy el proyecto tiene
-**dos convenciones a la vez**, y el lugar donde se pierden los centavos es
-justo la frontera, cuando un valor pasa de un módulo `float` a un módulo
-`Decimal`.
+`float` no representa exactamente los decimales de la contabilidad: `0.1 +
+0.2` da `0.30000000000000004`. El error es diminuto y se acumula sumando
+renglones, así que los totales dejan de cuadrar al centavo. Un contador que
+ve un descuadre de $0,03 deja de confiar en todo lo demás, y tiene razón.
 
-Que esté dividido lo empeora, pero también lo hace más fácil de terminar: la
-mitad nueva ya demuestra que el patrón funciona en este código, con estas
-pruebas y contra este motor.
+### Cómo se hizo
 
-Por qué va después del bloque 1 y no antes: migrar 56 columnas **es** una
-actualización de esquema. Hacerlo sin la prueba de actualización es repetir el
-error de los dos defectos anteriores, con cincuenta y seis oportunidades de
-equivocarse en vez de tres.
+- **`core/dinero.py`** centraliza el tipo: `campo_dinero()`,
+  `campo_cantidad()`, `campo_uvt()`, `a_decimal()` y `redondear_pesos()`. Sin
+  eso, `Numeric(18, 2)` quedaba escrito 56 veces y cambiar la precisión sería
+  una cacería.
+- **Las cantidades llevan tres decimales**, no dos. El costo unitario sale de
+  dividir valor entre cantidad: recortar la cantidad a dos decimales mete el
+  error por la puerta de atrás.
+- **`costeo.py` casi no cambió**, y vale decir por qué: ya calculaba en
+  `Decimal` internamente y convertía a `float` al entrar y al salir, porque la
+  base y la API lo eran. Hacía el redondeo bien y lo tiraba a la basura al
+  devolverlo. La migración fue dejar de convertir de vuelta.
+- **Se borraron 20 conversiones de frontera** (`Decimal(str(...))` y
+  `float(...)`) que existían para cruzar entre las dos convenciones. Eran el
+  síntoma, no la solución.
 
-Lo que lo hace abordable ahora y no en noviembre:
+### Tres cosas que no estaban previstas
 
-- 579 pruebas en verde como red, contra Postgres.
-- El trabajo es mecánico, campo por campo, y se puede partir por módulo.
-- Postgres se reproduce en local, así que un descuadre se ve antes de subirlo.
+1. **Las dos convenciones también estaban en el cable, no solo en la base.**
+   Pydantic serializa `Decimal` como cadena JSON, así que la API devolvía el
+   dinero como número en los módulos viejos (`4000000`) y como cadena en los
+   nuevos (`"4000000.00"`). La migración unifica eso; no lo introduce. Hubo
+   que actualizar 35 aserciones de las pruebas, que comparaban contra números.
+2. **Tres sumas del frontend quedaban rotas.** `PatrimonioView` hacía
+   `s + a.valor` en tres `reduce`, y `+` con una cadena concatena en vez de
+   sumar: habría mostrado «04000000.001500000.00». El resto de los operadores
+   de JavaScript convierten solos; la suma es la única que muerde.
+3. **`redondear_pesos` ya existía** en `liquidacion/motor.py`, y yo escribí la
+   misma función otra vez. Ahora hay una sola, en `core/dinero.py`, que
+   `motor.py` vuelve a exportar porque dentro de liquidación se usa en 18
+   sitios. De paso: la primera versión del helper se llamaba `pesos()`, que
+   choca con `core.formato.pesos()`, que convierte a texto para mostrar. En un
+   archivo que importaba las dos ganaba la última, y la base terminó
+   rechazando un `'$14.850.000'` en una columna numérica. Las pruebas lo
+   atraparon; leyendo el código no se veía.
+
+### Verificación
+
+- **579 pruebas en verde** contra Postgres, en base nueva y en base migrada.
+- Las revisiones reproducen los modelos sin diferencias.
+- La prueba de actualización migra los 56 campos sobre una base **con datos**
+  partiendo del código desplegado, y los valores quedan idénticos: los activos
+  sumaban 751.000.000 antes y 751.000.000,00 después; la exógena,
+  2.346.710.000 en los 38 registros. Postgres convierte `DOUBLE PRECISION` a
+  `NUMERIC` con un cast implícito, así que las filas existentes se migran
+  solas.
+
+Lo que no se puede arreglar: lo que ya se guardó con error de representación
+se queda con ese error redondeado a centavos. No se reconstruye lo perdido,
+solo se deja de perder más.
 
 ---
 
@@ -280,13 +318,13 @@ Para que se entienda que es una omisión decidida y no un olvido:
 |---|---|---|---|
 | ~~1~~ | ~~Prueba de actualización en el CI~~ **hecho** | — | — |
 | ~~2~~ | ~~Alembic~~ **hecho** | — | — |
-| 3 | 56 campos de dinero a `Decimal`/`NUMERIC(18,2)` | 3–5 d | **Alto** |
+| ~~3~~ | ~~56 campos de dinero a `Decimal`~~ **hecho** | — | — |
 | 4 | Historias de usuario del portal (HU-28+) y actualizar el 11 | 1 d | Bajo |
 | 5 | Consolidar las tablas laterales de liquidación | 1 d | Bajo |
 | 6 | Simulador de planeación tributaria | 5–7 d | Bajo |
 
-Entre dos y tres semanas de trabajo de una persona, menos el bloque 1, que ya
-está completo. En paralelo y desde el primer día: pedir las dos declaraciones
+Queda alrededor de una semana: los bloques 1 y 2 están hechos, que eran el
+riesgo y la mitad del esfuerzo. En paralelo y desde el primer día: pedir las dos declaraciones
 reales.
 
 El criterio detrás del orden es uno solo: **primero lo que hace verificable

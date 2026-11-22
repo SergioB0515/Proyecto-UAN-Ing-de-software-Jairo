@@ -13,6 +13,7 @@ from dataclasses import dataclass, field, replace
 from decimal import Decimal, ROUND_HALF_UP
 from typing import List, Optional, Tuple
 
+from core.dinero import redondear_pesos
 from ..parametros.tablas_oficiales import ParametrosAnuales, TramoTarifa
 from .cedula_general import (
     CAPITAL,
@@ -55,9 +56,9 @@ _NOMBRE_SUBCEDULA = {
 # Redondeo
 
 
-def redondear_pesos(valor: Decimal) -> Decimal:
-    """Redondea a dos decimales (cálculos intermedios)."""
-    return valor.quantize(_CENTAVO, rounding=ROUND_HALF_UP)
+# `redondear_pesos` vive en core.dinero, que es de donde lo toman todos los
+# módulos. Se vuelve a exportar acá porque dentro de liquidación se usa en 18
+# sitios y varios lo importan desde este módulo.
 
 
 def aproximar_al_multiplo_de_mil(valor: Decimal) -> Decimal:

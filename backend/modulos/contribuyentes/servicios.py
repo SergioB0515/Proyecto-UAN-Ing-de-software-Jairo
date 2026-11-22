@@ -1,7 +1,9 @@
+from decimal import Decimal
 from typing import List, Optional
 
 from sqlmodel import Session, select
 
+from core.dinero import CERO, redondear_pesos
 from core.excepciones import (
     ActivoDeCierreError,
     ActivoNoEncontradoError,
@@ -409,8 +411,20 @@ def periodo_mas_reciente(
 
 def calcular_patrimonio_liquido(
     session: Session, contador_id: int, contribuyente_id: int, periodo_fiscal_id: int
-) -> float:
-    return sum(
-        activo.valor
-        for activo in listar_activos(session, contador_id, contribuyente_id, periodo_fiscal_id)
+) -> Decimal:
+    # `sum` arranca en el entero 0 y sumarle Decimal funciona, pero sin activos
+    # devolvería un int. Con CERO siempre devuelve Decimal, y `pesos` deja
+    # todos los importes con dos decimales: sin eso, un patrimonio vacío sale
+    # como «0» y uno con activos como «4000000.00», que es la clase de
+    # inconsistencia que obliga a convertir en cada sitio que lo lea.
+    return redondear_pesos(
+        sum(
+            (
+                activo.valor
+                for activo in listar_activos(
+                    session, contador_id, contribuyente_id, periodo_fiscal_id
+                )
+            ),
+            CERO,
+        )
     )
