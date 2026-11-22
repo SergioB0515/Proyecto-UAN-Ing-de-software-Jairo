@@ -2,6 +2,11 @@
 
 > Corte al **22 de noviembre de 2026**, con la entrega ya presentada y
 > revisada.
+>
+> **Cerrado.** Los seis puntos quedaron resueltos: cuatro ejecutados, uno
+> descartado por estar mal planteado y el último mucho más pequeño de lo
+> estimado. Lo que sigue está en el
+> [documento 13](13-plan-segunda-iteracion.md).
 
 Este documento no reemplaza al [11](11-roadmap-tecnico-y-monetizacion.md).
 Ese dice *hacia dónde* y *por qué*: mercado, precios, tesis, módulos que

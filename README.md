@@ -64,6 +64,7 @@ documentacion/  Requisitos, arquitectura, diagramas, historias de usuario, evide
 | [10](documentacion/10-evidencias-funcionamiento.md) | Evidencias |
 | [11](documentacion/11-roadmap-tecnico-y-monetizacion.md) | Roadmap técnico y mercado |
 | [12](documentacion/12-plan-inmediato.md) | Plan de trabajo inmediato |
+| [13](documentacion/13-plan-segunda-iteracion.md) | Plan de trabajo — segunda iteración |
 
 ## Stack
 
