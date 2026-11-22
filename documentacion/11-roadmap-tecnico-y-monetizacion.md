@@ -6,9 +6,10 @@
 > verificaron contra fuente el 3 de noviembre; los tributarios cambian cada
 > año y las de mercado cada pocos meses.
 >
-> El plan de trabajo a corto plazo, con lo que se construye primero y por
-> qué, está en el [documento 12](12-plan-inmediato.md). Este documento se
-> conserva por el análisis de mercado, de monetización y de tesis.
+> El plan de trabajo a corto plazo está en los documentos
+> [12](12-plan-inmediato.md) —cerrado— y
+> [13](13-plan-segunda-iteracion.md) —vigente—. Este documento se conserva
+> por el análisis de mercado, de monetización y de tesis.
 
 ---
 
