@@ -49,15 +49,15 @@ Dicho de otro modo: el proyecto prueba muy bien una **instalación nueva** y no
 prueba en absoluto una **actualización**. Las 579 pruebas no se equivocaron;
 están contestando otra pregunta.
 
-Esto importa ahora y no después porque el siguiente trabajo de la lista
+Esto importaba antes que nada porque el siguiente trabajo de la lista
 —migrar 56 columnas de dinero— es la actualización de esquema más grande que
-va a tener este proyecto, y hoy no hay nada con qué verificarla.
+va a tener este proyecto, y no había con qué verificarla. Ahora sí la hay.
 
 ---
 
 ## 2. Bloque 1 — Que una actualización se pueda probar
 
-**Esfuerzo: 1–2 días. Riesgo: bajo. Va primero.**
+**Hecho.** Era el bloque que va primero, y ya está.
 
 ### 1.1 Prueba de actualización en el CI — **hecho**
 
@@ -102,18 +102,60 @@ pruebas que siembran sus propios parámetros y asumen que no hay otros—, de
 ahí el paso de vaciar las tablas antes de correrla. El esquema viene de la
 actualización; los datos, no.
 
-### 1.2 Alembic (1–2 días)
+### 1.2 Alembic — **hecho**
 
-No está instalado; las migraciones son `ALTER TABLE` a mano dentro de
-`database.py` (`_agregar_columnas_si_faltan`, `_sincronizar_enums`,
-`_migrar_periodo_en_activos_y_fuentes`). Funcionan, pero cada una hubo que
-escribirla después de que el defecto apareciera en producción.
+Las migraciones eran `ALTER TABLE` a mano dentro de `database.py`
+(`_agregar_columnas_si_faltan`, `_sincronizar_enums`,
+`_migrar_periodo_en_activos_y_fuentes`), y cada una hubo que escribirla
+*después* de que el defecto apareciera en producción.
 
-**El orden 1.1 → 1.2 no es negociable.** Alembic sin la prueba de
-actualización es otra forma de escribir migraciones que nadie verifica. Con
-la prueba primero, adoptarlo se puede comprobar en vez de suponer: los
-helpers actuales se van convirtiendo en revisiones de Alembic una por una, y
-la prueba dice si cada conversión preservó el comportamiento.
+Ahora el esquema lo construyen las revisiones de `backend/alembic/versions/`.
+El detalle operativo está en `backend/alembic/README.md`; acá va lo que tuvo
+que decidirse.
+
+**Una corrección a lo que decía este documento.** Decía que los helpers se
+irían convirtiendo en revisiones «una por una». Está mal, y se vio al
+construirlo: una base nueva sale completa de la revisión base, así que una
+revisión que agregara `fecha_corte` a `reportes_exogena` sería un no-op o un
+error de columna duplicada. Esos helpers no son historia por registrar; son
+alcance para bases que ya existen.
+
+Lo que se hizo:
+
+- **Una revisión base** con el esquema completo de hoy, generada con
+  `--autogenerate` contra una base vacía: 35 tablas y 21 tipos enum.
+- **Los helpers degradados a puente de una sola vez.** `crear_tablas()`
+  distingue tres casos, y la distinción importa porque sellar una base sin su
+  esquema la rompe para siempre:
+
+  | Base | Qué hace |
+  |---|---|
+  | Vacía | Las revisiones la construyen entera |
+  | Con esquema y sin sellar (la desplegada) | El puente la lleva al baseline, la sella y aplica el resto |
+  | Ya sellada | Aplica las revisiones que falten |
+
+- **Una comprobación de deriva**, `herramientas/comprobar_revisiones.py`:
+  crea una base vacía, le aplica `alembic upgrade head` y compara el
+  resultado contra los modelos. Sin esto Alembic es ceremonia: si alguien
+  cambia un modelo y no escribe la revisión, le funciona en su máquina
+  —donde la base nace completa— y se rompe en el despliegue. Es el mismo
+  defecto de siempre con otra herramienta.
+- **`compare_type` encendido** y `compare_server_default` apagado. Lo primero
+  hace falta para el bloque 2, la migración de dinero: sin eso
+  `--autogenerate` no ve un cambio de `float` a `NUMERIC`. Lo segundo, porque
+  los parches viejos agregaron columnas con DEFAULT en la base que los
+  modelos no declaran, y encendido el comparador los reportaría como
+  diferencia en cada corrida hasta volverse inútil.
+
+Verificado en los tres casos. El que importaba era el de la base desplegada:
+una base anterior a Alembic con datos sembrados queda sellada en la revisión
+base, con los 6 contribuyentes intactos y **sin diferencias** contra los
+modelos. La suite completa pasa sobre ella: 579.
+
+**El orden 1.1 → 1.2 no era negociable** y se respetó. Alembic sin la prueba
+de actualización es otra forma de escribir migraciones que nadie verifica;
+con la prueba primero, cada paso de la adopción se comprobó en vez de
+suponerse.
 
 ---
 
@@ -237,14 +279,14 @@ Para que se entienda que es una omisión decidida y no un olvido:
 | Orden | Trabajo | Esfuerzo | Riesgo |
 |---|---|---|---|
 | ~~1~~ | ~~Prueba de actualización en el CI~~ **hecho** | — | — |
-| 2 | Alembic, convirtiendo los helpers actuales en revisiones | 1–2 d | Bajo |
+| ~~2~~ | ~~Alembic~~ **hecho** | — | — |
 | 3 | 56 campos de dinero a `Decimal`/`NUMERIC(18,2)` | 3–5 d | **Alto** |
 | 4 | Historias de usuario del portal (HU-28+) y actualizar el 11 | 1 d | Bajo |
 | 5 | Consolidar las tablas laterales de liquidación | 1 d | Bajo |
 | 6 | Simulador de planeación tributaria | 5–7 d | Bajo |
 
-Entre dos y tres semanas de trabajo de una persona, menos el primer punto,
-que ya está. En paralelo y desde el primer día: pedir las dos declaraciones
+Entre dos y tres semanas de trabajo de una persona, menos el bloque 1, que ya
+está completo. En paralelo y desde el primer día: pedir las dos declaraciones
 reales.
 
 El criterio detrás del orden es uno solo: **primero lo que hace verificable

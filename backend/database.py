@@ -1,3 +1,21 @@
+"""Motor, modelos y puesta al día del esquema.
+
+El esquema lo construyen las revisiones de Alembic (`alembic/versions/`). No
+se crea con `create_all` más parches a mano, como hasta la revisión base: eso
+funcionaba en una instalación nueva y falló dos veces en el despliegue, porque
+`create_all` no altera nada que ya exista.
+
+Para cambiar el esquema:
+
+    cd backend
+    alembic revision --autogenerate -m "lo que cambiaste"
+
+y se revisa lo que generó antes de subirlo. `herramientas/comprobar_revisiones.py`
+falla si una revisión falta, y el trabajo `actualizacion` del CI falla si la
+migración no funciona sobre una base que ya tenía datos.
+"""
+
+from pathlib import Path
 from typing import Iterator
 
 from datetime import date
@@ -8,6 +26,8 @@ from sqlmodel import Session, SQLModel, create_engine
 from core.config import DATABASE_URL
 
 engine = create_engine(DATABASE_URL, echo=False)
+
+RUTA_ALEMBIC_INI = Path(__file__).resolve().parent / "alembic.ini"
 
 
 def registrar_modelos() -> None:
@@ -200,7 +220,32 @@ def _sincronizar_enums(motor) -> None:
                 conexion.execute(text(f"ALTER TYPE {nombre} ADD VALUE '{valor}'"))
 
 
-def crear_tablas() -> None:
+def _configuracion_alembic():
+    from alembic.config import Config
+
+    configuracion = Config(str(RUTA_ALEMBIC_INI))
+    # La aplicación ya configuró el registro de eventos; que Alembic lo
+    # reconfigure al arrancar se lleva por delante esa configuración.
+    configuracion.attributes["configurar_registro"] = False
+    return configuracion
+
+
+def _puente_a_alembic() -> None:
+    """Lleva al baseline una base anterior a Alembic, para poder sellarla.
+
+    Es el código con el que se construyó el esquema hasta la revisión base:
+    `create_all` para las tablas que falten, más los parches a mano de las
+    columnas y los tipos enum que `create_all` no altera.
+
+    No se convirtió en revisiones de Alembic, y no tendría sentido hacerlo:
+    una base nueva sale completa de la revisión base, así que una revisión que
+    agregara `fecha_corte` a `reportes_exogena` sería un no-op o un error de
+    columna duplicada. Esto no es historia por registrar; es alcance para las
+    bases que ya existían cuando se adoptó Alembic.
+
+    Se ejecuta una sola vez por base, justo antes de sellarla. Cuando no quede
+    ninguna base sin sellar, esta función y sus ayudantes se pueden borrar.
+    """
     registrar_modelos()
     SQLModel.metadata.create_all(engine)
     _sincronizar_enums(engine)
@@ -267,6 +312,38 @@ def crear_tablas() -> None:
             "respondido_por_contribuyente": "BOOLEAN NOT NULL DEFAULT FALSE",
         },
     )
+
+
+def crear_tablas() -> None:
+    """Deja el esquema al día, venga de donde venga la base.
+
+    Tres casos, y hay que distinguirlos porque sellar una base sin su esquema
+    la rompe para siempre: Alembic creería que ya aplicó todo.
+
+    - **Base vacía**: las revisiones la construyen entera.
+    - **Base con esquema pero sin sellar** (anterior a Alembic, como la que
+      está desplegada): se le corre el puente para llevarla al baseline, se
+      sella en la revisión base y se aplican las revisiones posteriores.
+    - **Base ya sellada**: se aplican las revisiones que falten.
+
+    Se llama al arrancar la aplicación, así que tiene que ser idempotente y
+    barata cuando no hay nada que hacer.
+    """
+    from alembic import command
+    from alembic.script import ScriptDirectory
+
+    registrar_modelos()
+    configuracion = _configuracion_alembic()
+
+    inspector = inspect(engine)
+    tablas = set(inspector.get_table_names())
+
+    if tablas and "alembic_version" not in tablas:
+        _puente_a_alembic()
+        revision_base = ScriptDirectory.from_config(configuracion).get_base()
+        command.stamp(configuracion, revision_base)
+
+    command.upgrade(configuracion, "head")
 
 
 def obtener_sesion() -> Iterator[Session]:

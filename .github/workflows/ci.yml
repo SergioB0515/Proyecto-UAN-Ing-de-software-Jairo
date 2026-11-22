@@ -2,8 +2,9 @@
 #
 #   backend       — las pruebas contra un PostgreSQL real, en una base nueva.
 #                   Prueba una INSTALACIÓN nueva.
-#   actualizacion — crea el esquema con el código de la rama base, lo migra
-#                   con el de este commit y vuelve a correr las pruebas.
+#   actualizacion — dos cosas. Que las revisiones de Alembic reproduzcan los
+#                   modelos, y que el esquema de la rama base, con datos,
+#                   sobreviva a migrarse con el código de este commit.
 #                   Prueba una ACTUALIZACIÓN, que es lo que hace un despliegue.
 #   frontend      — que el SPA compile.
 name: CI
@@ -84,6 +85,10 @@ jobs:
           cache: pip
           cache-dependency-path: backend/requirements.txt
       - run: pip install -r backend/requirements.txt
+      - name: Las revisiones reproducen los modelos
+        # Falla si alguien cambió un modelo y no escribió la revisión. Sin
+        # esto Alembic es ceremonia: archivos que nadie verifica.
+        run: herramientas/comprobar_revisiones.py
       - name: Prueba de actualización
         run: >-
           herramientas/prueba-actualizacion.sh

@@ -83,6 +83,13 @@ echo "==> Sembrando datos con el código anterior"
 echo "==> Migrando con el código actual"
 (cd backend && "$PY" -c "from database import crear_tablas; crear_tablas()")
 
+# La comprobación directa: la base migrada tiene que quedar igual que una
+# construida desde cero con las revisiones. Si el puente a Alembic no alcanza
+# el baseline, o si falta una revisión, se ve acá y con el nombre de lo que
+# falta, en vez de como una prueba rara que falla más abajo.
+echo "==> Comparando el esquema migrado con los modelos"
+herramientas/comprobar_revisiones.py --solo-comparar
+
 echo "==> Leyendo y borrando con el código actual los datos del anterior"
 (cd backend && "$PY" -c "
 from sqlmodel import Session
