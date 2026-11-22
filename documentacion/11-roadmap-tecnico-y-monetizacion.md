@@ -1,9 +1,14 @@
 # 11. Roadmap técnico y modelo de monetización
 
-> Documento de estado y planeación, con corte al **3 de noviembre de 2026**.
+> Documento de estado y planeación, con corte al **3 de noviembre de 2026**;
+> las cifras de la sección 1 están actualizadas al **22 de noviembre**.
 > Las cifras de mercado y los parámetros tributarios citados aquí se
-> verificaron contra fuente ese día; los tributarios cambian cada año y las
-> de mercado cada pocos meses.
+> verificaron contra fuente el 3 de noviembre; los tributarios cambian cada
+> año y las de mercado cada pocos meses.
+>
+> El plan de trabajo a corto plazo, con lo que se construye primero y por
+> qué, está en el [documento 12](12-plan-inmediato.md). Este documento se
+> conserva por el análisis de mercado, de monetización y de tesis.
 
 ---
 
@@ -23,9 +28,9 @@ estimaciones de software se quedan cortas; tómelas como orden de magnitud.
 
 | Métrica | Valor |
 |---|---|
-| Líneas de código (backend + frontend) | ~22.500 |
-| Módulos del backend | 12 |
-| Pruebas automatizadas | 325, todas en verde |
+| Líneas de código (backend + frontend) | ~37.800 |
+| Módulos del backend | 16 |
+| Pruebas automatizadas | 579, todas en verde |
 | Historias de usuario con evidencia | 27 (HU-01 a HU-27) |
 | Despliegue | Docker + Render, un solo contenedor |
 | CI | GitHub Actions |
@@ -50,8 +55,10 @@ estimaciones de software se quedan cortas; tómelas como orden de magnitud.
 
 ### Lo que está mal y hay que arreglar
 
-1. **El dinero se guarda en `float`.** Hay 61 campos monetarios en `float` y
-   cero `Decimal` en los módulos anteriores a esta iteración. En software
+1. **El dinero se guarda en `float`.** Quedan 56 campos monetarios en
+   `float`, y cero `Decimal` en los módulos anteriores a esta iteración. Los
+   módulos nuevos ya usan `Decimal`, así que hoy conviven dos convenciones y
+   los centavos se pierden en la frontera. En software
    contable es un defecto: el error de representación binaria se acumula y los
    totales dejan de cuadrar al centavo. Un contador que vea un descuadre de
    $0,03 en un informe deja de confiar en todo lo demás.
@@ -180,7 +187,7 @@ recordar, porque son el tipo de cosa que solo sale corriendo el sistema:
 
 | # | Tarea | Esfuerzo | Riesgo | Por qué importa |
 |---|---|---|---|---|
-| 1 | Migrar los 61 campos de dinero de `float` a `Decimal`/`NUMERIC(18,2)` | 3–5 días | **Alto** | Toca todos los módulos y las 260 pruebas. Es el defecto más serio para software contable. |
+| 1 | Migrar los 56 campos de dinero de `float` a `Decimal`/`NUMERIC(18,2)` | 3–5 días | **Alto** | Toca todos los módulos y las 579 pruebas. Es el defecto más serio para software contable. |
 | 2 | Alembic para migraciones versionadas | 1–2 días | Bajo | Sin esto no se puede evolucionar el esquema con datos reales en producción. |
 | 3 | Consolidar las tablas laterales (`clasificaciones_ingreso`, `datos_depreciacion`) como columnas de `fuentes_ingreso` y `activos` | 2 días | Bajo | Fueron decisiones de no romper nada cerca de la entrega; el diseño correcto son las columnas. |
 | 4 | Capa de organización: firma → contadores → roles | 4–6 días | Medio | Las 4.665 firmas del país no son un contador solo. Es el techo comercial actual. |
@@ -210,11 +217,15 @@ menos que uno que se usa cada mes, aunque suene más ambicioso.
 | **Deducción de nómina condicionada al pago de aportes** (arts. 108 y 115-1 ET) | 2–3 días | La DIAN rechaza pagos laborales sin aportes pagados. Es un rechazo automático que conviene detectar antes. |
 | **Cartera de difícil cobro y deuda manifiestamente perdida** (arts. 145 y 146 ET) | 2 días | Deducción común en comerciantes. |
 
+> **Construido desde este corte:** el **portal del contribuyente** (enlace de
+> carga, autorización de tratamiento versionada, carga de la exógena, los
+> cuatro estados por documento, los adicionales y la conciliación con valor
+> final). Estaba en prioridad media con 10–15 días de esfuerzo.
+
 ### Prioridad media
 
 | Módulo | Esfuerzo | Por qué |
 |---|---|---|
-| **Portal del contribuyente** (que el cliente suba sus propios soportes) | 10–15 días | El mayor costo del contador es perseguir documentos. Ataca el dolor, no la tarea. |
 | **Simulador de planeación tributaria** | 5–7 días | «¿Cuánto bajo el impuesto si aporto 20 millones a AFC?» Con el motor ya hecho, es recalcular con insumos alterados. |
 | **Firma electrónica y generación del archivo para MUISCA** | 8–12 días | Hasta donde llega lo posible: la presentación en sí es manual. |
 | **Declaraciones de IVA e ICA** | 12–18 días c/u | Recurrentes, pero mercado muy atendido. |

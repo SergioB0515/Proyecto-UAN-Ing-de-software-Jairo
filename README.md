@@ -63,6 +63,7 @@ documentacion/  Requisitos, arquitectura, diagramas, historias de usuario, evide
 | [09](documentacion/09-avances-proyecto.md) | Avances |
 | [10](documentacion/10-evidencias-funcionamiento.md) | Evidencias |
 | [11](documentacion/11-roadmap-tecnico-y-monetizacion.md) | Roadmap técnico y mercado |
+| [12](documentacion/12-plan-inmediato.md) | Plan de trabajo inmediato |
 
 ## Stack
 
