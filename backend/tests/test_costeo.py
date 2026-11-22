@@ -36,7 +36,7 @@ def test_peps_costea_con_las_entradas_mas_antiguas():
     lineas = [c.linea for c in calcular_kardex(MetodoCosteo.PEPS, MOVIMIENTOS)]
     salida = lineas[-1]
     assert salida.costo_total == 1600
-    assert salida.costo_unitario == pytest.approx(106.67, abs=0.01)
+    assert float(salida.costo_unitario) == pytest.approx(106.67, abs=0.01)
     assert salida.precio_venta_unitario == 200
     assert salida.saldo_cantidad == 5
     assert salida.saldo_valor == 600

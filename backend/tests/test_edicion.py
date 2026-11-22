@@ -90,11 +90,11 @@ def test_editar_activo_y_borrar_vinculo(client):
     )
 
     assert r.status_code == 200
-    assert r.json()["valor"] == 2500
+    assert float(r.json()["valor"]) == 2500
     assert r.json()["vinculo_codigo_concepto"] is None
     assert r.json()["descripcion"] == "Cuenta"
     patrimonio = client.get(e.url("/patrimonio"), headers=e.h).json()["patrimonio_liquido"]
-    assert patrimonio == 2500
+    assert float(patrimonio) == 2500
 
 
 def test_editar_activo_con_valor_invalido_falla(client):
@@ -156,7 +156,7 @@ def test_editar_y_eliminar_fuente_de_ingreso(client):
         headers=e.h,
     )
     assert r.status_code == 200
-    assert (r.json()["valor_anual"], r.json()["retencion_fuente"]) == (7000, 300)
+    assert (float(r.json()["valor_anual"]), float(r.json()["retencion_fuente"])) == (7000, 300)
 
     assert client.delete(e.url(f"/fuentes-ingreso/{fuente['id']}"), headers=e.h).status_code == 204
     assert client.get(e.url("/fuentes-ingreso"), headers=e.h).json() == []
@@ -186,7 +186,10 @@ def test_copiar_activos_del_anio_anterior(client):
     assert all(a["periodo_fiscal_id"] == p2026 for a in creados.json())
     assert next(a for a in creados.json() if a["descripcion"] == "Casa")["vinculo_codigo_concepto"] == "1476"
     assert de_nuevo.json() == []
-    assert client.get(e.url(f"/patrimonio?periodo_fiscal_id={p2026}"), headers=e.h).json()["patrimonio_liquido"] == 150
+    patrimonio_2026 = client.get(
+        e.url(f"/patrimonio?periodo_fiscal_id={p2026}"), headers=e.h
+    ).json()["patrimonio_liquido"]
+    assert float(patrimonio_2026) == 150
 
 
 def test_copiar_activos_sin_anio_anterior_falla(client):

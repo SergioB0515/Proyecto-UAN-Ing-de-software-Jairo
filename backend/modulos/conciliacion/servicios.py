@@ -1,3 +1,4 @@
+from core.dinero import CERO, redondear_pesos
 from core.formato import pesos
 import re
 from dataclasses import dataclass
@@ -46,15 +47,18 @@ from .modelos import (
 
 CONCEPTO_CONSUMO_TC = "1023"
 
-TOLERANCIA_ABSOLUTA = 1000.0
-TOLERANCIA_RELATIVA = 0.005
+# En Decimal y no en float: se multiplican por importes que ya son Decimal, y
+# mezclar los dos tipos en una multiplicación es un TypeError, no una
+# conversión silenciosa.
+TOLERANCIA_ABSOLUTA = Decimal("1000")
+TOLERANCIA_RELATIVA = Decimal("0.005")
 
 
 @dataclass
 class _ItemDeclarado:
     clave: str
     concepto: str
-    valor: float
+    valor: Decimal
     origen: OrigenItemConciliacion
     vinculo_codigo_concepto: Optional[str]
     vinculo_palabra_clave: Optional[str]
@@ -94,7 +98,7 @@ def _excluido_del_cruce(registro: RegistroExogena) -> bool:
     return registro.es_auto_reportado or registro.es_dian or _es_retencion(registro)
 
 
-def _dentro_de_tolerancia(valor_exogena: float, valor_declarado: float) -> bool:
+def _dentro_de_tolerancia(valor_exogena: Decimal, valor_declarado: Decimal) -> bool:
     tolerancia = max(TOLERANCIA_ABSOLUTA, abs(valor_exogena) * TOLERANCIA_RELATIVA)
     return abs(valor_exogena - valor_declarado) <= tolerancia
 
@@ -129,7 +133,7 @@ def _ventas_declaradas(session: Session, periodo_fiscal_id: int) -> List[_ItemDe
         _ItemDeclarado(
             clave=f"VTA:{v.id}",
             concepto=f"Venta: {v.descripcion}",
-            valor=float(v.valor_venta),
+            valor=v.valor_venta,
             origen=OrigenItemConciliacion.VENTA_INMUEBLE,
             vinculo_codigo_concepto=None,
             vinculo_palabra_clave="enajenante principal",
@@ -276,7 +280,7 @@ def _adicionales_declarados(
             _ItemDeclarado(
                 clave=f"ADI:{adicional.id}",
                 concepto=f"{adicional.descripcion} ({_nombre_adicional(adicional.tipo)})",
-                valor=float(adicional.valor),
+                valor=adicional.valor,
                 origen=OrigenItemConciliacion.ADICIONAL,
                 vinculo_codigo_concepto=None,
                 # La descripción hace de palabra clave, igual que en un activo
@@ -319,7 +323,7 @@ def _aplicar_decisiones(
         decision = decisiones.get(item.clave)
         if decision is None:
             continue
-        item.valor_final = float(decision.valor_final)
+        item.valor_final = decision.valor_final
         item.fuente_valor_final = decision.fuente_elegida
         item.nota_decision = decision.nota
         item.decidida_en = decision.decidida_en
@@ -342,7 +346,7 @@ def _valor_de_la_fuente(
                 f"«{item.concepto}» no tiene valor en la exógena: no se puede "
                 "elegir esa fuente. Use DECLARADO o MANUAL."
             )
-        return Decimal(str(item.valor_exogena)).quantize(Decimal("0.01"))
+        return redondear_pesos(item.valor_exogena)
 
     if datos.fuente_elegida == FuenteValorFinal.DECLARADO:
         if item.valor_declarado is None:
@@ -350,7 +354,7 @@ def _valor_de_la_fuente(
                 f"«{item.concepto}» solo está en la exógena: no hay valor "
                 "declarado que elegir. Use EXOGENA o MANUAL."
             )
-        return Decimal(str(item.valor_declarado)).quantize(Decimal("0.01"))
+        return redondear_pesos(item.valor_declarado)
 
     if datos.valor_final is None:
         raise DecisionRenglonInvalidaError(
@@ -488,10 +492,10 @@ def generar_borrador_renglones(
         for renglon in renglones:
             acumulado = acumulados.setdefault(
                 renglon,
-                RenglonSugerido(renglon=renglon, valor_total=0.0, cantidad_registros=0),
+                RenglonSugerido(renglon=renglon, valor_total=CERO, cantidad_registros=0),
             )
             # Copropiedad: cuenta por el porcentaje de participación.
-            acumulado.valor_total += float(_a_cruce(registro).valor_propio)
+            acumulado.valor_total += _a_cruce(registro).valor_propio
             acumulado.cantidad_registros += 1
 
     # Nombre oficial de la casilla.
@@ -526,7 +530,7 @@ def generar_borrador_renglones(
 def _a_cruce(registro: RegistroExogena) -> cruce.Registro:
     return cruce.Registro(
         detalle=registro.detalle or "",
-        valor=Decimal(str(registro.valor)),
+        valor=registro.valor,
         uso_sugerido=registro.uso_sugerido or "",
         info_adicional=registro.info_adicional or "",
         renglones_sugeridos=registro.renglones_sugeridos or "",
@@ -541,7 +545,7 @@ def _topes_del_reporte(session: Session, reporte_id: int) -> Dict[str, Decimal]:
     topes = session.exec(
         select(TopeExogena).where(TopeExogena.reporte_exogena_id == reporte_id)
     ).all()
-    return {t.etiqueta.strip(): Decimal(str(t.valor)) for t in topes}
+    return {t.etiqueta.strip(): t.valor for t in topes}
 
 
 def _cuadrar_contra_topes(
@@ -562,9 +566,9 @@ def _cuadrar_contra_topes(
         cuadres.append(
             CuadreTope(
                 etiqueta=c.etiqueta,
-                valor_tope=float(c.valor_tope),
-                valor_borrador=float(c.valor_esperado),
-                diferencia=float(c.valor_esperado - c.valor_tope),
+                valor_tope=c.valor_tope,
+                valor_borrador=c.valor_esperado,
+                diferencia=c.valor_esperado - c.valor_tope,
                 cuadra=c.cuadra,
             )
         )
@@ -604,13 +608,13 @@ def cruzar_con_la_dian(
     umbrales: Optional[Dict[int, Decimal]] = None
     try:
         u = obtener_umbral_vigente(session, periodo.anio_gravable)
-        uvt = Decimal(str(u.valor_uvt))
+        uvt = u.valor_uvt
         umbrales = {
-            1: uvt * Decimal(str(u.tope_ingresos_uvt)),
-            2: uvt * Decimal(str(u.tope_patrimonio_uvt)),
-            3: uvt * Decimal(str(u.tope_consumo_tc_uvt)),
-            4: uvt * Decimal(str(u.tope_movimiento_uvt)),
-            5: uvt * Decimal(str(u.tope_compras_uvt)),
+            1: uvt * u.tope_ingresos_uvt,
+            2: uvt * u.tope_patrimonio_uvt,
+            3: uvt * u.tope_consumo_tc_uvt,
+            4: uvt * u.tope_movimiento_uvt,
+            5: uvt * u.tope_compras_uvt,
         }
     except UmbralNoConfiguradoError:
         pass

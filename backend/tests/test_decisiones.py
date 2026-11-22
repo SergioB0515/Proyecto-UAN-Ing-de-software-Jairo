@@ -70,7 +70,7 @@ def test_los_adicionales_entran_a_la_misma_tabla(client):
     assert item["origen"] == "Adicional"
     # La exógena nunca trae medicina prepagada: solo está en lo declarado.
     assert item["estado"] == "NO_REPORTADO_POR_TERCERO"
-    assert item["valor_declarado"] == 2_000_000
+    assert float(item["valor_declarado"]) == 2_000_000
     assert item["valor_exogena"] is None
 
 
@@ -85,7 +85,7 @@ def test_un_adicional_patrimonial_si_se_cruza_con_la_exogena(client):
     cuerpo = _conciliar(client, token, cid, pid).json()
     item = _item(cuerpo, "cuentas de ahorro")
     assert item["estado"] == "COINCIDE"
-    assert item["valor_exogena"] == VALOR_BANCO
+    assert float(item["valor_exogena"]) == VALOR_BANCO
     assert item["nombre_reportante"] == "BANCOLOMBIA S A"
 
 
@@ -139,7 +139,7 @@ def test_la_decision_vuelve_en_la_conciliacion(client):
 
     cuerpo = _conciliar(client, token, cid, pid).json()
     decidido = _item(cuerpo, "Pagos por salarios")
-    assert decidido["valor_final"] == VALOR_SALARIOS
+    assert float(decidido["valor_final"]) == VALOR_SALARIOS
     assert decidido["fuente_valor_final"] == "EXOGENA"
     assert decidido["decidida_en"]
     assert cuerpo["total_decididos"] == 1

@@ -121,9 +121,9 @@ class ItemConciliacion(SQLModel):
     clave: str
     concepto: str
     origen: OrigenItemConciliacion
-    valor_declarado: Optional[float] = None
-    valor_exogena: Optional[float] = None
-    diferencia: Optional[float] = None
+    valor_declarado: Optional[Decimal] = None
+    valor_exogena: Optional[Decimal] = None
+    diferencia: Optional[Decimal] = None
     estado: EstadoConciliacion
     registro_exogena_id: Optional[int] = None
     nit_reportante: Optional[str] = None
@@ -131,7 +131,7 @@ class ItemConciliacion(SQLModel):
     concepto_code: Optional[str] = None
     etiqueta_estado: Optional[str] = None
     # La decisión del contador, si ya la tomó.
-    valor_final: Optional[float] = None
+    valor_final: Optional[Decimal] = None
     fuente_valor_final: Optional[FuenteValorFinal] = None
     nota_decision: Optional[str] = None
     decidida_en: Optional[datetime] = None
@@ -149,7 +149,7 @@ class ResultadoConciliacion(SQLModel):
 
 class RenglonSugerido(SQLModel):
     renglon: str
-    valor_total: float
+    valor_total: Decimal
     cantidad_registros: int
     casilla: Optional[int] = None
     nombre_oficial: Optional[str] = None
@@ -159,7 +159,7 @@ class RegistroSinAsignar(SQLModel):
     """Valor sin renglón asignado por la DIAN. Lo asigna el contador; no se suma."""
 
     detalle: str
-    valor: float
+    valor: Decimal
     renglones_posibles: List[str]
     uso_sugerido: Optional[str] = None
 
@@ -168,9 +168,9 @@ class CuadreTope(SQLModel):
     """Topes del archivo frente al borrador."""
 
     etiqueta: str
-    valor_tope: float
-    valor_borrador: float
-    diferencia: float
+    valor_tope: Decimal
+    valor_borrador: Decimal
+    diferencia: Decimal
     cuadra: bool
 
 

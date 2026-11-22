@@ -1,10 +1,13 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from enum import Enum
 from typing import List, Optional
 
 from pydantic import computed_field
 from sqlalchemy import UniqueConstraint
 from sqlmodel import Field, SQLModel
+
+from core.dinero import campo_cantidad, campo_dinero, redondear_pesos
 
 from ..inventario.modelos import MetodoCosteo
 
@@ -82,8 +85,8 @@ class MovimientoBase(SQLModel):
     documento_soporte_id: int = Field(foreign_key="documentos_soporte.id", index=True)
     proveedor_id: Optional[int] = Field(default=None, foreign_key="proveedores.id")
     fecha: date
-    cantidad: float = Field(gt=0)
-    valor_unitario: float = Field(gt=0)
+    cantidad: Decimal = campo_cantidad(gt=0)
+    valor_unitario: Decimal = campo_dinero(gt=0)
 
 
 class Movimiento(MovimientoBase, table=True):
@@ -107,20 +110,23 @@ class MovimientoLeer(MovimientoBase):
 
     @computed_field
     @property
-    def valor_total(self) -> float:
-        return round(self.cantidad * self.valor_unitario, 2)
+    def valor_total(self) -> Decimal:
+        # cantidad trae tres decimales y valor_unitario dos, así que el
+        # producto trae cinco: hay que redondearlo a centavos y no dejar que
+        # lo recorte quien lo muestre.
+        return redondear_pesos(self.cantidad * self.valor_unitario)
 
 
 class LineaKardex(SQLModel):
     movimiento_id: int
     fecha: date
     tipo: TipoMovimiento
-    cantidad: float
-    costo_unitario: float
-    costo_total: float
-    saldo_cantidad: float
-    saldo_valor: float
-    precio_venta_unitario: Optional[float] = None
+    cantidad: Decimal
+    costo_unitario: Decimal
+    costo_total: Decimal
+    saldo_cantidad: Decimal
+    saldo_valor: Decimal
+    precio_venta_unitario: Optional[Decimal] = None
 
 
 class Kardex(SQLModel):
@@ -129,8 +135,8 @@ class Kardex(SQLModel):
     nombre: str
     metodo_costeo: MetodoCosteo
     lineas: List[LineaKardex]
-    saldo_cantidad: float
-    saldo_valor: float
+    saldo_cantidad: Decimal
+    saldo_valor: Decimal
 
 
 class KardexProductoPeriodo(SQLModel):
@@ -138,11 +144,11 @@ class KardexProductoPeriodo(SQLModel):
     codigo: str
     nombre: str
     metodo_costeo: MetodoCosteo
-    saldo_inicial_cantidad: float
-    saldo_inicial_valor: float
+    saldo_inicial_cantidad: Decimal
+    saldo_inicial_valor: Decimal
     lineas: List[LineaKardex]
-    saldo_final_cantidad: float
-    saldo_final_valor: float
+    saldo_final_cantidad: Decimal
+    saldo_final_valor: Decimal
 
 
 class CostoVentasProducto(SQLModel):
@@ -150,12 +156,12 @@ class CostoVentasProducto(SQLModel):
     codigo: str
     nombre: str
     metodo_costeo: MetodoCosteo
-    cantidad_vendida: float
-    ingresos_ventas: float
-    costo_ventas: float
-    utilidad_bruta: float
-    saldo_final_cantidad: float
-    saldo_final_valor: float
+    cantidad_vendida: Decimal
+    ingresos_ventas: Decimal
+    costo_ventas: Decimal
+    utilidad_bruta: Decimal
+    saldo_final_cantidad: Decimal
+    saldo_final_valor: Decimal
 
 
 class CostoVentasPeriodo(SQLModel):
@@ -163,7 +169,7 @@ class CostoVentasPeriodo(SQLModel):
     periodo_fiscal_id: int
     anio_gravable: int
     productos: List[CostoVentasProducto]
-    total_ingresos_ventas: float
-    total_costo_ventas: float
-    total_utilidad_bruta: float
-    total_inventario_final: float
+    total_ingresos_ventas: Decimal
+    total_costo_ventas: Decimal
+    total_utilidad_bruta: Decimal
+    total_inventario_final: Decimal

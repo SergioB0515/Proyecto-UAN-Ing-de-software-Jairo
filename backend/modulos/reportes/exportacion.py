@@ -1,7 +1,8 @@
 import io
 from dataclasses import dataclass, field
 from datetime import date, datetime
-from typing import Any, List
+from decimal import Decimal
+from typing import Any, List, Union
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Font, PatternFill
@@ -36,7 +37,7 @@ _TAMANO_CELDA = 7.5
 _COLOR_ENCABEZADO = "1F4E79"
 
 
-def _numero_co(valor: float) -> str:
+def _numero_co(valor: Union[float, Decimal]) -> str:
     return f"{valor:,.2f}".replace(",", "_").replace(".", ",").replace("_", ".")
 
 

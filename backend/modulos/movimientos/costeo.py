@@ -1,7 +1,13 @@
 """Costeo de inventario: PEPS y promedio ponderado.
 
-Entra y sale float (base y API); el cálculo intermedio es Decimal vía str
-y se redondea al final, a la mitad hacia arriba.
+Todo es Decimal, de punta a punta. Antes el cálculo intermedio ya era
+Decimal pero entraba y salía float, porque la base y la API lo eran: eso
+dejaba el redondeo bien hecho y lo tiraba a la basura al devolverlo.
+
+Se redondea a la mitad hacia arriba. Los importes a dos decimales; las
+cantidades a tres, porque el costo unitario sale de dividir valor entre
+cantidad y recortar la cantidad a dos decimales mete el error por la puerta
+de atrás.
 """
 
 from collections import deque
@@ -22,12 +28,12 @@ _MICRO = Decimal("0.000001")
 
 
 def _d(valor) -> Decimal:
-    """float -> Decimal vía str."""
+    """Lo que venga, a Decimal, pasando por str si hace falta."""
     return valor if isinstance(valor, Decimal) else Decimal(str(valor))
 
 
-def _pesos(valor: Decimal) -> float:
-    return float(valor.quantize(_CENTAVO, rounding=ROUND_HALF_UP))
+def _pesos(valor: Decimal) -> Decimal:
+    return _d(valor).quantize(_CENTAVO, rounding=ROUND_HALF_UP)
 
 
 @dataclass
@@ -35,8 +41,8 @@ class MovimientoCosteo:
     fecha: date
     orden: float
     tipo: TipoMovimiento
-    cantidad: float
-    valor_unitario: float
+    cantidad: Decimal
+    valor_unitario: Decimal
     movimiento_id: Optional[int] = None
     periodo_fiscal_id: Optional[int] = None
 
@@ -51,7 +57,7 @@ def ordenar(movimientos: Iterable[MovimientoCosteo]) -> List[MovimientoCosteo]:
     return sorted(movimientos, key=lambda m: (m.fecha, m.orden))
 
 
-def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> float:
+def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> Decimal:
     saldo = CERO
     for mov in ordenar(movimientos):
         cantidad = _d(mov.cantidad)
@@ -61,7 +67,8 @@ def validar_stock(movimientos: Iterable[MovimientoCosteo]) -> float:
         if cantidad > saldo + EPSILON:
             raise StockInsuficienteError(
                 f"Stock insuficiente al {mov.fecha.isoformat()}: se intentan "
-                f"sacar {mov.cantidad:g} unidades y solo hay {float(saldo):g} disponibles"
+                f"sacar {float(mov.cantidad):g} unidades y solo hay "
+                f"{float(saldo):g} disponibles"
             )
         saldo -= cantidad
     return _limpiar(saldo)
@@ -163,6 +170,11 @@ def _linea(
     )
 
 
-def _limpiar(valor: Decimal) -> float:
+def _limpiar(valor: Decimal) -> Decimal:
+    """Mata el polvo que deja la división: un saldo de 1E-12 es cero.
+
+    Devuelve Decimal, no float: convertirlo acá era desarmar el redondeo que
+    acaba de hacerse.
+    """
     redondeado = _d(valor).quantize(_MICRO, rounding=ROUND_HALF_UP)
-    return 0.0 if abs(redondeado) < EPSILON else float(redondeado)
+    return CERO if abs(redondeado) < EPSILON else redondeado

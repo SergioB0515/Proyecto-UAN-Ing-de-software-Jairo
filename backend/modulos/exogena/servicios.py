@@ -1,12 +1,14 @@
 import io
 import re
 from datetime import date, datetime
+from decimal import Decimal
 from typing import List, Optional
 
 import pandas as pd
 from sqlalchemy import func, nulls_last
 from sqlmodel import Session, select
 
+from core.dinero import CERO, redondear_pesos
 from core.config import TAMANO_MAXIMO_EXOGENA_MB
 from core.excepciones import (
     ArchivoDemasiadoGrandeError,
@@ -148,20 +150,17 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
 
         if nit is None:
             if detalle and detalle.replace(" ", "").lower().startswith("tope"):
-                valor_tope = _col(fila, 5)
                 try:
-                    valor_tope = float(valor_tope) if valor_tope is not None else 0.0
+                    valor_tope = _dinero_de_celda(_col(fila, 5))
                 except (TypeError, ValueError):
-                    valor_tope = 0.0
+                    valor_tope = CERO
                 resultado.topes.append(
                     TopeExogenaBase(etiqueta=detalle, valor=valor_tope)
                 )
             continue
 
         try:
-            valor = float(_col(fila, 5))
-            if valor != valor:
-                raise ValueError
+            valor = _dinero_de_celda(_col(fila, 5))
         except (TypeError, ValueError):
             resultado.errores.append(
                 FilaConError(
@@ -194,6 +193,24 @@ def parsear_archivo_exogena(contenido: bytes) -> ResultadoParseo:
         )
 
     return resultado
+
+
+def _dinero_de_celda(valor) -> Decimal:
+    """Convierte una celda del Excel a pesos.
+
+    Pasa por `str` y no por `Decimal(flotante)`: openpyxl entrega los números
+    como `float`, y construir el Decimal desde el float arrastra el error de
+    representación binaria en vez de dejarlo afuera.
+
+    Valida lo mismo que antes validaba `float()`, para no cambiar qué filas se
+    aceptan: una celda vacía o no numérica sigue siendo un error de fila.
+    """
+    if valor is None:
+        raise ValueError("celda vacía")
+    numero = float(valor)
+    if numero != numero:  # NaN
+        raise ValueError("celda no numérica")
+    return redondear_pesos(numero)
 
 
 def _celda(valor):

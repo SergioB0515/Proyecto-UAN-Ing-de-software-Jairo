@@ -4,6 +4,7 @@ from typing import List, Optional
 
 from sqlmodel import Session, delete, select
 
+from core.dinero import CERO
 from core.excepciones import (
     AnioGravableNoSoportadoError,
     CalendarioInvalidoError,
@@ -54,12 +55,14 @@ def cargar_umbral_oficial(session: Session, anio_gravable: int) -> UmbralDeclara
         session,
         UmbralDeclaracionCrear(
             anio_gravable=anio_gravable,
-            valor_uvt=float(parametros.uvt),
-            tope_ingresos_uvt=float(topes["ingresos_brutos"]),
-            tope_patrimonio_uvt=float(topes["patrimonio_bruto"]),
-            tope_consumo_tc_uvt=float(topes["consumos_tarjeta_credito"]),
-            tope_compras_uvt=float(topes["compras_y_consumos"]),
-            tope_movimiento_uvt=float(topes["consignaciones_y_depositos"]),
+            # Sin pasar por float: la tabla oficial ya los trae en Decimal y
+            # convertirlos a float y de vuelta es donde se pierde el centavo.
+            valor_uvt=parametros.uvt,
+            tope_ingresos_uvt=topes["ingresos_brutos"],
+            tope_patrimonio_uvt=topes["patrimonio_bruto"],
+            tope_consumo_tc_uvt=topes["consumos_tarjeta_credito"],
+            tope_compras_uvt=topes["compras_y_consumos"],
+            tope_movimiento_uvt=topes["consignaciones_y_depositos"],
         ),
     )
 
@@ -111,7 +114,7 @@ def verificar_obligacion_declarar(
         tope = next(
             (t for t in topes if palabra_clave in t.etiqueta.lower()), None
         )
-        valor_reportado = tope.valor if tope is not None else 0.0
+        valor_reportado = tope.valor if tope is not None else CERO
         valor_umbral = umbral.valor_uvt * tope_uvt
         criterios.append(
             DetalleCriterio(

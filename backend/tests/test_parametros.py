@@ -105,7 +105,7 @@ def test_verificar_obligacion_no_obligado_con_umbrales_reales(client):
     criterios = {c["criterio"]: c for c in cuerpo["criterios"]}
     assert "Ingresos" in criterios
     assert "Patrimonio" in criterios
-    assert criterios["Ingresos"]["valor_reportado"] == 50000000
+    assert float(criterios["Ingresos"]["valor_reportado"]) == 50000000
 
 
 def test_verificar_obligacion_obligado_con_umbrales_bajos(client):
@@ -173,9 +173,9 @@ def test_cargar_los_topes_oficiales_deja_la_obligacion_evaluable(client):
     assert cargado.status_code == 201
     cuerpo = cargado.json()
     assert cuerpo["anio_gravable"] == 2025
-    assert cuerpo["valor_uvt"] == 49799
-    assert cuerpo["tope_ingresos_uvt"] == 1400
-    assert cuerpo["tope_patrimonio_uvt"] == 4500
+    assert float(cuerpo["valor_uvt"]) == 49799
+    assert float(cuerpo["tope_ingresos_uvt"]) == 1400
+    assert float(cuerpo["tope_patrimonio_uvt"]) == 4500
 
 
 def test_cargar_topes_de_un_ano_sin_tabla_oficial_falla_con_la_lista_de_anios(client):

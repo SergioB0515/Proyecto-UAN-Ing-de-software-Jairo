@@ -1,7 +1,10 @@
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import List, Optional
 
 from sqlmodel import Field, SQLModel
+
+from core.dinero import campo_dinero
 
 
 class ConceptoDian(SQLModel, table=True):
@@ -50,7 +53,7 @@ class RegistroExogenaBase(SQLModel):
     detalle: str = Field(max_length=500)
     concepto_code: Optional[str] = Field(default=None, max_length=10)
     renglones_sugeridos: Optional[str] = Field(default=None, max_length=100)
-    valor: float
+    valor: Decimal = campo_dinero()
     uso_sugerido: Optional[str] = Field(default=None, max_length=500)
     # True si la DIAN ofrece varios renglones posibles; no se suma a ninguno.
     renglones_son_condicionales: bool = Field(default=False)
@@ -75,7 +78,7 @@ class RegistroExogenaLeer(RegistroExogenaBase):
 
 class TopeExogenaBase(SQLModel):
     etiqueta: str = Field(max_length=100)
-    valor: float
+    valor: Decimal = campo_dinero()
 
 
 class TopeExogena(TopeExogenaBase, table=True):
