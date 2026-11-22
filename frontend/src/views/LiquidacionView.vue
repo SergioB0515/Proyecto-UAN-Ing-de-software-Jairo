@@ -40,6 +40,53 @@ const anioNoSoportado = ref('')
 const cedulas = ref([])
 const ingresos = ref([])
 const hoja = ref(null)
+
+// Plegado de la hoja de liquidación. Nada se elimina ni se esconde de forma
+// irreversible: una sección plegada está a un clic y el interruptor de arriba
+// las abre todas. Lo que se evita es pedirle al contador que recorra 48
+// campos cuando su cliente usa doce.
+const plegadoManual = ref({})
+const verTodasLasSecciones = ref(false)
+
+function seccionConDatos(seccion) {
+  if (!hoja.value) return false
+  return seccion.campos.some((campo) => {
+    const valor = hoja.value[campo.clave]
+    if (campo.tipo === 'checkbox') return valor === true
+    // Un select y un entero traen siempre un valor por omisión que nadie
+    // escribió: «meses causados» vale 12 de fábrica, así que contarlo como
+    // dato abriría Pensiones para todo el mundo. Solo el dinero capturado
+    // cuenta como evidencia de que la sección se usa.
+    if (campo.tipo === 'select' || campo.tipo === 'entero') return false
+    return valor !== null && valor !== undefined && valor !== '' && Number(valor) !== 0
+  })
+}
+
+function seccionAplicaAlTipo(seccion) {
+  if (seccion.siempre) return true
+  return Boolean(seccion.tipos?.includes(contribuyente.value?.tipo_contribuyente))
+}
+
+function seccionAbierta(seccion) {
+  if (verTodasLasSecciones.value) return true
+  if (seccion.titulo in plegadoManual.value) return plegadoManual.value[seccion.titulo]
+  // Tener datos pesa más que el tipo: una sección con contenido se abre
+  // aunque la clasificación diga que no aplica.
+  return seccionAplicaAlTipo(seccion) || seccionConDatos(seccion)
+}
+
+function alternarSeccion(seccion) {
+  plegadoManual.value[seccion.titulo] = !seccionAbierta(seccion)
+}
+
+const seccionesPlegadas = computed(
+  () => SECCIONES_HOJA.filter((s) => !seccionAbierta(s)).length,
+)
+
+// Las tablas de cifras del borrador. La advertencia y los diagnósticos NO se
+// pliegan: son lo que el motor dice que no evalúa, y esconderlos sería
+// quedarse con las cifras y tirar las salvedades.
+const verTablasDelBorrador = ref(false)
 const deducciones = ref([])
 const resultado = ref(null)
 const escenarios = ref([])
@@ -122,14 +169,25 @@ function irAlDetalle() {
 const sinClasificar = computed(() => ingresos.value.filter((i) => i.cedula === 'SIN_CLASIFICAR'))
 
 // Secciones de la hoja, como datos.
+// `siempre` y `tipos` deciden qué sección se abre sola.
+//
+// Son 48 campos en 12 secciones. Abiertas todas a la vez, a un asalariado se
+// le pide mirar pensiones, dividendos, bancarización y comparación
+// patrimonial, que para él se van a quedar en cero para siempre.
+//
+// `tipos: []` no significa «nunca»: significa que no se abre por el tipo de
+// contribuyente, pero sí se abre si ya tiene un dato guardado. Una sección
+// con contenido nunca se pliega.
 const SECCIONES_HOJA = [
   {
     titulo: 'Patrimonio',
+    siempre: true,
     ayuda: 'El patrimonio bruto sale de los activos registrados. Las deudas se capturan aquí.',
     campos: [{ clave: 'deudas', etiqueta: 'Deudas a 31 de diciembre' }],
   },
   {
     titulo: 'Rentas de trabajo',
+    tipos: ['ASALARIADO', 'MIXTO'],
     ayuda: 'Los aportes obligatorios se restan como ingresos no constitutivos (arts. 55 y 56 ET).',
     campos: [
       { clave: 'aportes_obligatorios_salud', etiqueta: 'Aportes obligatorios a salud' },
@@ -139,6 +197,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Honorarios sin vínculo laboral',
+    tipos: ['INDEPENDIENTE', 'MIXTO'],
     ayuda:
       'El art. 336 num. 4 obliga a elegir: o se restan costos y gastos, o se toma la renta exenta del 25 %. No las dos.',
     campos: [
@@ -148,6 +207,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Rentas de capital',
+    tipos: [],
     ayuda: 'Arriendos, intereses y rendimientos. Los costos y gastos son los procedentes para producir esa renta (casilla 60).',
     campos: [
       { clave: 'ingresos_no_constitutivos_capital', etiqueta: 'Ingresos no constitutivos' },
@@ -156,6 +216,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Rentas no laborales',
+    tipos: ['INDEPENDIENTE', 'MIXTO'],
     ayuda: 'El costo de ventas sale del inventario y la depreciación de los activos. Aquí van los demás gastos del negocio (arriendo, nómina, servicios) y las devoluciones en ventas.',
     campos: [
       { clave: 'devoluciones_no_laborales', etiqueta: 'Devoluciones, rebajas y descuentos' },
@@ -165,6 +226,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Deducciones fuera del límite del 40 %',
+    siempre: true,
     ayuda: 'Dependientes (72 UVT cada uno, hasta cuatro) y 1 % de compras con factura electrónica (tope 240 UVT).',
     campos: [
       { clave: 'numero_dependientes', etiqueta: 'Número de dependientes', tipo: 'entero', max: 20 },
@@ -173,6 +235,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Pensiones',
+    tipos: [],
     ayuda: 'Exentas hasta 1.000 UVT mensuales (art. 206 num. 5).',
     campos: [
       { clave: 'ingresos_pensiones', etiqueta: 'Ingresos por pensiones' },
@@ -182,6 +245,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Dividendos',
+    tipos: [],
     ayuda: 'Tomados del certificado que expide la sociedad, incluida la retención.',
     campos: [
       { clave: 'dividendos_no_gravados', etiqueta: 'Dividendos no gravados' },
@@ -191,6 +255,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Ganancias ocasionales',
+    tipos: [],
     ayuda: 'Tarifa propia del 15 %; loterías, rifas y apuestas al 20 %.',
     campos: [
       { clave: 'go_ingresos', etiqueta: 'Ingresos por ganancia ocasional' },
@@ -202,6 +267,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Bancarización (art. 771-5)',
+    tipos: ['INDEPENDIENTE', 'MIXTO'],
     ayuda:
       'El efectivo aceptado es el menor entre el 40 % de los pagos, 40.000 UVT y el 35 % de los costos y deducciones. Lo que exceda deja de ser deducible.',
     campos: [
@@ -211,6 +277,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Comparación patrimonial (art. 236)',
+    tipos: [],
     ayuda:
       'El patrimonio del año anterior se toma de los activos de ese periodo; el campo manual solo lo sobrescribe. La diferencia no justificada no entra a la base a menos que usted la acepte.',
     campos: [
@@ -226,6 +293,7 @@ const SECCIONES_HOJA = [
   },
   {
     titulo: 'Cierre de la liquidación',
+    siempre: true,
     ayuda: 'El anticipo del año siguiente depende de cuántos años lleva declarando (art. 807 ET).',
     campos: [
       { clave: 'renta_presuntiva', etiqueta: 'Renta presuntiva' },
@@ -604,8 +672,17 @@ onMounted(cargar)
             Datos que no están en la exógena ni en el resto de la aplicación. Quedan auditados con
             quién los guardó y cuándo.
           </p>
+          <p v-if="seccionesPlegadas && !verTodasLasSecciones" class="mt-2 text-sm text-tinta-suave">
+            Hay {{ seccionesPlegadas }} sección(es) plegadas: están vacías y no aplican a un
+            contribuyente {{ (contribuyente.tipo_contribuyente || '').toLowerCase() }}. Siguen
+            disponibles, a un clic.
+          </p>
         </div>
-        <div class="flex gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <label class="mr-2 flex items-center gap-2 text-sm">
+            <input v-model="verTodasLasSecciones" type="checkbox" class="rounded border-papel-linea" />
+            Ver todas las secciones
+          </label>
           <button
             type="button"
             class="boton-secundario"
@@ -622,8 +699,29 @@ onMounted(cargar)
       </div>
 
       <div class="mt-5 grid items-start gap-6 lg:grid-cols-2">
-        <fieldset v-for="seccion in SECCIONES_HOJA" :key="seccion.titulo" class="rounded border border-papel-linea p-4">
+        <fieldset
+          v-for="seccion in SECCIONES_HOJA"
+          :key="seccion.titulo"
+          class="rounded border border-papel-linea px-4 py-3"
+        >
           <legend class="px-1 text-sm font-semibold">{{ seccion.titulo }}</legend>
+
+          <!-- Plegada: se dice cuántos campos tiene y que están vacíos, para
+               que no haya duda de que no se perdió nada. -->
+          <button
+            v-if="!seccionAbierta(seccion)"
+            type="button"
+            class="flex w-full items-center justify-between gap-3 py-1 text-left"
+            :aria-expanded="false"
+            @click="alternarSeccion(seccion)"
+          >
+            <span class="text-xs text-tinta-suave">
+              {{ seccion.campos.length }} campo(s), sin datos
+            </span>
+            <span class="text-xs text-libro underline underline-offset-2">Abrir</span>
+          </button>
+
+          <template v-else>
           <p class="mb-3 text-xs text-tinta-suave">{{ seccion.ayuda }}</p>
           <div class="space-y-3">
             <div v-for="campo in seccion.campos" :key="campo.clave">
@@ -653,6 +751,16 @@ onMounted(cargar)
               </template>
             </div>
           </div>
+          <button
+            v-if="!seccion.siempre && !verTodasLasSecciones"
+            type="button"
+            class="mt-3 text-xs text-libro underline underline-offset-2"
+            :aria-expanded="true"
+            @click="alternarSeccion(seccion)"
+          >
+            Plegar
+          </button>
+          </template>
         </fieldset>
       </div>
     </section>
@@ -863,6 +971,24 @@ onMounted(cargar)
           </p>
         </div>
 
+        <!-- Las cifras se pliegan; la advertencia y los diagnósticos de arriba
+             no, porque son lo que el motor dice que NO evalúa. El mismo
+             borrador, renglón por renglón, está en su propia pestaña. -->
+        <div class="mt-6 flex flex-wrap items-center gap-3 border-t border-papel-linea pt-4">
+          <button
+            type="button"
+            class="boton-secundario"
+            :aria-expanded="verTablasDelBorrador"
+            @click="verTablasDelBorrador = !verTablasDelBorrador"
+          >
+            {{ verTablasDelBorrador ? 'Ocultar las cifras' : 'Ver las cifras del borrador' }}
+          </button>
+          <RouterLink :to="{ name: 'borrador', query: $route.query }" class="enlace text-sm">
+            Verlo renglón por renglón en su pestaña
+          </RouterLink>
+        </div>
+
+        <template v-if="verTablasDelBorrador">
         <div v-for="bloque in bloques" :key="bloque.titulo" class="mt-6">
           <h3 class="mb-2">{{ bloque.titulo }}</h3>
           <table>
@@ -918,6 +1044,7 @@ onMounted(cargar)
             <li v-for="(n, i) in resultado.notas" :key="i">{{ n }}</li>
           </ul>
         </div>
+        </template>
       </section>
     </template>
   </div>
