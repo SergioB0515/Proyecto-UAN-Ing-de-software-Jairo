@@ -23,7 +23,9 @@
 | Incremento 6 — Seguridad y trazabilidad (HU-19 a HU-21) | ✅ Implementado y probado (backend y frontend) |
 | Incremento 7 — Calidad de vida (HU-22 a HU-24) | ✅ Implementado y probado (backend y frontend) |
 | Incremento 8 — Seguimiento de la declaración (HU-25 a HU-27) | ✅ Implementado y probado (backend y frontend) |
-| Integración continua (GitHub Actions) | ✅ Pruebas del backend con PostgreSQL y compilación del frontend en cada push |
+| Incremento 9 — Portal del contribuyente (HU-28 a HU-36) | ✅ Implementado y probado (backend y frontend) |
+| Migraciones del esquema (Alembic) | ✅ Revisiones versionadas, con comprobación de deriva contra los modelos |
+| Integración continua (GitHub Actions) | ✅ Pruebas del backend con PostgreSQL, prueba de actualización del esquema y compilación del frontend en cada push |
 | Frontend (Vue 3 + Vite + Tailwind) — todas las historias | ✅ Implementado y verificado de punta a punta en el navegador |
 | Evidencias de funcionamiento | ✅ Capturas por historia de usuario ([10](10-evidencias-funcionamiento.md)) |
 

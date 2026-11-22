@@ -2,10 +2,14 @@
 
 Historias de usuario organizadas por incremento (ver [05. Modelo de
 desarrollo](05-modelo-desarrollo.md)), derivadas del [flujo de uso de la
-aplicación](08-diagrama-flujo.md). El actor principal en todas las
-historias es el **contador**, que opera la aplicación en nombre de sus
-contribuyentes (ver la decisión de diseño en [04.
-Arquitectura](04-arquitectura.md)).
+aplicación](08-diagrama-flujo.md). El actor principal es el **contador**,
+que opera la aplicación en nombre de sus contribuyentes (ver la decisión de
+diseño en [04. Arquitectura](04-arquitectura.md)).
+
+Desde el incremento 9 existe un segundo actor, el **contribuyente**, que
+entra únicamente por el portal de carga, sin cuenta de usuario y con alcance
+a un solo periodo. Aporta información y soportes; no decide cifras ni ve la
+liquidación. Las historias indican en cada caso cuál de los dos actúa.
 
 **Formato**: *Como [rol], quiero [acción], para [beneficio].*
 
@@ -383,3 +387,132 @@ aplicación.
 - La exportación respeta el año y el orden elegidos en el panel.
 - La descarga queda registrada en la actividad.
 
+---
+
+## Épica 9 — Portal del contribuyente (Incremento 9)
+
+Hasta aquí el contador capturaba todo. Esta épica traslada al contribuyente
+la parte que solo él puede aportar —sus soportes y lo que la exógena no
+registra— sin darle cuenta de usuario y sin exponerle la liquidación.
+
+### HU-28 — Generar un enlace de carga para un contribuyente
+**Como** contador,
+**quiero** generar desde la ficha de un contribuyente un enlace con el que
+pueda aportar su información de un periodo,
+**para** dejar de perseguir documentos por correo y por mensajería.
+
+**Criterios de aceptación:**
+- El token se genera aleatorio y se almacena con hash; el valor en claro se
+  devuelve una sola vez, al crearlo.
+- El enlace tiene alcance a un contribuyente y un periodo: no sirve para
+  otro.
+- Generar un enlace nuevo revoca los que estuvieran vigentes para ese
+  periodo.
+- El enlace tiene fecha de expiración y puede reanudarse: el contribuyente
+  cierra la página y vuelve sin perder lo cargado.
+
+### HU-29 — Autorizar el tratamiento de mis datos
+**Como** contribuyente,
+**quiero** leer y aceptar la política de tratamiento antes de entregar nada,
+**para** saber para qué se usan mis datos y quién responde por ellos.
+
+**Criterios de aceptación:**
+- Queda registrada la versión del texto aceptado y la fecha.
+- Las versiones de la política se agregan, nunca se editan: una autorización
+  vieja sigue respaldando el texto que se leyó.
+- Sin autorización registrada, ninguna ruta del portal escribe nada.
+- El nombre y el documento que se escriben se comparan contra los que el
+  contador tiene registrados; si no corresponden, la aceptación se rechaza y
+  no se guarda nada.
+- El mensaje de rechazo no revela el valor registrado.
+
+### HU-30 — Cargar el archivo de la DIAN desde el enlace
+**Como** contribuyente,
+**quiero** subir el Excel de información exógena que descargué del portal de
+la DIAN,
+**para** que la lista de documentos que me piden salga de ahí y no tenga que
+adivinarla.
+
+**Criterios de aceptación:**
+- El archivo se guarda versionado y con su fecha de corte.
+- Cargar un archivo más reciente no borra lo ya respondido ni los soportes
+  cargados.
+- Si el archivo no tiene el formato esperado, se indica la fila y el motivo.
+
+### HU-31 — Saber qué documentos me piden, en lenguaje común
+**Como** contribuyente,
+**quiero** ver la lista de documentos descrita con el nombre de quien reportó
+y no con el concepto tributario,
+**para** entender qué me están pidiendo sin saber de impuestos.
+
+**Criterios de aceptación:**
+- Cada documento se identifica por el tercero que reportó, no por el código
+  del concepto.
+- Los conceptos que la aplicación no reconoce no se descartan: se piden
+  igual y quedan marcados para el contador.
+- La lista es la misma que ve el contador; no hay dos bandejas de pendientes.
+
+### HU-32 — Responder cada documento aunque no lo tenga
+**Como** contribuyente,
+**quiero** marcar cada documento como pendiente, no aplica, no lo tengo o no
+entiendo,
+**para** que mi contador sepa en qué va cada punto aunque yo no pueda
+resolverlo.
+
+**Criterios de aceptación:**
+- El estado es obligatorio; el valor es opcional.
+- Lo marcado como «no entiendo» no cuenta como resuelto y queda señalado para
+  el contador.
+- Cada respuesta queda registrada en la actividad, atribuida al contador
+  dueño del enlace y sin guardar el token.
+
+### HU-33 — Subir los soportes desde el celular
+**Como** contribuyente,
+**quiero** tomar una foto o adjuntar un archivo desde el teléfono, sin crear
+una cuenta,
+**para** aportar los soportes donde los tengo y cuando los tengo.
+
+**Criterios de aceptación:**
+- El archivo queda atado al documento que lo motivó, no suelto en una carpeta.
+- Subir un soporte deja el documento como recibido, sin pedir un paso
+  adicional.
+- El portal no muestra en ningún momento la liquidación ni el impuesto.
+
+### HU-34 — Registrar lo que la exógena no trae
+**Como** contribuyente,
+**quiero** registrar mis dependientes, intereses de vivienda, medicina
+prepagada, aportes AFC o de pensión voluntaria, activos, deudas y bienes del
+exterior,
+**para** que entren a la declaración, porque ningún tercero se los reporta a
+la DIAN.
+
+**Criterios de aceptación:**
+- Los valores se validan contra una tabla de parámetros fiscales versionada
+  por año gravable, no contra topes escritos en el código.
+- Los conceptos que comparten tope se validan por la suma del grupo.
+- Lo registrado aquí entra a la misma tabla de conciliación que el resto.
+
+### HU-35 — Fijar el valor final de cada renglón
+**Como** contador,
+**quiero** decidir el valor final de cada renglón y que quede registrado de
+qué fuente salió,
+**para** que la decisión sea mía y quede explicada.
+
+**Criterios de aceptación:**
+- Todo aterriza en una sola tabla con cuatro estados: coincide, diferencia,
+  solo en exógena y solo en declarado.
+- Solo el contador fija el valor final; el contribuyente informa y aporta
+  soportes.
+- Al elegir exógena o declarado, el valor lo pone la fila y no el cuerpo de
+  la petición: no se puede registrar «elegí la exógena» junto a otra cifra.
+- Queda registrado qué fuente se eligió, cuándo y con qué nota.
+
+### HU-36 — Revocar un enlace de carga
+**Como** contador,
+**quiero** revocar un enlace que ya no debe servir,
+**para** cortar el acceso si se envió por error o si el periodo ya se cerró.
+
+**Criterios de aceptación:**
+- Un enlace revocado o expirado responde con un estado propio, distinto del
+  de un enlace que nunca existió.
+- Lo ya cargado no se pierde al revocar.

@@ -228,18 +228,49 @@ solo se deja de perder más.
 
 **Esfuerzo: 1,5–2 días. Riesgo: bajo.** Se puede intercalar con los otros.
 
-- **Historias de usuario del portal.** El documento 06 va de HU-01 a HU-27 y
-  no tiene ninguna del portal: ni el enlace de carga, ni la autorización de
-  tratamiento, ni los cuatro estados, ni los adicionales, ni la verificación
-  de identidad. La función está construida y documentada en el README del
-  módulo, pero no como historia con criterios de aceptación, que es el
-  formato que pide el curso. Van de HU-28 en adelante.
-- **Actualizar el documento 11** con la tabla de la sección 0.
-- **Consolidar las tablas laterales de liquidación**
-  (`clasificaciones_ingreso`, `datos_depreciacion`) como columnas de
-  `fuentes_ingreso` y `activos`. Era el ítem 3 del 11, y después del bloque 1
-  cuesta menos, porque es exactamente el tipo de cambio que Alembic hace sin
-  drama.
+- **Historias de usuario del portal — hecho.** El documento 06 iba de HU-01 a
+  HU-27 y no tenía ninguna del portal. Se agregó la épica 9 (HU-28 a HU-36):
+  el enlace de carga, la autorización con verificación de identidad, la carga
+  del archivo de la DIAN, los cuatro estados, los soportes desde el celular,
+  los adicionales, el valor final por renglón y la revocación del enlace.
+
+  El portal introduce además un **segundo actor**. El preámbulo del documento
+  decía que el actor era siempre el contador, y eso dejó de ser cierto: el
+  contribuyente entra por el portal, sin cuenta y con alcance a un periodo,
+  aporta información y soportes, y no decide cifras ni ve la liquidación.
+- **Actualizar los documentos 09 y 11 — hecho**: el incremento 9, Alembic, la
+  prueba de actualización en el CI y la cifra de historias.
+- **Consolidar las tablas laterales de liquidación — descartado.** Era el
+  ítem 3 del documento 11, que lo daba por hecho: «el diseño correcto son las
+  columnas». Al ir a hacerlo resultó estar mal planteado, por dos razones
+  distintas para cada tabla.
+
+  `clasificaciones_ingreso` guarda la cédula asignada a mano a una fuente de
+  ingreso. La cédula es vocabulario de `liquidacion`; `fuentes_ingreso`
+  pertenece a `contribuyentes`, que hoy **no** depende de `liquidacion` —la
+  dependencia va en el otro sentido, en tres sitios—. Una columna tipada con
+  `Cedula` ahí haría que el módulo de abajo hable el vocabulario del de
+  arriba. No rompería ningún import, porque `liquidacion/modelos.py` no
+  importa `contribuyentes`; es la dirección de la dependencia la que se
+  invierte. La alternativa sería mover el enum a un sitio compartido, y
+  tampoco corresponde: `core` es infraestructura, no vocabulario tributario.
+
+  `datos_depreciacion` es otro caso: solo se deprecian los activos fijos de
+  un negocio. Los de un asalariado —una cuenta, un carro, un apartamento— no.
+  Serían cinco columnas en todas las filas de activos, nulas casi siempre. Un
+  grupo de atributos opcional y disperso es justamente donde una tabla aparte
+  está bien.
+
+  Lo que se ganaba en ambos casos era ahorrarse un join. No alcanza. Los
+  docstrings de los dos modelos decían «Pendiente: pasarla a columna(s)»; ahí
+  quedó escrito por qué no, para que nadie lo vuelva a tomar como tarea
+  pendiente.
+
+  Queda un defecto menor, real y sin arreglar: las dos tablas repiten
+  `periodo_fiscal_id`, que ya está en `fuentes_ingreso` y en `activos`. Es
+  una desnormalización que se usa para consultar sin join y que puede
+  divergir. Arreglarla es quitar la columna y consultar con join; el riesgo y
+  el beneficio son pequeños los dos.
 
 ---
 
@@ -319,8 +350,8 @@ Para que se entienda que es una omisión decidida y no un olvido:
 | ~~1~~ | ~~Prueba de actualización en el CI~~ **hecho** | — | — |
 | ~~2~~ | ~~Alembic~~ **hecho** | — | — |
 | ~~3~~ | ~~56 campos de dinero a `Decimal`~~ **hecho** | — | — |
-| 4 | Historias de usuario del portal (HU-28+) y actualizar el 11 | 1 d | Bajo |
-| 5 | Consolidar las tablas laterales de liquidación | 1 d | Bajo |
+| ~~4~~ | ~~Historias de usuario del portal (HU-28 a HU-36)~~ **hecho** | — | — |
+| ~~5~~ | ~~Consolidar las tablas laterales~~ **descartado, mal planteado** | — | — |
 | 6 | Simulador de planeación tributaria | 5–7 d | Bajo |
 
 Queda alrededor de una semana: los bloques 1 y 2 están hechos, que eran el
