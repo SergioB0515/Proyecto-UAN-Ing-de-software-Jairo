@@ -4,6 +4,7 @@ from sqlmodel import select
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 
+from core.red import ip_cliente
 from core.seguridad import decodificar_token
 
 from .modelos import EventoAuditoria
@@ -97,10 +98,6 @@ ACCIONES_PORTAL = {
 }
 
 ACCIONES_AUDITADAS.update(ACCIONES_PORTAL)
-
-
-def ip_cliente(request: Request) -> Optional[str]:
-    return request.client.host if request.client else None
 
 
 def _contador_id(session, request: Request) -> Optional[int]:

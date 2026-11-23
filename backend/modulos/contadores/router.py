@@ -3,6 +3,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlmodel import Session
 
 from core.dependencias import obtener_contador_actual
+from core.red import ip_cliente
 from core.excepciones import (
     ContadorYaExisteError,
     ContrasenaActualIncorrectaError,
@@ -12,7 +13,6 @@ from core.excepciones import (
 from database import obtener_sesion
 
 from . import servicios
-from ..auditoria.middleware import ip_cliente
 from .modelos import CambioContrasena, Contador, ContadorCrear, ContadorLeer, ContadorLogin, Token
 
 router = APIRouter(prefix="/contadores", tags=["contadores"])

@@ -28,6 +28,10 @@ services:
         generateValue: true
       - key: ORIGENES_PERMITIDOS
         value: ""
+      # Un proxy (el de Render) delante de la app: la IP del cliente es la
+      # última entrada de X-Forwarded-For. Ver core/red.py.
+      - key: PROXIES_CONFIABLES
+        value: "1"
 
 databases:
   - name: renta-db

@@ -44,4 +44,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/salud', timeout=4).status==200 else 1)"
 
 # $PORT del proveedor; 8000 por defecto.
-CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --proxy-headers --forwarded-allow-ips='*'"]
+# --no-proxy-headers: uvicorn no toca la IP del cliente. Cuánto confiar en
+# X-Forwarded-For lo decide la app con PROXIES_CONFIABLES (core/red.py).
+CMD ["sh", "-c", "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000} --no-proxy-headers"]
