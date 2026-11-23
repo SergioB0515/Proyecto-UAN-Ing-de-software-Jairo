@@ -20,6 +20,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1
 
+# La imagen oficial se reconstruye cada tanto; los parches de Debian salen
+# antes. Sin esto la imagen arrastra lo que ya tiene arreglo (Trivy lo vigila
+# en .github/workflows/seguridad.yml).
+RUN apt-get update \
+    && apt-get upgrade -y --no-install-recommends \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY backend/requirements.txt ./
