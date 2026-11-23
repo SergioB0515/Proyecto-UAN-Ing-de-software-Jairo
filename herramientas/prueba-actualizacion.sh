@@ -74,11 +74,24 @@ trap limpiar EXIT
 echo "==> Base de partida: $REF_BASE ($(git log -1 --format=%s "$REF_BASE"))"
 git worktree add --detach --quiet "$ARBOL" "$REF_BASE"
 
+# El código anterior corre con SUS dependencias, no con las del commit actual.
+# Si un commit cambia de librería (python-jose -> PyJWT, por ejemplo), el
+# código de producción no la puede importar y la prueba falla por algo que en
+# un despliegue real no pasa: allá cada versión trae sus dependencias.
+PY_BASE="$PY"
+if ! cmp -s "$ARBOL/backend/requirements.txt" backend/requirements.txt; then
+    echo "==> Las dependencias cambiaron: entorno aparte para el código anterior"
+    "$PY" -m venv "$TEMPORAL/venv-base"
+    PY_BASE="$TEMPORAL/venv-base/bin/python"
+    [ -x "$PY_BASE" ] || PY_BASE="$TEMPORAL/venv-base/Scripts/python.exe"
+    "$PY_BASE" -m pip install --quiet -r "$ARBOL/backend/requirements.txt"
+fi
+
 echo "==> Creando el esquema con el código anterior"
-(cd "$ARBOL/backend" && "$PY" -c "from database import crear_tablas; crear_tablas()")
+(cd "$ARBOL/backend" && "$PY_BASE" -c "from database import crear_tablas; crear_tablas()")
 
 echo "==> Sembrando datos con el código anterior"
-(cd "$ARBOL/backend" && "$PY" semilla_demo.py >/dev/null)
+(cd "$ARBOL/backend" && "$PY_BASE" semilla_demo.py >/dev/null)
 
 echo "==> Migrando con el código actual"
 (cd backend && "$PY" -c "from database import crear_tablas; crear_tablas()")
