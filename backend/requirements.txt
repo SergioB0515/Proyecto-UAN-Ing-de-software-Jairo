@@ -1,6 +1,6 @@
 # Backend - FastAPI + SQLModel + PostgreSQL
 # Ver documentacion/04-arquitectura.md para el detalle y las razones de cada eleccion.
-# Versiones fijadas a las probadas (pytest 86/86) para que la instalacion sea reproducible.
+# Versiones fijadas a las probadas (ver CI) para que la instalacion sea reproducible.
 
 fastapi==0.141.1
 uvicorn[standard]==0.53.0
@@ -10,7 +10,7 @@ alembic==1.20.1           # migraciones del esquema (ver alembic/ y database.cre
 python-dotenv==1.2.3      # carga backend/.env automaticamente (ver .env.example)
 
 # Autenticacion (JWT + hash de contrasenas)
-python-jose[cryptography]==3.5.0
+PyJWT==2.15.1              # python-jose no tiene arreglo para GHSA-3qf3-8w2g-rqmx y arrastra ecdsa
 passlib[argon2]==1.7.4
 python-multipart==0.0.32  # necesario para OAuth2PasswordRequestForm y subida de archivos
 
@@ -24,4 +24,4 @@ reportlab==5.0.1
 # Testing
 pytest==9.1.1
 httpx==0.28.1             # requerido por TestClient de FastAPI
-pypdf==6.17.0              # las pruebas leen el texto de los PDF generados
+pypdf==6.21.4              # las pruebas leen el texto de los PDF generados

@@ -95,8 +95,9 @@ def _migrar_periodo_en_activos_y_fuentes(motor) -> None:
             conexion.execute(text(f"ALTER TABLE {tabla} ADD COLUMN periodo_fiscal_id INTEGER"))
 
             sin_periodo = conexion.execute(
+                # `tabla` sale de la tupla literal de arriba, no de una entrada.
                 text(
-                    f"SELECT DISTINCT t.contribuyente_id FROM {tabla} t "
+                    f"SELECT DISTINCT t.contribuyente_id FROM {tabla} t "  # nosec B608
                     "WHERE NOT EXISTS (SELECT 1 FROM periodos_fiscales p "
                     "WHERE p.contribuyente_id = t.contribuyente_id)"
                 )
@@ -118,8 +119,9 @@ def _migrar_periodo_en_activos_y_fuentes(motor) -> None:
                     )
                 )
             conexion.execute(
+                # Misma tupla literal.
                 text(
-                    f"UPDATE {tabla} t SET periodo_fiscal_id = ("
+                    f"UPDATE {tabla} t SET periodo_fiscal_id = ("  # nosec B608
                     "SELECT p.id FROM periodos_fiscales p "
                     "WHERE p.contribuyente_id = t.contribuyente_id "
                     "ORDER BY p.anio_gravable DESC LIMIT 1) "

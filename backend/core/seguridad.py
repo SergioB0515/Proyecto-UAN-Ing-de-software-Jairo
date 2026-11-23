@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-from jose import JWTError, jwt
+import jwt
 from passlib.context import CryptContext
 
 from core.config import JWT_ALGORITHM, JWT_EXPIRACION_MINUTOS, JWT_SECRET_KEY
@@ -28,6 +28,6 @@ def crear_token_acceso(sub: str, minutos: Optional[int] = None) -> str:
 def decodificar_token(token: str) -> Optional[str]:
     try:
         payload = jwt.decode(token, JWT_SECRET_KEY, algorithms=[JWT_ALGORITHM])
-    except JWTError:
+    except jwt.PyJWTError:
         return None
     return payload.get("sub")
