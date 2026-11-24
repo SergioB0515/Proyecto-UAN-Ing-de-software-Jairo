@@ -24,6 +24,21 @@ ORIGENES_PERMITIDOS = [
     if origen.strip()
 ]
 
+def _entero_no_negativo(nombre: str, por_omision: str) -> int:
+    valor = os.getenv(nombre, por_omision).strip() or por_omision
+    try:
+        numero = int(valor)
+    except ValueError:
+        numero = -1
+    if numero < 0:
+        raise RuntimeError(f"{nombre} debe ser un entero mayor o igual a 0; llegó {valor!r}.")
+    return numero
+
+
+# Proxies propios delante de la aplicación. Decide de qué entrada de
+# X-Forwarded-For sale la IP que se registra (ver core/red.py).
+PROXIES_CONFIABLES = _entero_no_negativo("PROXIES_CONFIABLES", "0")
+
 TAMANO_MAXIMO_EXOGENA_MB = float(os.getenv("TAMANO_MAXIMO_EXOGENA_MB", "5"))
 
 TAMANO_MAXIMO_ADJUNTO_MB = float(os.getenv("TAMANO_MAXIMO_ADJUNTO_MB", "15"))

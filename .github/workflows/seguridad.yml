@@ -1,0 +1,84 @@
+# Seguridad. Cuatro trabajos, cada uno falla por su cuenta para que se vea
+# cuál fue:
+#
+#   codigo       — Bandit sobre el backend, severidad media o mayor.
+#   dependencias — pip-audit y npm audit contra las bases de vulnerabilidades.
+#   secretos     — gitleaks sobre el historial.
+#   imagen       — Trivy sobre la imagen que se despliega.
+#
+# Corre también cada lunes: una dependencia que hoy está limpia puede tener
+# una vulnerabilidad publicada mañana sin que nadie toque el código.
+#
+# Las acciones de terceros van fijadas por SHA de commit, no por tag. Un tag
+# se puede mover: en marzo de 2026 alguien con credenciales robadas movió 76
+# de los 77 tags de aquasecurity/trivy-action a un ladrón de credenciales, y
+# todo flujo que decía `@0.34.2` lo ejecutó (GHSA-69fq-xp46-6x23). Un SHA no
+# se puede mover. Dependabot (.github/dependabot.yml) las mantiene al día.
+name: Seguridad
+
+on:
+  push:
+  pull_request:
+  schedule:
+    - cron: "17 12 * * 1"
+
+permissions:
+  contents: read
+
+jobs:
+  codigo:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install bandit==1.9.4
+      # -ll: media o mayor. Las de severidad baja que hay hoy son `escape` de
+      # xml.sax.saxutils, que escapa texto para los PDF y no interpreta XML.
+      # Las pruebas y las migraciones quedan fuera: asserts y SQL fijo.
+      - run: bandit -r backend -x backend/tests,backend/alembic -ll
+
+  dependencias:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - run: pip install pip-audit
+      - name: Backend
+        run: pip-audit -r backend/requirements.txt
+      - name: Frontend
+        working-directory: frontend
+        # Incluye las de desarrollo: las del servidor de Vite pegan en la
+        # máquina de quien desarrolla, no en producción, pero pegan.
+        run: npm audit --audit-level=high
+
+  secretos:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2.3.9
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: "false"
+
+  imagen:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t app-renta:${{ github.sha }} .
+      - uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: app-renta:${{ github.sha }}
+          severity: CRITICAL,HIGH
+          # Solo lo que tiene arreglo: lo demás no se puede accionar desde
+          # aquí y volvería la alarma ruido.
+          ignore-unfixed: true
+          exit-code: "1"

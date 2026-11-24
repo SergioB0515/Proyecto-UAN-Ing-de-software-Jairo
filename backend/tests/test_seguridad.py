@@ -193,3 +193,50 @@ def test_cabeceras_de_seguridad(client):
     respuesta = client.get("/salud")
     assert respuesta.headers["X-Content-Type-Options"] == "nosniff"
     assert respuesta.headers["X-Frame-Options"] == "DENY"
+
+
+# --- Tokens -----------------------------------------------------------------
+# Fijan lo que tiene que seguir siendo cierto con cualquier librería de JWT.
+
+
+def _token_firmado(payload: dict, clave: str, algoritmo: str = "HS256") -> str:
+    import jwt
+
+    return jwt.encode(payload, clave, algorithm=algoritmo)
+
+
+def _carga(sub: str, minutos: int = 30) -> dict:
+    return {"sub": sub, "exp": datetime.now(timezone.utc) + timedelta(minutes=minutos)}
+
+
+def test_token_sin_firma_se_rechaza(client):
+    _registrar(client, "tok-1@example.com")
+    sin_firma = _token_firmado(_carga("tok-1@example.com"), "", algoritmo="none")
+    respuesta = client.get("/contadores/yo", headers={"Authorization": f"Bearer {sin_firma}"})
+    assert respuesta.status_code == 401
+
+
+def test_token_firmado_con_otra_clave_se_rechaza(client):
+    _registrar(client, "tok-2@example.com")
+    ajeno = _token_firmado(_carga("tok-2@example.com"), "otra-clave-que-no-es-la-del-servidor")
+    respuesta = client.get("/contadores/yo", headers={"Authorization": f"Bearer {ajeno}"})
+    assert respuesta.status_code == 401
+
+
+def test_token_vencido_se_rechaza(client):
+    from core.config import JWT_SECRET_KEY
+
+    _registrar(client, "tok-3@example.com")
+    vencido = _token_firmado(_carga("tok-3@example.com", minutos=-1), JWT_SECRET_KEY)
+    respuesta = client.get("/contadores/yo", headers={"Authorization": f"Bearer {vencido}"})
+    assert respuesta.status_code == 401
+
+
+def test_token_valido_firmado_aparte_se_acepta(client):
+    """Control de las tres anteriores: si este falla, fallan por otra razón."""
+    from core.config import JWT_SECRET_KEY
+
+    _registrar(client, "tok-4@example.com")
+    valido = _token_firmado(_carga("tok-4@example.com"), JWT_SECRET_KEY)
+    respuesta = client.get("/contadores/yo", headers={"Authorization": f"Bearer {valido}"})
+    assert respuesta.status_code == 200

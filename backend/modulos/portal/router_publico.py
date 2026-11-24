@@ -35,6 +35,7 @@ from core.excepciones import (
     TopeAdicionalExcedidoError,
     VersionPoliticaDesconocidaError,
 )
+from core.red import ip_cliente
 from database import obtener_sesion
 
 from ..adjuntos.modelos import AdjuntoLeer
@@ -124,11 +125,16 @@ def _red_de_origen(request: Request) -> Optional[str]:
     que la aceptación vino de una conexión concreta sin almacenar un dato
     personal más preciso del necesario.
 
-    No se lee `X-Forwarded-For`: es un encabezado que el cliente puede
-    escribir, así que respaldar una autorización con él no respalda nada.
-    Detrás de un proxy esto registra la red del proxy, y eso es honesto.
+    La dirección sale de `core.red.ip_cliente`, que de `X-Forwarded-For`
+    solo lee la entrada que escribió un proxy propio, nunca la que manda el
+    cliente. Respaldar una autorización con una cabecera que cualquiera puede
+    escribir no respaldaría nada.
+
+    Antes esta función leía `request.client.host` directamente, creyendo que
+    así no tocaba la cabecera. No era cierto: con `--forwarded-allow-ips='*'`
+    uvicorn ya había puesto ahí la primera entrada de `X-Forwarded-For`.
     """
-    host = request.client.host if request.client else None
+    host = ip_cliente(request)
     if not host:
         return None
     if ":" in host:

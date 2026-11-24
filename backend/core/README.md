@@ -5,3 +5,4 @@
 - `excepciones.py`: errores de dominio; cada router los traduce a HTTP.
 - `formato.py`: pesos con punto de miles para mensajes.
 - `config.py`: variables de entorno.
+- `red.py`: `ip_cliente`, la única fuente de la IP que se registra. Decide cuánto confiar en `X-Forwarded-For`.
