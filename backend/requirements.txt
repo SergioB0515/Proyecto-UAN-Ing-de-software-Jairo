@@ -12,7 +12,7 @@ python-dotenv==1.2.3      # carga backend/.env automaticamente (ver .env.example
 # Autenticacion (JWT + hash de contrasenas)
 PyJWT==2.15.1              # python-jose no tiene arreglo para GHSA-3qf3-8w2g-rqmx y arrastra ecdsa
 passlib[argon2]==1.7.4
-python-multipart==0.0.32  # necesario para OAuth2PasswordRequestForm y subida de archivos
+python-multipart==0.0.34  # necesario para OAuth2PasswordRequestForm y subida de archivos
 
 # Importacion y conciliacion de informacion exogena
 pandas==3.0.6
