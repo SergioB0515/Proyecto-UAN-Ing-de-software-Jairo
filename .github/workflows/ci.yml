@@ -37,7 +37,7 @@ jobs:
       JWT_SECRET_KEY: clave-solo-para-ci-con-32-bytes-o-mas
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
@@ -79,7 +79,7 @@ jobs:
         with:
           # Hace falta el historial para crear el árbol de la rama base.
           fetch-depth: 0
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
