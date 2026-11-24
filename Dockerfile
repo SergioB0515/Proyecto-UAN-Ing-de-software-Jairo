@@ -1,7 +1,7 @@
 # Imagen única: compila el SPA y lo sirve desde FastAPI.
 
 # Etapa 1 — build del frontend
-FROM node:20-alpine AS frontend
+FROM node:26-alpine AS frontend
 
 WORKDIR /app
 
